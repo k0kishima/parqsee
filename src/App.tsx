@@ -17,10 +17,11 @@ function App() {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
 
   useEffect(() => {
-    // Listen for file drop events from Tauri
-    const unlisten = listen<string[]>('tauri://drop', async (event) => {
-      const files = event.payload;
-      if (files.length > 0 && files[0].endsWith('.parquet')) {
+    // Listen for file drop events from Tauri v2
+    const unlisten = listen('tauri://drag-drop', async (event: any) => {
+      console.log('File drop event:', event);
+      const files = event.payload.paths;
+      if (files && files.length > 0 && files[0].endsWith('.parquet')) {
         openParquetFile(files[0]);
       }
     });
@@ -47,11 +48,19 @@ function App() {
     e.stopPropagation();
     setIsDragging(false);
 
+    console.log('Web drop event:', e.dataTransfer);
+    
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       const file = files[0];
-      if (file.path && file.path.endsWith('.parquet')) {
-        openParquetFile(file.path);
+      console.log('Dropped file:', file);
+      
+      // In Tauri, files dropped from the file system have webkitRelativePath
+      // Use the file name for now, as we'll handle the full path via Tauri events
+      if (file.name.endsWith('.parquet')) {
+        // For web drops, we might not have the full path
+        // The Tauri file-drop event will handle this properly
+        console.log('Parquet file detected:', file.name);
       }
     }
   }, []);
