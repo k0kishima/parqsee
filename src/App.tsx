@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DataViewer } from "./components/DataViewer";
-import "./App.css";
 
 interface RecentFile {
   path: string;
@@ -95,86 +94,131 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="container mx-auto px-4 py-8">
-        <header className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100 mb-2">
-            Parqsee
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Fast and simple Parquet file viewer
-          </p>
-        </header>
+    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+                <span className="text-white font-bold text-sm">P</span>
+              </div>
+              <h1 className="text-xl font-semibold text-slate-900">Parqsee</h1>
+            </div>
+            <span className="text-sm text-slate-500">Fast and simple Parquet file viewer</span>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleBrowse}
+              className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              Open File
+            </button>
+          </div>
+        </div>
+      </div>
 
-        <main className="max-w-4xl mx-auto">
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto p-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Drop Zone */}
           <div
             className={`
-              border-2 border-dashed rounded-lg p-16 text-center transition-colors
+              relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-200
               ${isDragging 
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
-                : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
+                ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-[1.02]' 
+                : 'border-slate-300 bg-white hover:border-slate-400 hover:shadow-md'
               }
             `}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <svg 
-              className="mx-auto h-16 w-16 text-gray-400 mb-4" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" 
-              />
-            </svg>
+            <div className="px-12 py-16 text-center">
+              <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 transition-colors ${
+                isDragging ? 'bg-blue-100' : 'bg-slate-100'
+              }`}>
+                <svg 
+                  className={`w-10 h-10 transition-colors ${
+                    isDragging ? 'text-blue-600' : 'text-slate-400'
+                  }`}
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={1.5} 
+                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+                  />
+                </svg>
+              </div>
+              
+              <h2 className="text-xl font-semibold text-slate-900 mb-2">
+                Drop your Parquet file here
+              </h2>
+              <p className="text-sm text-slate-600 mb-6">
+                or click the button below to browse
+              </p>
+              
+              <button
+                onClick={handleBrowse}
+                className="inline-flex items-center px-6 py-2.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                Browse Files
+              </button>
+              
+              <p className="mt-6 text-xs text-slate-500">
+                Supports .parquet files • Press ⌘+O to open
+              </p>
+            </div>
             
-            <p className="text-xl mb-4 text-gray-700 dark:text-gray-300">
-              Drop Parquet file here or click to browse
-            </p>
-            
-            <button
-              onClick={handleBrowse}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              Browse Files
-            </button>
-            
-            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-              Supports .parquet files
-            </p>
+            {/* Decorative elements */}
+            <div className="absolute top-0 right-0 -mt-12 -mr-12 w-40 h-40 bg-blue-100 rounded-full opacity-10"></div>
+            <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-32 h-32 bg-purple-100 rounded-full opacity-10"></div>
           </div>
 
+          {/* Recent Files */}
           {recentFiles.length > 0 && (
             <div className="mt-12">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 Recent Files
-              </h2>
+              </h3>
               <div className="space-y-2">
                 {recentFiles.map((file, index) => (
                   <button
                     key={index}
                     onClick={() => openParquetFile(file.path)}
-                    className="w-full text-left p-4 bg-white dark:bg-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full text-left p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all group"
                   >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="font-medium text-gray-800 dark:text-gray-200">
-                          {file.name}
-                        </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {file.path}
-                        </p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center group-hover:bg-slate-200 transition-colors">
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors">
+                            {file.name}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {file.path}
+                          </p>
+                        </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="text-sm font-medium text-slate-700">
                           {file.size}
                         </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                        <p className="text-xs text-slate-500">
                           {file.lastAccessed}
                         </p>
                       </div>
@@ -184,11 +228,38 @@ function App() {
               </div>
             </div>
           )}
-        </main>
 
-        <footer className="mt-16 text-center text-sm text-gray-500 dark:text-gray-400">
-          <p>Press ⌘+O to open file</p>
-        </footer>
+          {/* Features */}
+          <div className="mt-16 grid grid-cols-3 gap-6">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-lg mb-3">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h4 className="font-medium text-slate-900 mb-1">Fast Performance</h4>
+              <p className="text-sm text-slate-600">Native Rust backend for blazing fast file processing</p>
+            </div>
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-green-100 text-green-600 rounded-lg mb-3">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h4 className="font-medium text-slate-900 mb-1">Easy to Use</h4>
+              <p className="text-sm text-slate-600">Simple drag & drop interface with keyboard shortcuts</p>
+            </div>
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-purple-100 text-purple-600 rounded-lg mb-3">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                </svg>
+              </div>
+              <h4 className="font-medium text-slate-900 mb-1">Large Files</h4>
+              <p className="text-sm text-slate-600">Efficient pagination for handling massive datasets</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const rowsPerPage = 100;
 
   useEffect(() => {
@@ -70,14 +71,14 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
+      <div className="h-screen bg-slate-50 p-8">
         <div className="max-w-4xl mx-auto">
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-            <h2 className="text-red-800 dark:text-red-200 font-semibold mb-2">Error Loading File</h2>
-            <p className="text-red-600 dark:text-red-300">{error}</p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 shadow-sm">
+            <h2 className="text-red-800 font-semibold mb-2 text-lg">Error Loading File</h2>
+            <p className="text-red-600 mb-4">{error}</p>
             <button
               onClick={onClose}
-              className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm"
             >
               Close
             </button>
@@ -88,99 +89,171 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-slate-50">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 shadow-sm">
+      <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-              {fileName}
-            </h1>
-            {metadata && (
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {metadata.num_rows.toLocaleString()} rows × {metadata.num_columns} columns
-              </p>
-            )}
+          <div className="flex items-center space-x-6">
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900">
+                {fileName}
+              </h1>
+              {metadata && (
+                <p className="text-sm text-slate-600 mt-0.5">
+                  {metadata.num_rows.toLocaleString()} rows × {metadata.num_columns} columns
+                </p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-          >
-            ✕ Close
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={loadData}
+              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+            >
+              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+            <button
+              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+            >
+              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export
+            </button>
+            <button
+              onClick={onClose}
+              className="inline-flex items-center px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+            >
+              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Close
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className="p-6">
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-gray-600 dark:text-gray-400">Loading data...</div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+              <div className="text-slate-600">Loading data...</div>
+            </div>
           </div>
         ) : (
           <>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-900">
-                    <tr>
-                      {metadata?.columns.map((col, index) => (
-                        <th
-                          key={index}
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+            {/* Table Container */}
+            <div className="flex-1 overflow-auto bg-white shadow-inner">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
+                  <tr>
+                    {metadata?.columns.map((col, index) => (
+                      <th
+                        key={index}
+                        className="px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200 last:border-r-0"
+                      >
+                        <div className="font-semibold">{col.name}</div>
+                        <div className="font-normal text-slate-500 text-xs mt-0.5">
+                          {col.column_type.replace("PhysicalType(", "").replace(")", "")}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((row, rowIndex) => (
+                    <tr
+                      key={rowIndex}
+                      onClick={() => setSelectedRow(rowIndex)}
+                      className={`
+                        border-b border-slate-100 cursor-pointer transition-colors
+                        ${selectedRow === rowIndex 
+                          ? 'bg-blue-50 hover:bg-blue-100' 
+                          : 'hover:bg-slate-50'
+                        }
+                      `}
+                    >
+                      {metadata?.columns.map((col, colIndex) => (
+                        <td
+                          key={colIndex}
+                          className="px-4 py-2.5 text-sm border-r border-slate-100 last:border-r-0"
                         >
-                          <div>{col.name}</div>
-                          <div className="text-xs font-normal text-gray-400 dark:text-gray-500">
-                            {col.column_type}
-                          </div>
-                        </th>
+                          {row[col.name] !== null && row[col.name] !== undefined ? (
+                            <span className="text-slate-900 font-mono text-xs">{String(row[col.name])}</span>
+                          ) : (
+                            <span className="text-slate-400 italic font-mono text-xs">NULL</span>
+                          )}
+                        </td>
                       ))}
                     </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {data.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        {metadata?.columns.map((col, colIndex) => (
-                          <td
-                            key={colIndex}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
-                          >
-                            {row[col.name] !== null && row[col.name] !== undefined
-                              ? String(row[col.name])
-                              : <span className="text-gray-400 dark:text-gray-600">null</span>}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            {/* Pagination */}
-            <div className="mt-6 flex items-center justify-between">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+            {/* Footer with Pagination */}
+            <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between">
+              <div className="text-sm text-slate-600">
                 Showing {((currentPage - 1) * rowsPerPage) + 1} to{' '}
                 {Math.min(currentPage * rowsPerPage, metadata?.num_rows || 0)} of{' '}
-                {metadata?.num_rows.toLocaleString()} rows
+                {metadata?.num_rows.toLocaleString()} entries
               </div>
-              <div className="flex space-x-2">
+              
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="p-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                  </svg>
+                </button>
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 text-sm bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
-                <span className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                  Page {currentPage} of {totalPages}
-                </span>
+                
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={currentPage}
+                    onChange={(e) => {
+                      const page = parseInt(e.target.value);
+                      if (page >= 1 && page <= totalPages) {
+                        setCurrentPage(page);
+                      }
+                    }}
+                    className="w-16 px-2 py-1 text-sm text-center border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-slate-600">of {totalPages}</span>
+                </div>
+                
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 text-sm bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="p-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                  </svg>
                 </button>
               </div>
             </div>
