@@ -1,14 +1,113 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use parquet::file::reader::{FileReader, SerializedFileReader};
+use parquet::record::Row;
+use base64::{Engine as _, engine::general_purpose};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ParquetMetadata {
+    num_rows: i64,
+    num_columns: usize,
+    columns: Vec<ColumnInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ColumnInfo {
+    name: String,
+    column_type: String,
+}
+
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+async fn open_parquet_file(path: String) -> Result<ParquetMetadata, String> {
+    let file = File::open(&path).map_err(|e| e.to_string())?;
+    let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
+    
+    let metadata = reader.metadata();
+    let schema = metadata.file_metadata().schema();
+    
+    let columns: Vec<ColumnInfo> = schema
+        .get_fields()
+        .iter()
+        .map(|field| ColumnInfo {
+            name: field.name().to_string(),
+            column_type: format!("{:?}", field.get_physical_type()),
+        })
+        .collect();
+    
+    Ok(ParquetMetadata {
+        num_rows: metadata.file_metadata().num_rows(),
+        num_columns: columns.len(),
+        columns,
+    })
+}
+
+#[tauri::command]
+async fn read_parquet_data(path: String, offset: usize, limit: usize) -> Result<Vec<serde_json::Value>, String> {
+    let file = File::open(&path).map_err(|e| e.to_string())?;
+    let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
+    
+    let mut iter = reader.get_row_iter(None).map_err(|e| e.to_string())?;
+    
+    // Skip to offset
+    for _ in 0..offset {
+        if iter.next().is_none() {
+            break;
+        }
+    }
+    
+    // Read limited rows
+    let mut rows = Vec::new();
+    for _ in 0..limit {
+        match iter.next() {
+            Some(Ok(row)) => {
+                let json_value = row_to_json(&row);
+                rows.push(json_value);
+            }
+            Some(Err(e)) => return Err(e.to_string()),
+            None => break,
+        }
+    }
+    
+    Ok(rows)
+}
+
+fn row_to_json(row: &Row) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    
+    for (name, value) in row.get_column_iter() {
+        let json_value = match value {
+            parquet::record::Field::Bool(v) => serde_json::Value::Bool(*v),
+            parquet::record::Field::Byte(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::Short(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::Int(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::Long(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::Float(v) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*v as f64).unwrap_or(serde_json::Number::from(0))
+            ),
+            parquet::record::Field::Double(v) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*v).unwrap_or(serde_json::Number::from(0))
+            ),
+            parquet::record::Field::Str(v) => serde_json::Value::String(v.clone()),
+            parquet::record::Field::Bytes(v) => serde_json::Value::String(
+                general_purpose::STANDARD.encode(v.data())
+            ),
+            parquet::record::Field::Null => serde_json::Value::Null,
+            _ => serde_json::Value::Null,
+        };
+        
+        map.insert(name.clone(), json_value);
+    }
+    
+    serde_json::Value::Object(map)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
