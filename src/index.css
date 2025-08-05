@@ -1,1 +1,41 @@
 @import "tailwindcss";
+
+/* Manual dark mode implementation for Tailwind v4 */
+@layer base {
+  :root {
+    --bg-primary: theme(colors.white);
+    --bg-secondary: theme(colors.slate.50);
+    --bg-tertiary: theme(colors.slate.100);
+    --text-primary: theme(colors.slate.900);
+    --text-secondary: theme(colors.slate.700);
+    --text-tertiary: theme(colors.slate.600);
+    --border-primary: theme(colors.slate.200);
+    --border-secondary: theme(colors.slate.300);
+    --bg-selected: theme(colors.blue.50);
+  }
+  
+  .dark {
+    --bg-primary: theme(colors.slate.800);
+    --bg-secondary: theme(colors.slate.900);
+    --bg-tertiary: theme(colors.slate.950);
+    --text-primary: theme(colors.slate.100);
+    --text-secondary: theme(colors.slate.300);
+    --text-tertiary: theme(colors.slate.400);
+    --border-primary: theme(colors.slate.700);
+    --border-secondary: theme(colors.slate.600);
+    --bg-selected: theme(colors.blue.900/30);
+  }
+}
+
+/* Utility classes for our custom properties */
+@layer utilities {
+  .bg-primary { background-color: var(--bg-primary); }
+  .bg-secondary { background-color: var(--bg-secondary); }
+  .bg-tertiary { background-color: var(--bg-tertiary); }
+  .bg-selected { background-color: var(--bg-selected); }
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-tertiary { color: var(--text-tertiary); }
+  .border-primary { border-color: var(--border-primary); }
+  .border-secondary { border-color: var(--border-secondary); }
+}

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DataViewer } from "./components/DataViewer";
+import { SettingsModal } from "./components/SettingsModal";
 
 interface RecentFile {
   path: string;
@@ -15,20 +16,24 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
-    // Listen for file drop events from Tauri v2
-    const unlisten = listen('tauri://drag-drop', async (event: any) => {
-      console.log('File drop event:', event);
-      const files = event.payload.paths;
-      if (files && files.length > 0 && files[0].endsWith('.parquet')) {
-        openParquetFile(files[0]);
-      }
-    });
+    // Only listen for Tauri events if we're in a Tauri environment
+    if (typeof window !== 'undefined' && window.__TAURI__) {
+      // Listen for file drop events from Tauri v2
+      const unlisten = listen('tauri://drag-drop', async (event: any) => {
+        console.log('File drop event:', event);
+        const files = event.payload.paths;
+        if (files && files.length > 0 && files[0].endsWith('.parquet')) {
+          openParquetFile(files[0]);
+        }
+      });
 
-    return () => {
-      unlisten.then(fn => fn());
-    };
+      return () => {
+        unlisten.then(fn => fn());
+      };
+    }
   }, []);
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -67,9 +72,16 @@ function App() {
 
   const openParquetFile = async (path: string) => {
     try {
-      // Verify the file can be opened
-      await invoke("open_parquet_file", { path });
-      setCurrentFile(path);
+      // Only use Tauri API if available
+      if (typeof window !== 'undefined' && window.__TAURI__) {
+        // Verify the file can be opened
+        await invoke("open_parquet_file", { path });
+        setCurrentFile(path);
+      } else {
+        // For browser testing, just set the file path
+        console.log("Running in browser, simulating file open:", path);
+        setCurrentFile(path);
+      }
     } catch (error) {
       console.error("Failed to open parquet file:", error);
       alert(`Failed to open file: ${error}`);
@@ -103,18 +115,18 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="h-screen flex flex-col bg-secondary">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
+      <div className="bg-primary border-b border-primary shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-sm">
                 <span className="text-white font-bold text-sm">P</span>
               </div>
-              <h1 className="text-xl font-semibold text-slate-900">Parqsee</h1>
+              <h1 className="text-xl font-semibold text-primary">Parqsee</h1>
             </div>
-            <span className="text-sm text-slate-500">Fast and simple Parquet file viewer</span>
+            <span className="text-sm text-secondary">Fast and simple Parquet file viewer</span>
           </div>
           <div className="flex items-center space-x-3">
             <button
@@ -125,6 +137,16 @@ function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
               Open File
+            </button>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 text-secondary hover:bg-tertiary rounded-md transition-colors"
+              title="Settings"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
             </button>
           </div>
         </div>
@@ -139,7 +161,7 @@ function App() {
               relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-200
               ${isDragging 
                 ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-[1.02]' 
-                : 'border-slate-300 bg-white hover:border-slate-400 hover:shadow-md'
+                : 'border-primary bg-primary hover:border-secondary hover:shadow-md'
               }
             `}
             onDragOver={handleDragOver}
@@ -148,11 +170,11 @@ function App() {
           >
             <div className="px-12 py-16 text-center">
               <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 transition-colors ${
-                isDragging ? 'bg-blue-100' : 'bg-slate-100'
+                isDragging ? 'bg-blue-100' : 'bg-tertiary'
               }`}>
                 <svg 
                   className={`w-10 h-10 transition-colors ${
-                    isDragging ? 'text-blue-600' : 'text-slate-400'
+                    isDragging ? 'text-blue-600' : 'text-secondary'
                   }`}
                   fill="none" 
                   viewBox="0 0 24 24" 
@@ -167,10 +189,10 @@ function App() {
                 </svg>
               </div>
               
-              <h2 className="text-xl font-semibold text-slate-900 mb-2">
+              <h2 className="text-xl font-semibold text-primary mb-2">
                 Drop your Parquet file here
               </h2>
-              <p className="text-sm text-slate-600 mb-6">
+              <p className="text-sm text-secondary mb-6">
                 or click the button below to browse
               </p>
               
@@ -181,7 +203,7 @@ function App() {
                 Browse Files
               </button>
               
-              <p className="mt-6 text-xs text-slate-500">
+              <p className="mt-6 text-xs text-tertiary">
                 Supports .parquet files • Press ⌘+O to open
               </p>
             </div>
@@ -194,8 +216,8 @@ function App() {
           {/* Recent Files */}
           {recentFiles.length > 0 && (
             <div className="mt-12">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <h3 className="text-lg font-semibold text-primary mb-4 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Recent Files
@@ -205,29 +227,29 @@ function App() {
                   <button
                     key={index}
                     onClick={() => openParquetFile(file.path)}
-                    className="w-full text-left p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all group"
+                    className="w-full text-left p-4 bg-primary rounded-lg border border-primary hover:border-secondary hover:shadow-sm transition-all group"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center group-hover:bg-slate-200 transition-colors">
-                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="w-10 h-10 bg-tertiary rounded-lg flex items-center justify-center group-hover:bg-secondary transition-colors">
+                          <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors">
+                          <p className="font-medium text-primary group-hover:text-blue-600 transition-colors">
                             {file.name}
                           </p>
-                          <p className="text-sm text-slate-500">
+                          <p className="text-sm text-tertiary">
                             {file.path}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium text-slate-700">
+                        <p className="text-sm font-medium text-secondary">
                           {file.size}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-tertiary">
                           {file.lastAccessed}
                         </p>
                       </div>
@@ -246,8 +268,8 @@ function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h4 className="font-medium text-slate-900 mb-1">Fast Performance</h4>
-              <p className="text-sm text-slate-600">Native Rust backend for blazing fast file processing</p>
+              <h4 className="font-medium text-primary mb-1">Fast Performance</h4>
+              <p className="text-sm text-secondary">Native Rust backend for blazing fast file processing</p>
             </div>
             <div className="text-center">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-green-100 text-green-600 rounded-lg mb-3">
@@ -255,8 +277,8 @@ function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h4 className="font-medium text-slate-900 mb-1">Easy to Use</h4>
-              <p className="text-sm text-slate-600">Simple drag & drop interface with keyboard shortcuts</p>
+              <h4 className="font-medium text-primary mb-1">Easy to Use</h4>
+              <p className="text-sm text-secondary">Simple drag & drop interface with keyboard shortcuts</p>
             </div>
             <div className="text-center">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-purple-100 text-purple-600 rounded-lg mb-3">
@@ -264,12 +286,18 @@ function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
               </div>
-              <h4 className="font-medium text-slate-900 mb-1">Large Files</h4>
-              <p className="text-sm text-slate-600">Efficient pagination for handling massive datasets</p>
+              <h4 className="font-medium text-primary mb-1">Large Files</h4>
+              <p className="text-sm text-secondary">Efficient pagination for handling massive datasets</p>
             </div>
           </div>
         </div>
       </div>
+      
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </div>
   );
 }

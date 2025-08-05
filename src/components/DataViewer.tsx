@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSettings } from "../contexts/SettingsContext";
 
 interface DataViewerProps {
   filePath: string;
@@ -18,13 +19,14 @@ interface ParquetMetadata {
 }
 
 export function DataViewer({ filePath, onClose }: DataViewerProps) {
+  const { settings } = useSettings();
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
-  const rowsPerPage = 100;
+  const rowsPerPage = settings.rowsPerPage;
 
   useEffect(() => {
     loadFile();
@@ -34,7 +36,12 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
     if (metadata) {
       loadData();
     }
-  }, [currentPage, metadata]);
+  }, [currentPage, metadata, rowsPerPage]);
+
+  useEffect(() => {
+    // Reset to first page when rows per page changes
+    setCurrentPage(1);
+  }, [rowsPerPage]);
 
   const loadFile = async () => {
     try {
