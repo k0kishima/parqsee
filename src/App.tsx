@@ -2,6 +2,7 @@ import { useState, useCallback, DragEvent, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { DataViewer } from "./components/DataViewer";
 import "./App.css";
 
 interface RecentFile {
@@ -14,6 +15,7 @@ interface RecentFile {
 function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [currentFile, setCurrentFile] = useState<string | null>(null);
 
   useEffect(() => {
     // Listen for file drop events from Tauri
@@ -57,9 +59,12 @@ function App() {
 
   const openParquetFile = async (path: string) => {
     try {
+      // Verify the file can be opened
       await invoke("open_parquet_file", { path });
+      setCurrentFile(path);
     } catch (error) {
       console.error("Failed to open parquet file:", error);
+      alert(`Failed to open file: ${error}`);
     }
   };
 
@@ -79,6 +84,15 @@ function App() {
       console.error("Failed to select file:", error);
     }
   };
+
+  if (currentFile) {
+    return (
+      <DataViewer 
+        filePath={currentFile} 
+        onClose={() => setCurrentFile(null)} 
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
