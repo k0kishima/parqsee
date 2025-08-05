@@ -4,29 +4,40 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DataViewer } from "./components/DataViewer";
 import { SettingsModal } from "./components/SettingsModal";
-
-interface RecentFile {
-  path: string;
-  name: string;
-  lastAccessed: string;
-  size: string;
-}
+import { useRecentFiles } from "./contexts/RecentFilesContext";
+import { useSettings } from "./contexts/SettingsContext";
 
 function App() {
   const [isDragging, setIsDragging] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const { recentFiles, addRecentFile } = useRecentFiles();
+  const { settings } = useSettings();
+  
 
   useEffect(() => {
     // Only listen for Tauri events if we're in a Tauri environment
-    if (typeof window !== 'undefined' && window.__TAURI__) {
+    const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof listen === 'function';
+    
+    if (isTauri) {
       // Listen for file drop events from Tauri v2
-      const unlisten = listen('tauri://drag-drop', async (event: any) => {
+      // Use the custom event we emit from Rust
+      const unlisten = listen('file-drop', async (event: any) => {
         console.log('File drop event:', event);
-        const files = event.payload.paths;
-        if (files && files.length > 0 && files[0].endsWith('.parquet')) {
-          openParquetFile(files[0]);
+        
+        // The payload should be an array of paths
+        const files = event.payload || [];
+        
+        console.log('Dropped files:', files);
+        
+        if (files.length > 0) {
+          const parquetFile = files.find((f: string) => f.endsWith('.parquet'));
+          if (parquetFile) {
+            console.log('Opening parquet file:', parquetFile);
+            openParquetFile(parquetFile);
+          } else {
+            alert('Please drop a .parquet file');
+          }
         }
       });
 
@@ -72,10 +83,23 @@ function App() {
 
   const openParquetFile = async (path: string) => {
     try {
-      // Only use Tauri API if available
-      if (typeof window !== 'undefined' && window.__TAURI__) {
+      // Check if we can use Tauri APIs
+      const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof invoke === 'function';
+      
+      if (isTauri) {
         // Verify the file can be opened
         await invoke("open_parquet_file", { path });
+        
+        // Get file info and add to recent files
+        const fileInfo = await invoke<{ path: string; name: string; size: number }>("get_file_info", { path });
+        
+        addRecentFile({
+          path: fileInfo.path,
+          name: fileInfo.name,
+          lastAccessed: new Date().toLocaleString(),
+          size: fileInfo.size
+        });
+        
         setCurrentFile(path);
       } else {
         // For browser testing, just set the file path
@@ -90,15 +114,22 @@ function App() {
 
   const handleBrowse = async () => {
     try {
-      const selected = await open({
-        filters: [{
-          name: 'Parquet Files',
-          extensions: ['parquet']
-        }]
-      });
+      // Check if we can use Tauri APIs
+      const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof open === 'function';
       
-      if (selected && typeof selected === 'string') {
-        openParquetFile(selected);
+      if (isTauri) {
+        const selected = await open({
+          filters: [{
+            name: 'Parquet Files',
+            extensions: ['parquet']
+          }]
+        });
+        
+        if (selected && typeof selected === 'string') {
+          openParquetFile(selected);
+        }
+      } else {
+        alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
       }
     } catch (error) {
       console.error("Failed to select file:", error);
@@ -214,7 +245,8 @@ function App() {
           </div>
 
           {/* Recent Files */}
-          {recentFiles.length > 0 && (
+          {/* Debug: Always show section if showRecentFiles is true */}
+          {settings?.showRecentFiles && (
             <div className="mt-12">
               <h3 className="text-lg font-semibold text-primary mb-4 flex items-center">
                 <svg className="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,39 +255,51 @@ function App() {
                 Recent Files
               </h3>
               <div className="space-y-2">
-                {recentFiles.map((file, index) => (
-                  <button
-                    key={index}
-                    onClick={() => openParquetFile(file.path)}
-                    className="w-full text-left p-4 bg-primary rounded-lg border border-primary hover:border-secondary hover:shadow-sm transition-all group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-tertiary rounded-lg flex items-center justify-center group-hover:bg-secondary transition-colors">
-                          <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
+                {recentFiles.length === 0 ? (
+                  <p className="text-sm text-tertiary">No recent files yet. Open a Parquet file to see it here.</p>
+                ) : (
+                  recentFiles.map((file) => {
+                  const formatFileSize = (bytes: number): string => {
+                    if (bytes < 1024) return bytes + ' B';
+                    else if (bytes < 1048576) return Math.round(bytes / 1024) + ' KB';
+                    else if (bytes < 1073741824) return Math.round(bytes / 1048576) + ' MB';
+                    else return Math.round(bytes / 1073741824) + ' GB';
+                  };
+                  
+                  return (
+                    <button
+                      key={file.path}
+                      onClick={() => openParquetFile(file.path)}
+                      className="w-full text-left p-4 bg-primary rounded-lg border border-primary hover:border-secondary hover:shadow-sm transition-all group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-tertiary rounded-lg flex items-center justify-center group-hover:bg-secondary transition-colors">
+                            <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="font-medium text-primary group-hover:text-blue-600 transition-colors">
+                              {file.name}
+                            </p>
+                            <p className="text-sm text-tertiary">
+                              {file.path}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-primary group-hover:text-blue-600 transition-colors">
-                            {file.name}
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-secondary">
+                            {formatFileSize(file.size)}
                           </p>
-                          <p className="text-sm text-tertiary">
-                            {file.path}
+                          <p className="text-xs text-tertiary">
+                            {file.lastAccessed}
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-secondary">
-                          {file.size}
-                        </p>
-                        <p className="text-xs text-tertiary">
-                          {file.lastAccessed}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                }))}
               </div>
             </div>
           )}

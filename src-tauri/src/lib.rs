@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::fs::{File, metadata};
+use std::path::Path;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::record::Row;
 use base64::{Engine as _, engine::general_purpose};
+use tauri::{Emitter, DragDropEvent};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetMetadata {
@@ -15,6 +17,13 @@ struct ParquetMetadata {
 struct ColumnInfo {
     name: String,
     column_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileInfo {
+    path: String,
+    name: String,
+    size: u64,
 }
 
 #[tauri::command]
@@ -101,13 +110,41 @@ fn row_to_json(row: &Row) -> serde_json::Value {
     serde_json::Value::Object(map)
 }
 
+#[tauri::command]
+async fn get_file_info(path: String) -> Result<FileInfo, String> {
+    let file_path = Path::new(&path);
+    let file_metadata = metadata(&path).map_err(|e| e.to_string())?;
+    
+    let file_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unknown")
+        .to_string();
+    
+    Ok(FileInfo {
+        path,
+        name: file_name,
+        size: file_metadata.len(),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data])
+        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info])
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
+                    println!("Files dropped: {:?}", paths);
+                    // Send event to frontend
+                    window.emit("file-drop", paths).unwrap();
+                }
+                _ => {}
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

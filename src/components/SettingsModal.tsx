@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useRecentFiles } from '../contexts/RecentFilesContext';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { settings, updateSettings } = useSettings();
+  const { clearRecentFiles } = useRecentFiles();
   const [localSettings, setLocalSettings] = useState(settings);
 
   useEffect(() => {
@@ -146,6 +148,48 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <p className="mt-2 text-xs text-tertiary">
                 Number of rows to display per page in the data viewer
               </p>
+            </div>
+
+            {/* Recent Files Settings */}
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-2">
+                Recent Files
+              </label>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-primary">Show recent files</span>
+                  <button
+                    onClick={() => setLocalSettings({ ...localSettings, showRecentFiles: !localSettings.showRecentFiles })}
+                    className={`
+                      relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${localSettings.showRecentFiles ? 'bg-blue-600' : 'bg-gray-300'}
+                    `}
+                  >
+                    <span
+                      className={`
+                        inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                        ${localSettings.showRecentFiles ? 'translate-x-6' : 'translate-x-1'}
+                      `}
+                    />
+                  </button>
+                </div>
+                
+                <p className="text-xs text-tertiary">
+                  Recent files are limited to the most recent 5 files
+                </p>
+                
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to clear all recent files?')) {
+                      clearRecentFiles();
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
+                  disabled={!localSettings.showRecentFiles}
+                >
+                  Clear Recent Files
+                </button>
+              </div>
             </div>
           </div>
 

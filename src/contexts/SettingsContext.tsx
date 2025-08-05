@@ -5,6 +5,7 @@ type Theme = 'light' | 'dark' | 'system';
 interface Settings {
   theme: Theme;
   rowsPerPage: number;
+  showRecentFiles: boolean;
 }
 
 interface SettingsContextType {
@@ -15,7 +16,8 @@ interface SettingsContextType {
 
 const defaultSettings: Settings = {
   theme: 'system',
-  rowsPerPage: 100
+  rowsPerPage: 100,
+  showRecentFiles: true
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -23,7 +25,12 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem('parqsee-settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
+    if (saved) {
+      // Merge saved settings with defaults to ensure all properties exist
+      const parsedSettings = JSON.parse(saved);
+      return { ...defaultSettings, ...parsedSettings };
+    }
+    return defaultSettings;
   });
 
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
