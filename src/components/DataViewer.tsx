@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "../contexts/SettingsContext";
+import { SearchBar } from "./SearchBar";
 
 interface DataViewerProps {
   filePath: string;
@@ -26,7 +27,16 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
   const rowsPerPage = settings.rowsPerPage;
+  
+  // Track when search term changes but debounced hasn't fired yet
+  const [pendingSearchTerm, setPendingSearchTerm] = useState("");
+  const searchTimerRef = useRef<NodeJS.Timeout>();
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadFile();
@@ -42,6 +52,20 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
     // Reset to first page when rows per page changes
     setCurrentPage(1);
   }, [rowsPerPage]);
+
+  // Keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const loadFile = async () => {
     try {
@@ -76,6 +100,158 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   const totalPages = metadata ? Math.ceil(metadata.num_rows / rowsPerPage) : 1;
   const fileName = filePath.split('/').pop() || filePath;
 
+  // Search functionality
+  const searchMatches = useMemo(() => {
+    if (!searchTerm || !metadata || !data) return [];
+
+    const matches: Array<{ rowIndex: number; colIndex: number; value: string }> = [];
+    const lowerSearchTerm = searchTerm.toLowerCase();
+
+    // Search in column names
+    metadata.columns.forEach((col, colIndex) => {
+      if (col.name.toLowerCase().includes(lowerSearchTerm)) {
+        matches.push({ rowIndex: -1, colIndex, value: col.name });
+      }
+    });
+
+    // Search in data
+    data.forEach((row, rowIndex) => {
+      metadata.columns.forEach((col, colIndex) => {
+        const value = row[col.name];
+        if (value !== null && value !== undefined) {
+          const stringValue = String(value);
+          if (stringValue.toLowerCase().includes(lowerSearchTerm)) {
+            matches.push({ rowIndex, colIndex, value: stringValue });
+          }
+        }
+      });
+    });
+
+    return matches;
+  }, [searchTerm, data, metadata]);
+
+  const handleSearchChange = useCallback((term: string) => {
+    setPendingSearchTerm(term);
+    
+    // Clear existing timer
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
+    // Show searching indicator only when there's text and after a short delay
+    if (term.trim()) {
+      // Delay before showing "Searching..." and performing search
+      searchTimerRef.current = setTimeout(() => {
+        setIsSearching(true);
+        setSearchTerm(term);
+        setCurrentMatchIndex(0);
+        // Hide searching indicator shortly after
+        setTimeout(() => {
+          setIsSearching(false);
+        }, 50); // Very short delay just to show the indicator
+      }, 400); // Wait 400ms before starting search
+    } else {
+      // Clear search immediately if empty
+      setSearchTerm(term);
+      setCurrentMatchIndex(0);
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
+
+  const scrollToMatch = useCallback((matchIndex: number) => {
+    if (!tableContainerRef.current || !searchMatches[matchIndex]) return;
+    
+    const match = searchMatches[matchIndex];
+    
+    // If it's a column header match
+    if (match.rowIndex === -1) {
+      const headerElement = tableContainerRef.current.querySelector(
+        `thead th:nth-child(${match.colIndex + 1})`
+      );
+      if (headerElement) {
+        headerElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+    } else {
+      // It's a data cell match
+      const cellElement = tableContainerRef.current.querySelector(
+        `tbody tr:nth-child(${match.rowIndex + 1}) td:nth-child(${match.colIndex + 1})`
+      );
+      if (cellElement) {
+        cellElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+    }
+  }, [searchMatches]);
+
+  const handleNextMatch = useCallback(() => {
+    if (searchMatches.length > 0) {
+      const newIndex = (currentMatchIndex + 1) % searchMatches.length;
+      setCurrentMatchIndex(newIndex);
+      scrollToMatch(newIndex);
+    }
+  }, [searchMatches, currentMatchIndex, scrollToMatch]);
+
+  const handlePreviousMatch = useCallback(() => {
+    if (searchMatches.length > 0) {
+      const newIndex = currentMatchIndex === 0 ? searchMatches.length - 1 : currentMatchIndex - 1;
+      setCurrentMatchIndex(newIndex);
+      scrollToMatch(newIndex);
+    }
+  }, [searchMatches, currentMatchIndex, scrollToMatch]);
+
+  // Highlight search term in text
+  const highlightText = useCallback((text: string) => {
+    if (!searchTerm || !text) return text;
+
+    const lowerText = text.toLowerCase();
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    const index = lowerText.indexOf(lowerSearchTerm);
+
+    if (index === -1) return text;
+
+    const beforeMatch = text.slice(0, index);
+    const match = text.slice(index, index + searchTerm.length);
+    const afterMatch = text.slice(index + searchTerm.length);
+
+    return (
+      <>
+        {beforeMatch}
+        <span className="bg-yellow-300 text-slate-900 font-semibold">{match}</span>
+        {afterMatch}
+      </>
+    );
+  }, [searchTerm]);
+
+  // Check if a cell is the current match
+  const isCurrentMatch = useCallback((rowIndex: number, colIndex: number) => {
+    if (!searchMatches.length || currentMatchIndex >= searchMatches.length) return false;
+    const match = searchMatches[currentMatchIndex];
+    return match.rowIndex === rowIndex && match.colIndex === colIndex;
+  }, [searchMatches, currentMatchIndex]);
+
+  // Check if a column header is matched
+  const isColumnMatch = useCallback((colIndex: number) => {
+    return searchMatches.some(match => match.rowIndex === -1 && match.colIndex === colIndex);
+  }, [searchMatches]);
+
+  // Scroll to first match when search results change
+  useEffect(() => {
+    if (searchMatches.length > 0 && currentMatchIndex === 0) {
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        scrollToMatch(0);
+      }, 100);
+    }
+  }, [searchMatches, scrollToMatch]);
+
   if (error) {
     return (
       <div className="h-screen bg-slate-50 p-8">
@@ -96,7 +272,26 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
+    <div className="h-screen flex flex-col bg-slate-50 relative">
+      {/* Search Bar */}
+      <SearchBar
+        isOpen={isSearchOpen}
+        searchTerm={pendingSearchTerm || searchTerm}
+        onSearchChange={handleSearchChange}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setSearchTerm("");
+          setPendingSearchTerm("");
+          setCurrentMatchIndex(0);
+          setIsSearching(false);
+        }}
+        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+        totalMatches={searchMatches.length}
+        onNext={handleNextMatch}
+        onPrevious={handlePreviousMatch}
+        isSearching={isSearching}
+      />
+
       {/* Header */}
       <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">
@@ -113,6 +308,16 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              title="Search (⌘F / Ctrl+F)"
+            >
+              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Search
+            </button>
             <button
               onClick={loadData}
               className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
@@ -155,16 +360,23 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
         ) : (
           <>
             {/* Table Container */}
-            <div className="flex-1 overflow-auto bg-white shadow-inner">
+            <div ref={tableContainerRef} className="flex-1 overflow-auto bg-white shadow-inner">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
                   <tr>
                     {metadata?.columns.map((col, index) => (
                       <th
                         key={index}
-                        className="px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200 last:border-r-0"
+                        className={`px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200 last:border-r-0 ${
+                          isColumnMatch(index) ? 'bg-yellow-100' : ''
+                        }`}
                       >
-                        <div className="font-semibold">{col.name}</div>
+                        <div className="font-semibold">
+                          {searchTerm && col.name.toLowerCase().includes(searchTerm.toLowerCase()) 
+                            ? highlightText(col.name)
+                            : col.name
+                          }
+                        </div>
                         <div className="font-normal text-slate-500 text-xs mt-0.5">
                           {col.column_type.replace("PhysicalType(", "").replace(")", "")}
                         </div>
@@ -188,10 +400,21 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                       {metadata?.columns.map((col, colIndex) => (
                         <td
                           key={colIndex}
-                          className="px-4 py-2.5 text-sm border-r border-slate-100 last:border-r-0"
+                          className={`px-4 py-2.5 text-sm border-r border-slate-100 last:border-r-0 ${
+                            isCurrentMatch(rowIndex, colIndex) 
+                              ? 'bg-orange-200' 
+                              : searchTerm && row[col.name] !== null && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
+                              ? 'bg-yellow-100'
+                              : ''
+                          }`}
                         >
                           {row[col.name] !== null && row[col.name] !== undefined ? (
-                            <span className="text-slate-900 font-mono text-xs">{String(row[col.name])}</span>
+                            <span className="text-slate-900 font-mono text-xs">
+                              {searchTerm && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
+                                ? highlightText(String(row[col.name]))
+                                : String(row[col.name])
+                              }
+                            </span>
                           ) : (
                             <span className="text-slate-400 italic font-mono text-xs">NULL</span>
                           )}
