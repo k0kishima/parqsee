@@ -4,15 +4,18 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DataViewer } from "./components/DataViewer";
 import { SettingsModal } from "./components/SettingsModal";
+import FileExplorer from "./components/FileExplorer";
 import { useRecentFiles } from "./contexts/RecentFilesContext";
 import { useSettings } from "./contexts/SettingsContext";
+import { Menu } from "lucide-react";
 
 function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const { recentFiles, addRecentFile } = useRecentFiles();
-  const { settings } = useSettings();
+  const { settings, effectiveTheme } = useSettings();
   
 
   useEffect(() => {
@@ -138,10 +141,49 @@ function App() {
 
   if (currentFile) {
     return (
-      <DataViewer 
-        filePath={currentFile} 
-        onClose={() => setCurrentFile(null)} 
-      />
+      <div className="h-screen flex">
+        {/* Sidebar */}
+        <div className={`transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-0'} overflow-hidden flex-shrink-0`}>
+          <FileExplorer
+            currentPath={currentFile}
+            onFileSelect={openParquetFile}
+            className="h-full"
+          />
+        </div>
+        
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header with toggle button */}
+          <div className={`px-2 py-2 flex items-center border-b ${
+            effectiveTheme === 'dark' 
+              ? 'bg-gray-800 border-gray-700' 
+              : 'bg-white border-gray-200'
+          }`}>
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`p-2 rounded-md transition-colors ${
+                effectiveTheme === 'dark'
+                  ? 'text-gray-300 hover:bg-gray-700'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className={`ml-3 text-sm ${
+              effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+            }`}>File Explorer</span>
+          </div>
+          
+          {/* DataViewer takes remaining space */}
+          <div className="flex-1 overflow-hidden">
+            <DataViewer 
+              filePath={currentFile} 
+              onClose={() => setCurrentFile(null)} 
+            />
+          </div>
+        </div>
+      </div>
     );
   }
 

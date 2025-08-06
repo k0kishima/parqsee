@@ -20,7 +20,7 @@ interface ParquetMetadata {
 }
 
 export function DataViewer({ filePath, onClose }: DataViewerProps) {
-  const { settings } = useSettings();
+  const { settings, effectiveTheme } = useSettings();
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +254,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
 
   if (error) {
     return (
-      <div className="h-screen bg-slate-50 p-8">
+      <div className={`h-full p-8 ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
         <div className="max-w-4xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 shadow-sm">
             <h2 className="text-red-800 font-semibold mb-2 text-lg">Error Loading File</h2>
@@ -272,7 +272,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 relative">
+    <div className={`h-full flex flex-col relative ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
       {/* Search Bar */}
       <SearchBar
         isOpen={isSearchOpen}
@@ -293,15 +293,15 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
       />
 
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
+      <div className={`shadow-sm border-b ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-6">
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">
+              <h1 className={`text-xl font-semibold ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-slate-900'}`}>
                 {fileName}
               </h1>
               {metadata && (
-                <p className="text-sm text-slate-600 mt-0.5">
+                <p className={`text-sm mt-0.5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
                   {metadata.num_rows.toLocaleString()} rows × {metadata.num_columns} columns
                 </p>
               )}
@@ -310,7 +310,11 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${
+                effectiveTheme === 'dark' 
+                  ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
               title="Search (⌘F / Ctrl+F)"
             >
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -320,7 +324,11 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
             </button>
             <button
               onClick={loadData}
-              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${
+                effectiveTheme === 'dark' 
+                  ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
             >
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -328,7 +336,11 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
               Refresh
             </button>
             <button
-              className="inline-flex items-center px-3 py-1.5 text-sm bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${
+                effectiveTheme === 'dark' 
+                  ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
             >
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -337,7 +349,11 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
             </button>
             <button
               onClick={onClose}
-              className="inline-flex items-center px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+              className={`inline-flex items-center px-3 py-1.5 text-sm rounded-md transition-colors ${
+                effectiveTheme === 'dark' 
+                  ? 'bg-gray-600 text-gray-200 hover:bg-gray-500' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
             >
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -354,20 +370,22 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-              <div className="text-slate-600">Loading data...</div>
+              <div className={`${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>Loading data...</div>
             </div>
           </div>
         ) : (
           <>
             {/* Table Container */}
-            <div ref={tableContainerRef} className="flex-1 overflow-auto bg-white shadow-inner">
+            <div ref={tableContainerRef} className={`flex-1 overflow-auto shadow-inner ${effectiveTheme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
+                <thead className={`sticky top-0 z-10 border-b ${effectiveTheme === 'dark' ? 'bg-gray-700 border-gray-600' : 'bg-slate-100 border-slate-200'}`}>
                   <tr>
                     {metadata?.columns.map((col, index) => (
                       <th
                         key={index}
-                        className={`px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200 last:border-r-0 ${
+                        className={`px-4 py-3 text-left font-medium border-r last:border-r-0 ${
+                          effectiveTheme === 'dark' ? 'text-gray-200 border-gray-600' : 'text-slate-700 border-slate-200'
+                        } ${
                           isColumnMatch(index) ? 'bg-yellow-100' : ''
                         }`}
                       >
@@ -377,7 +395,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                             : col.name
                           }
                         </div>
-                        <div className="font-normal text-slate-500 text-xs mt-0.5">
+                        <div className={`font-normal text-xs mt-0.5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-500'}`}>
                           {col.column_type.replace("PhysicalType(", "").replace(")", "")}
                         </div>
                       </th>
@@ -390,17 +408,20 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                       key={rowIndex}
                       onClick={() => setSelectedRow(rowIndex)}
                       className={`
-                        border-b border-slate-100 cursor-pointer transition-colors
+                        border-b cursor-pointer transition-colors
+                        ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'}
                         ${selectedRow === rowIndex 
-                          ? 'bg-blue-50 hover:bg-blue-100' 
-                          : 'hover:bg-slate-50'
+                          ? effectiveTheme === 'dark' ? 'bg-blue-900 hover:bg-blue-800' : 'bg-blue-50 hover:bg-blue-100' 
+                          : effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-slate-50'
                         }
                       `}
                     >
                       {metadata?.columns.map((col, colIndex) => (
                         <td
                           key={colIndex}
-                          className={`px-4 py-2.5 text-sm border-r border-slate-100 last:border-r-0 ${
+                          className={`px-4 py-2.5 text-sm border-r last:border-r-0 ${
+                            effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'
+                          } ${
                             isCurrentMatch(rowIndex, colIndex) 
                               ? 'bg-orange-200' 
                               : searchTerm && row[col.name] !== null && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
@@ -409,14 +430,14 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                           }`}
                         >
                           {row[col.name] !== null && row[col.name] !== undefined ? (
-                            <span className="text-slate-900 font-mono text-xs">
+                            <span className={`font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-slate-900'}`}>
                               {searchTerm && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
                                 ? highlightText(String(row[col.name]))
                                 : String(row[col.name])
                               }
                             </span>
                           ) : (
-                            <span className="text-slate-400 italic font-mono text-xs">NULL</span>
+                            <span className={`italic font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-400'}`}>NULL</span>
                           )}
                         </td>
                       ))}
@@ -427,8 +448,8 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
             </div>
 
             {/* Footer with Pagination */}
-            <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between">
-              <div className="text-sm text-slate-600">
+            <div className={`px-6 py-3 flex items-center justify-between border-t ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
+              <div className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
                 Showing {((currentPage - 1) * rowsPerPage) + 1} to{' '}
                 {Math.min(currentPage * rowsPerPage, metadata?.num_rows || 0)} of{' '}
                 {metadata?.num_rows.toLocaleString()} entries
@@ -438,16 +459,20 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="p-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`p-1 rounded disabled:opacity-50 disabled:cursor-not-allowed ${effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-slate-100'}`}
                 >
-                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-5 h-5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                   </svg>
                 </button>
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
+                    effectiveTheme === 'dark' 
+                      ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
                   Previous
                 </button>
@@ -464,24 +489,32 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                         setCurrentPage(page);
                       }
                     }}
-                    className="w-16 px-2 py-1 text-sm text-center border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-16 px-2 py-1 text-sm text-center border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      effectiveTheme === 'dark' 
+                        ? 'bg-gray-700 border-gray-600 text-gray-200' 
+                        : 'bg-white border-slate-300 text-slate-700'
+                    }`}
                   />
-                  <span className="text-sm text-slate-600">of {totalPages}</span>
+                  <span className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>of {totalPages}</span>
                 </div>
                 
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
+                    effectiveTheme === 'dark' 
+                      ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
                   Next
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="p-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`p-1 rounded disabled:opacity-50 disabled:cursor-not-allowed ${effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-slate-100'}`}
                 >
-                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-5 h-5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                   </svg>
                 </button>

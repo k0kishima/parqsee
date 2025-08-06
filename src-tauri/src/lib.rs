@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fs::{File, metadata};
+use std::fs::{File, metadata, read_dir};
 use std::path::Path;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::record::Row;
@@ -24,6 +24,16 @@ struct FileInfo {
     path: String,
     name: String,
     size: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileEntry {
+    path: String,
+    name: String,
+    is_directory: bool,
+    is_parquet: bool,
+    size: Option<u64>,
+    children: Option<Vec<FileEntry>>,
 }
 
 #[tauri::command]
@@ -128,13 +138,63 @@ async fn get_file_info(path: String) -> Result<FileInfo, String> {
     })
 }
 
+#[tauri::command]
+async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
+    let dir_path = Path::new(&path);
+    
+    if !dir_path.exists() {
+        return Err("Directory does not exist".to_string());
+    }
+    
+    if !dir_path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+    
+    let mut entries = Vec::new();
+    
+    let read_result = read_dir(dir_path).map_err(|e| e.to_string())?;
+    
+    for entry in read_result {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let path_str = path.to_string_lossy().to_string();
+        
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        
+        let is_directory = metadata.is_dir();
+        let is_parquet = !is_directory && path_str.ends_with(".parquet");
+        let size = if is_directory { None } else { Some(metadata.len()) };
+        
+        entries.push(FileEntry {
+            path: path_str,
+            name: file_name,
+            is_directory,
+            is_parquet,
+            size,
+            children: None,
+        });
+    }
+    
+    // Sort: directories first, then files, alphabetically
+    entries.sort_by(|a, b| {
+        match (a.is_directory, b.is_directory) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
+    
+    Ok(entries)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info])
+        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info, list_directory])
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
