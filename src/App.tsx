@@ -5,18 +5,43 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { DataViewer } from "./components/DataViewer";
 import { SettingsModal } from "./components/SettingsModal";
 import FileExplorer from "./components/FileExplorer";
+import TabBar from "./components/TabBar";
 import { useRecentFiles } from "./contexts/RecentFilesContext";
 import { useSettings } from "./contexts/SettingsContext";
 import { Menu } from "lucide-react";
+
+interface Tab {
+  id: string;
+  path: string;
+  name: string;
+}
 
 function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const { recentFiles, addRecentFile } = useRecentFiles();
   const { settings, effectiveTheme } = useSettings();
   
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+W or Ctrl+W to close current tab
+      if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+        e.preventDefault();
+        if (activeTabId) {
+          handleTabClose(activeTabId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTabId, tabs]);
 
   useEffect(() => {
     // Only listen for Tauri events if we're in a Tauri environment
@@ -103,7 +128,22 @@ function App() {
           size: fileInfo.size
         });
         
-        setCurrentFile(path);
+        // Check if file is already open in a tab
+        const existingTab = tabs.find(tab => tab.path === path);
+        if (existingTab) {
+          setActiveTabId(existingTab.id);
+          setCurrentFile(path);
+        } else {
+          // Create new tab
+          const newTab: Tab = {
+            id: Date.now().toString(),
+            path: fileInfo.path,
+            name: fileInfo.name
+          };
+          setTabs([...tabs, newTab]);
+          setActiveTabId(newTab.id);
+          setCurrentFile(path);
+        }
       } else {
         // For browser testing, just set the file path
         console.log("Running in browser, simulating file open:", path);
@@ -139,7 +179,34 @@ function App() {
     }
   };
 
-  if (currentFile) {
+  const handleTabSelect = (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab) {
+      setActiveTabId(tabId);
+      setCurrentFile(tab.path);
+    }
+  };
+
+  const handleTabClose = (tabId: string) => {
+    const tabIndex = tabs.findIndex(t => t.id === tabId);
+    const newTabs = tabs.filter(t => t.id !== tabId);
+    setTabs(newTabs);
+
+    if (activeTabId === tabId) {
+      if (newTabs.length > 0) {
+        // Switch to adjacent tab
+        const newIndex = Math.min(tabIndex, newTabs.length - 1);
+        setActiveTabId(newTabs[newIndex].id);
+        setCurrentFile(newTabs[newIndex].path);
+      } else {
+        // No more tabs
+        setActiveTabId(null);
+        setCurrentFile(null);
+      }
+    }
+  };
+
+  if (currentFile && tabs.length > 0) {
     return (
       <div className="h-screen flex">
         {/* Sidebar */}
@@ -175,11 +242,24 @@ function App() {
             }`}>File Explorer</span>
           </div>
           
+          {/* Tab Bar */}
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabSelect={handleTabSelect}
+            onTabClose={handleTabClose}
+          />
+          
           {/* DataViewer takes remaining space */}
           <div className="flex-1 overflow-hidden">
             <DataViewer 
               filePath={currentFile} 
-              onClose={() => setCurrentFile(null)} 
+              onClose={() => {
+                // Close current tab when DataViewer close button is clicked
+                if (activeTabId) {
+                  handleTabClose(activeTabId);
+                }
+              }} 
             />
           </div>
         </div>
