@@ -139,6 +139,11 @@ async fn get_file_info(path: String) -> Result<FileInfo, String> {
 }
 
 #[tauri::command]
+async fn check_file_exists(path: String) -> Result<bool, String> {
+    Ok(Path::new(&path).exists())
+}
+
+#[tauri::command]
 async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     let dir_path = Path::new(&path);
     
@@ -194,7 +199,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info, list_directory])
+        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info, list_directory, check_file_exists])
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {

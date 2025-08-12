@@ -23,7 +23,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const { recentFiles, addRecentFile } = useRecentFiles();
+  const { recentFiles, addRecentFile, removeRecentFile } = useRecentFiles();
   const { settings, effectiveTheme } = useSettings();
   
 
@@ -115,6 +115,14 @@ function App() {
       const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof invoke === 'function';
       
       if (isTauri) {
+        // Check if file exists first
+        const fileExists = await invoke<boolean>("check_file_exists", { path });
+        if (!fileExists) {
+          removeRecentFile(path);
+          alert(`File not found: ${path}`);
+          return;
+        }
+        
         // Verify the file can be opened
         await invoke("open_parquet_file", { path });
         
@@ -389,37 +397,53 @@ function App() {
                   };
                   
                   return (
-                    <button
+                    <div
                       key={file.path}
-                      onClick={() => openParquetFile(file.path)}
-                      className="w-full text-left p-4 bg-primary rounded-lg border border-primary hover:border-secondary hover:shadow-sm transition-all group"
+                      className="w-full flex items-center bg-primary rounded-lg border border-primary hover:border-secondary hover:shadow-sm transition-all group"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-tertiary rounded-lg flex items-center justify-center group-hover:bg-secondary transition-colors">
-                            <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
+                      <button
+                        onClick={() => openParquetFile(file.path)}
+                        className="flex-1 text-left p-4"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-tertiary rounded-lg flex items-center justify-center group-hover:bg-secondary transition-colors">
+                              <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <p className="font-medium text-primary group-hover:text-blue-600 transition-colors">
+                                {file.name}
+                              </p>
+                              <p className="text-sm text-tertiary">
+                                {file.path}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-primary group-hover:text-blue-600 transition-colors">
-                              {file.name}
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-secondary">
+                              {formatFileSize(file.size)}
                             </p>
-                            <p className="text-sm text-tertiary">
-                              {file.path}
+                            <p className="text-xs text-tertiary">
+                              {file.lastAccessed}
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-secondary">
-                            {formatFileSize(file.size)}
-                          </p>
-                          <p className="text-xs text-tertiary">
-                            {file.lastAccessed}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeRecentFile(file.path);
+                        }}
+                        className="p-4 text-tertiary hover:text-red-500 transition-colors"
+                        title="Remove from recent files"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   );
                 }))}
               </div>
