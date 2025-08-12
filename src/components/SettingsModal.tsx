@@ -150,6 +150,59 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </p>
             </div>
 
+            {/* Type Display Setting */}
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-2">
+                Column Type Display
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, typeDisplay: 'logical' })}
+                  className={`
+                    flex flex-col items-center p-4 rounded-lg border-2 transition-all
+                    ${localSettings.typeDisplay === 'logical' 
+                      ? 'border-blue-500 bg-selected' 
+                      : 'border-primary hover:border-secondary'
+                    }
+                  `}
+                >
+                  <span className="text-xs font-mono mb-1 text-primary">DATE</span>
+                  <span className="text-sm font-medium text-primary">Logical</span>
+                </button>
+
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, typeDisplay: 'physical' })}
+                  className={`
+                    flex flex-col items-center p-4 rounded-lg border-2 transition-all
+                    ${localSettings.typeDisplay === 'physical' 
+                      ? 'border-blue-500 bg-selected' 
+                      : 'border-primary hover:border-secondary'
+                    }
+                  `}
+                >
+                  <span className="text-xs font-mono mb-1 text-primary">INT32</span>
+                  <span className="text-sm font-medium text-primary">Physical</span>
+                </button>
+
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, typeDisplay: 'both' })}
+                  className={`
+                    flex flex-col items-center p-4 rounded-lg border-2 transition-all
+                    ${localSettings.typeDisplay === 'both' 
+                      ? 'border-blue-500 bg-selected' 
+                      : 'border-primary hover:border-secondary'
+                    }
+                  `}
+                >
+                  <span className="text-xs font-mono mb-1 text-primary">DATE/INT32</span>
+                  <span className="text-sm font-medium text-primary">Both</span>
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-tertiary">
+                Choose how to display column data types in the viewer
+              </p>
+            </div>
+
             {/* Recent Files Settings */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">

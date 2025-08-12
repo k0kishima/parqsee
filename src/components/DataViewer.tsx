@@ -11,6 +11,8 @@ interface DataViewerProps {
 interface ColumnInfo {
   name: string;
   column_type: string;
+  logical_type?: string;
+  physical_type: string;
 }
 
 interface ParquetMetadata {
@@ -383,7 +385,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                     {metadata?.columns.map((col, index) => (
                       <th
                         key={index}
-                        className={`px-4 py-3 text-left font-medium border-r last:border-r-0 ${
+                        className={`px-4 py-3 text-left font-medium border-r last:border-r-0 whitespace-nowrap ${
                           effectiveTheme === 'dark' ? 'text-gray-200 border-gray-600' : 'text-slate-700 border-slate-200'
                         } ${
                           isColumnMatch(index) ? 'bg-yellow-100' : ''
@@ -396,7 +398,16 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                           }
                         </div>
                         <div className={`font-normal text-xs mt-0.5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-500'}`}>
-                          {col.column_type.replace("PhysicalType(", "").replace(")", "")}
+                          {(() => {
+                            const typeDisplay = settings.typeDisplay || 'logical';
+                            if (typeDisplay === 'both' && col.logical_type) {
+                              return `${col.logical_type} / ${col.physical_type.replace("PhysicalType(", "").replace(")", "")}`;
+                            } else if (typeDisplay === 'physical') {
+                              return col.physical_type.replace("PhysicalType(", "").replace(")", "");
+                            } else {
+                              return col.logical_type || col.physical_type.replace("PhysicalType(", "").replace(")", "");
+                            }
+                          })()}
                         </div>
                       </th>
                     ))}
@@ -419,7 +430,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                       {metadata?.columns.map((col, colIndex) => (
                         <td
                           key={colIndex}
-                          className={`px-4 py-2.5 text-sm border-r last:border-r-0 ${
+                          className={`px-4 py-2.5 text-sm border-r last:border-r-0 whitespace-nowrap ${
                             effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'
                           } ${
                             isCurrentMatch(rowIndex, colIndex) 

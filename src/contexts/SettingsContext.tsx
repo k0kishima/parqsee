@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
+type TypeDisplay = 'logical' | 'physical' | 'both';
 
 interface Settings {
   theme: Theme;
   rowsPerPage: number;
   showRecentFiles: boolean;
+  typeDisplay: TypeDisplay;
 }
 
 interface SettingsContextType {
@@ -17,7 +19,8 @@ interface SettingsContextType {
 const defaultSettings: Settings = {
   theme: 'system',
   rowsPerPage: 100,
-  showRecentFiles: true
+  showRecentFiles: true,
+  typeDisplay: 'logical'
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

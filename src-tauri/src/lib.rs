@@ -5,6 +5,7 @@ use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::record::Row;
 use base64::{Engine as _, engine::general_purpose};
 use tauri::{Emitter, DragDropEvent};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetMetadata {
@@ -17,6 +18,8 @@ struct ParquetMetadata {
 struct ColumnInfo {
     name: String,
     column_type: String,
+    logical_type: Option<String>,
+    physical_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,9 +50,134 @@ async fn open_parquet_file(path: String) -> Result<ParquetMetadata, String> {
     let columns: Vec<ColumnInfo> = schema
         .get_fields()
         .iter()
-        .map(|field| ColumnInfo {
-            name: field.name().to_string(),
-            column_type: format!("{:?}", field.get_physical_type()),
+        .map(|field| {
+            // Get logical type if available, otherwise fall back to physical type
+            let type_str = if let Some(logical_type) = field.get_basic_info().logical_type() {
+                match logical_type {
+                    parquet::basic::LogicalType::String => "STRING".to_string(),
+                    parquet::basic::LogicalType::Map => "MAP".to_string(),
+                    parquet::basic::LogicalType::List => "LIST".to_string(),
+                    parquet::basic::LogicalType::Enum => "ENUM".to_string(),
+                    parquet::basic::LogicalType::Decimal { precision, scale } => {
+                        format!("DECIMAL({},{})", precision, scale)
+                    },
+                    parquet::basic::LogicalType::Date => "DATE".to_string(),
+                    parquet::basic::LogicalType::Time { is_adjusted_to_u_t_c, unit } => {
+                        format!("TIME({:?}, UTC:{})", unit, is_adjusted_to_u_t_c)
+                    },
+                    parquet::basic::LogicalType::Timestamp { is_adjusted_to_u_t_c, unit } => {
+                        format!("TIMESTAMP({:?}, UTC:{})", unit, is_adjusted_to_u_t_c)
+                    },
+                    parquet::basic::LogicalType::Integer { bit_width, is_signed } => {
+                        format!("INT{}{}", bit_width, if is_signed { "" } else { "_UNSIGNED" })
+                    },
+                    parquet::basic::LogicalType::Unknown => "UNKNOWN".to_string(),
+                    parquet::basic::LogicalType::Json => "JSON".to_string(),
+                    parquet::basic::LogicalType::Bson => "BSON".to_string(),
+                    parquet::basic::LogicalType::Uuid => "UUID".to_string(),
+                    parquet::basic::LogicalType::Float16 => "FLOAT16".to_string(),
+                    parquet::basic::LogicalType::Variant => "VARIANT".to_string(),
+                    parquet::basic::LogicalType::Geometry => "GEOMETRY".to_string(),
+                    parquet::basic::LogicalType::Geography => "GEOGRAPHY".to_string(),
+                }
+            } else {
+                // Check converted type for older Parquet files or fall back to physical type
+                let converted_type = field.get_basic_info().converted_type();
+                match converted_type {
+                    parquet::basic::ConvertedType::UTF8 => "STRING".to_string(),
+                    parquet::basic::ConvertedType::MAP => "MAP".to_string(),
+                    parquet::basic::ConvertedType::LIST => "LIST".to_string(),
+                    parquet::basic::ConvertedType::ENUM => "ENUM".to_string(),
+                    parquet::basic::ConvertedType::DECIMAL => "DECIMAL".to_string(),
+                    parquet::basic::ConvertedType::DATE => "DATE".to_string(),
+                    parquet::basic::ConvertedType::TIME_MILLIS => "TIME_MILLIS".to_string(),
+                    parquet::basic::ConvertedType::TIME_MICROS => "TIME_MICROS".to_string(),
+                    parquet::basic::ConvertedType::TIMESTAMP_MILLIS => "TIMESTAMP_MILLIS".to_string(),
+                    parquet::basic::ConvertedType::TIMESTAMP_MICROS => "TIMESTAMP_MICROS".to_string(),
+                    parquet::basic::ConvertedType::UINT_8 => "UINT8".to_string(),
+                    parquet::basic::ConvertedType::UINT_16 => "UINT16".to_string(),
+                    parquet::basic::ConvertedType::UINT_32 => "UINT32".to_string(),
+                    parquet::basic::ConvertedType::UINT_64 => "UINT64".to_string(),
+                    parquet::basic::ConvertedType::INT_8 => "INT8".to_string(),
+                    parquet::basic::ConvertedType::INT_16 => "INT16".to_string(),
+                    parquet::basic::ConvertedType::INT_32 => "INT32".to_string(),
+                    parquet::basic::ConvertedType::INT_64 => "INT64".to_string(),
+                    parquet::basic::ConvertedType::JSON => "JSON".to_string(),
+                    parquet::basic::ConvertedType::BSON => "BSON".to_string(),
+                    parquet::basic::ConvertedType::INTERVAL => "INTERVAL".to_string(),
+                    parquet::basic::ConvertedType::MAP_KEY_VALUE => "MAP_KEY_VALUE".to_string(),
+                    parquet::basic::ConvertedType::NONE => {
+                        // Fall back to physical type
+                        format!("{:?}", field.get_physical_type())
+                    }
+                }
+            };
+            
+            let physical_type = format!("{:?}", field.get_physical_type());
+            let logical_type = if let Some(logical_type) = field.get_basic_info().logical_type() {
+                Some(match logical_type {
+                    parquet::basic::LogicalType::String => "STRING".to_string(),
+                    parquet::basic::LogicalType::Map => "MAP".to_string(),
+                    parquet::basic::LogicalType::List => "LIST".to_string(),
+                    parquet::basic::LogicalType::Enum => "ENUM".to_string(),
+                    parquet::basic::LogicalType::Decimal { precision, scale } => {
+                        format!("DECIMAL({},{})", precision, scale)
+                    },
+                    parquet::basic::LogicalType::Date => "DATE".to_string(),
+                    parquet::basic::LogicalType::Time { is_adjusted_to_u_t_c, unit } => {
+                        format!("TIME({:?}, UTC:{})", unit, is_adjusted_to_u_t_c)
+                    },
+                    parquet::basic::LogicalType::Timestamp { is_adjusted_to_u_t_c, unit } => {
+                        format!("TIMESTAMP({:?}, UTC:{})", unit, is_adjusted_to_u_t_c)
+                    },
+                    parquet::basic::LogicalType::Integer { bit_width, is_signed } => {
+                        format!("INT{}{}", bit_width, if is_signed { "" } else { "_UNSIGNED" })
+                    },
+                    parquet::basic::LogicalType::Unknown => "UNKNOWN".to_string(),
+                    parquet::basic::LogicalType::Json => "JSON".to_string(),
+                    parquet::basic::LogicalType::Bson => "BSON".to_string(),
+                    parquet::basic::LogicalType::Uuid => "UUID".to_string(),
+                    parquet::basic::LogicalType::Float16 => "FLOAT16".to_string(),
+                    parquet::basic::LogicalType::Variant => "VARIANT".to_string(),
+                    parquet::basic::LogicalType::Geometry => "GEOMETRY".to_string(),
+                    parquet::basic::LogicalType::Geography => "GEOGRAPHY".to_string(),
+                })
+            } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE {
+                Some(match field.get_basic_info().converted_type() {
+                    parquet::basic::ConvertedType::UTF8 => "STRING".to_string(),
+                    parquet::basic::ConvertedType::MAP => "MAP".to_string(),
+                    parquet::basic::ConvertedType::LIST => "LIST".to_string(),
+                    parquet::basic::ConvertedType::ENUM => "ENUM".to_string(),
+                    parquet::basic::ConvertedType::DECIMAL => "DECIMAL".to_string(),
+                    parquet::basic::ConvertedType::DATE => "DATE".to_string(),
+                    parquet::basic::ConvertedType::TIME_MILLIS => "TIME_MILLIS".to_string(),
+                    parquet::basic::ConvertedType::TIME_MICROS => "TIME_MICROS".to_string(),
+                    parquet::basic::ConvertedType::TIMESTAMP_MILLIS => "TIMESTAMP_MILLIS".to_string(),
+                    parquet::basic::ConvertedType::TIMESTAMP_MICROS => "TIMESTAMP_MICROS".to_string(),
+                    parquet::basic::ConvertedType::UINT_8 => "UINT8".to_string(),
+                    parquet::basic::ConvertedType::UINT_16 => "UINT16".to_string(),
+                    parquet::basic::ConvertedType::UINT_32 => "UINT32".to_string(),
+                    parquet::basic::ConvertedType::UINT_64 => "UINT64".to_string(),
+                    parquet::basic::ConvertedType::INT_8 => "INT8".to_string(),
+                    parquet::basic::ConvertedType::INT_16 => "INT16".to_string(),
+                    parquet::basic::ConvertedType::INT_32 => "INT32".to_string(),
+                    parquet::basic::ConvertedType::INT_64 => "INT64".to_string(),
+                    parquet::basic::ConvertedType::JSON => "JSON".to_string(),
+                    parquet::basic::ConvertedType::BSON => "BSON".to_string(),
+                    parquet::basic::ConvertedType::INTERVAL => "INTERVAL".to_string(),
+                    parquet::basic::ConvertedType::MAP_KEY_VALUE => "MAP_KEY_VALUE".to_string(),
+                    parquet::basic::ConvertedType::NONE => unreachable!(),
+                })
+            } else {
+                None
+            };
+            
+            ColumnInfo {
+                name: field.name().to_string(),
+                column_type: logical_type.clone().unwrap_or_else(|| physical_type.clone()),
+                logical_type,
+                physical_type,
+            }
         })
         .collect();
     
@@ -100,24 +228,196 @@ fn row_to_json(row: &Row) -> serde_json::Value {
             parquet::record::Field::Short(v) => serde_json::Value::Number((*v).into()),
             parquet::record::Field::Int(v) => serde_json::Value::Number((*v).into()),
             parquet::record::Field::Long(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::UByte(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::UShort(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::UInt(v) => serde_json::Value::Number((*v).into()),
+            parquet::record::Field::ULong(v) => serde_json::Value::Number((*v).into()),
             parquet::record::Field::Float(v) => serde_json::Value::Number(
                 serde_json::Number::from_f64(*v as f64).unwrap_or(serde_json::Number::from(0))
             ),
             parquet::record::Field::Double(v) => serde_json::Value::Number(
                 serde_json::Number::from_f64(*v).unwrap_or(serde_json::Number::from(0))
             ),
+            parquet::record::Field::Decimal(d) => {
+                // Convert decimal to string for accurate representation
+                serde_json::Value::String(format!("{:?}", d))
+            },
             parquet::record::Field::Str(v) => serde_json::Value::String(v.clone()),
             parquet::record::Field::Bytes(v) => serde_json::Value::String(
                 general_purpose::STANDARD.encode(v.data())
             ),
+            parquet::record::Field::Date(v) => {
+                // Date is days since Unix epoch (1970-01-01)
+                let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+                let date = epoch + chrono::Duration::days(*v as i64);
+                serde_json::Value::String(date.format("%Y-%m-%d").to_string())
+            },
+            parquet::record::Field::TimestampMillis(v) => {
+                // Timestamp in milliseconds since Unix epoch
+                let seconds = v / 1000;
+                let nanos = ((v % 1000) * 1_000_000) as u32;
+                if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                    serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+                } else {
+                    serde_json::Value::Number((*v).into())
+                }
+            },
+            parquet::record::Field::TimestampMicros(v) => {
+                // Timestamp in microseconds since Unix epoch
+                let seconds = v / 1_000_000;
+                let nanos = ((v % 1_000_000) * 1000) as u32;
+                if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                    serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+                } else {
+                    serde_json::Value::Number((*v).into())
+                }
+            },
+            parquet::record::Field::TimeMillis(v) => {
+                // Time in milliseconds since midnight
+                let hours = v / (60 * 60 * 1000);
+                let minutes = (v % (60 * 60 * 1000)) / (60 * 1000);
+                let seconds = (v % (60 * 1000)) / 1000;
+                let millis = v % 1000;
+                if let Some(time) = NaiveTime::from_hms_milli_opt(hours as u32, minutes as u32, seconds as u32, millis as u32) {
+                    serde_json::Value::String(time.format("%H:%M:%S%.3f").to_string())
+                } else {
+                    serde_json::Value::Number((*v).into())
+                }
+            },
+            parquet::record::Field::TimeMicros(v) => {
+                // Time in microseconds since midnight
+                let hours = v / (60 * 60 * 1_000_000);
+                let minutes = (v % (60 * 60 * 1_000_000)) / (60 * 1_000_000);
+                let seconds = (v % (60 * 1_000_000)) / 1_000_000;
+                let micros = v % 1_000_000;
+                if let Some(time) = NaiveTime::from_hms_micro_opt(hours as u32, minutes as u32, seconds as u32, micros as u32) {
+                    serde_json::Value::String(time.format("%H:%M:%S%.6f").to_string())
+                } else {
+                    serde_json::Value::Number((*v).into())
+                }
+            },
+            parquet::record::Field::Float16(v) => {
+                // Convert f16 to f64 for JSON
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(v.to_f64()).unwrap_or(serde_json::Number::from(0))
+                )
+            },
+            parquet::record::Field::Group(g) => {
+                // Handle nested groups recursively
+                row_to_json(g)
+            },
+            parquet::record::Field::ListInternal(list) => {
+                // Handle lists
+                let items: Vec<serde_json::Value> = list.elements()
+                    .iter()
+                    .map(|field| field_to_json(field))
+                    .collect();
+                serde_json::Value::Array(items)
+            },
+            parquet::record::Field::MapInternal(map_field) => {
+                // Handle maps
+                let mut json_map = serde_json::Map::new();
+                for (k, v) in map_field.entries() {
+                    json_map.insert(field_to_json(k).to_string(), field_to_json(v));
+                }
+                serde_json::Value::Object(json_map)
+            },
             parquet::record::Field::Null => serde_json::Value::Null,
-            _ => serde_json::Value::Null,
         };
         
         map.insert(name.clone(), json_value);
     }
     
     serde_json::Value::Object(map)
+}
+
+fn field_to_json(field: &parquet::record::Field) -> serde_json::Value {
+    match field {
+        parquet::record::Field::Bool(v) => serde_json::Value::Bool(*v),
+        parquet::record::Field::Byte(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::Short(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::Int(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::Long(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::UByte(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::UShort(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::UInt(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::ULong(v) => serde_json::Value::Number((*v).into()),
+        parquet::record::Field::Float(v) => serde_json::Value::Number(
+            serde_json::Number::from_f64(*v as f64).unwrap_or(serde_json::Number::from(0))
+        ),
+        parquet::record::Field::Double(v) => serde_json::Value::Number(
+            serde_json::Number::from_f64(*v).unwrap_or(serde_json::Number::from(0))
+        ),
+        parquet::record::Field::Decimal(d) => serde_json::Value::String(format!("{:?}", d)),
+        parquet::record::Field::Str(v) => serde_json::Value::String(v.clone()),
+        parquet::record::Field::Bytes(v) => serde_json::Value::String(
+            general_purpose::STANDARD.encode(v.data())
+        ),
+        parquet::record::Field::Date(v) => {
+            let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+            let date = epoch + chrono::Duration::days(*v as i64);
+            serde_json::Value::String(date.format("%Y-%m-%d").to_string())
+        },
+        parquet::record::Field::TimestampMillis(v) => {
+            let seconds = v / 1000;
+            let nanos = ((v % 1000) * 1_000_000) as u32;
+            if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+            } else {
+                serde_json::Value::Number((*v).into())
+            }
+        },
+        parquet::record::Field::TimestampMicros(v) => {
+            let seconds = v / 1_000_000;
+            let nanos = ((v % 1_000_000) * 1000) as u32;
+            if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+            } else {
+                serde_json::Value::Number((*v).into())
+            }
+        },
+        parquet::record::Field::TimeMillis(v) => {
+            let hours = v / (60 * 60 * 1000);
+            let minutes = (v % (60 * 60 * 1000)) / (60 * 1000);
+            let seconds = (v % (60 * 1000)) / 1000;
+            let millis = v % 1000;
+            if let Some(time) = NaiveTime::from_hms_milli_opt(hours as u32, minutes as u32, seconds as u32, millis as u32) {
+                serde_json::Value::String(time.format("%H:%M:%S%.3f").to_string())
+            } else {
+                serde_json::Value::Number((*v).into())
+            }
+        },
+        parquet::record::Field::TimeMicros(v) => {
+            let hours = v / (60 * 60 * 1_000_000);
+            let minutes = (v % (60 * 60 * 1_000_000)) / (60 * 1_000_000);
+            let seconds = (v % (60 * 1_000_000)) / 1_000_000;
+            let micros = v % 1_000_000;
+            if let Some(time) = NaiveTime::from_hms_micro_opt(hours as u32, minutes as u32, seconds as u32, micros as u32) {
+                serde_json::Value::String(time.format("%H:%M:%S%.6f").to_string())
+            } else {
+                serde_json::Value::Number((*v).into())
+            }
+        },
+        parquet::record::Field::Float16(v) => serde_json::Value::Number(
+            serde_json::Number::from_f64(v.to_f64()).unwrap_or(serde_json::Number::from(0))
+        ),
+        parquet::record::Field::Group(g) => row_to_json(g),
+        parquet::record::Field::ListInternal(list) => {
+            let items: Vec<serde_json::Value> = list.elements()
+                .iter()
+                .map(|f| field_to_json(f))
+                .collect();
+            serde_json::Value::Array(items)
+        },
+        parquet::record::Field::MapInternal(map_field) => {
+            let mut json_map = serde_json::Map::new();
+            for (k, v) in map_field.entries() {
+                json_map.insert(field_to_json(k).to_string(), field_to_json(v));
+            }
+            serde_json::Value::Object(json_map)
+        },
+        parquet::record::Field::Null => serde_json::Value::Null,
+    }
 }
 
 #[tauri::command]
