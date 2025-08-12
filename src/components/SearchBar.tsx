@@ -49,7 +49,7 @@ export function SearchBar({
     // Set new timer for debouncing
     debounceTimerRef.current = setTimeout(() => {
       onSearchChange(value);
-    }, 500); // 500ms delay
+    }, 300); // 300ms delay for faster response
   }, [onSearchChange]);
 
   // Cleanup on unmount
@@ -65,6 +65,20 @@ export function SearchBar({
     if (e.key === "Escape") {
       onClose();
     } else if (e.key === "Enter") {
+      e.preventDefault(); // Prevent form submission
+      if (e.shiftKey) {
+        onPrevious();
+      } else {
+        onNext();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      onPrevious();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      onNext();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "g") {
+      e.preventDefault();
       if (e.shiftKey) {
         onPrevious();
       } else {
@@ -99,6 +113,10 @@ export function SearchBar({
           onKeyDown={handleKeyDown}
           placeholder="Search in table..."
           className="pl-10 pr-3 py-2 w-64 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
         />
         {localSearchTerm && (
           <button
