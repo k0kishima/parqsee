@@ -5,7 +5,7 @@ use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::record::Row;
 use base64::{Engine as _, engine::general_purpose};
 use tauri::{Emitter, DragDropEvent};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDate, NaiveTime, DateTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetMetadata {
@@ -52,7 +52,7 @@ async fn open_parquet_file(path: String) -> Result<ParquetMetadata, String> {
         .iter()
         .map(|field| {
             // Get logical type if available, otherwise fall back to physical type
-            let type_str = if let Some(logical_type) = field.get_basic_info().logical_type() {
+            let _type_str = if let Some(logical_type) = field.get_basic_info().logical_type() {
                 match logical_type {
                     parquet::basic::LogicalType::String => "STRING".to_string(),
                     parquet::basic::LogicalType::Map => "MAP".to_string(),
@@ -256,7 +256,7 @@ fn row_to_json(row: &Row) -> serde_json::Value {
                 // Timestamp in milliseconds since Unix epoch
                 let seconds = v / 1000;
                 let nanos = ((v % 1000) * 1_000_000) as u32;
-                if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
                     serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
                 } else {
                     serde_json::Value::Number((*v).into())
@@ -266,7 +266,7 @@ fn row_to_json(row: &Row) -> serde_json::Value {
                 // Timestamp in microseconds since Unix epoch
                 let seconds = v / 1_000_000;
                 let nanos = ((v % 1_000_000) * 1000) as u32;
-                if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+                if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
                     serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
                 } else {
                     serde_json::Value::Number((*v).into())
@@ -361,7 +361,7 @@ fn field_to_json(field: &parquet::record::Field) -> serde_json::Value {
         parquet::record::Field::TimestampMillis(v) => {
             let seconds = v / 1000;
             let nanos = ((v % 1000) * 1_000_000) as u32;
-            if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
                 serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
             } else {
                 serde_json::Value::Number((*v).into())
@@ -370,7 +370,7 @@ fn field_to_json(field: &parquet::record::Field) -> serde_json::Value {
         parquet::record::Field::TimestampMicros(v) => {
             let seconds = v / 1_000_000;
             let nanos = ((v % 1_000_000) * 1000) as u32;
-            if let Some(dt) = NaiveDateTime::from_timestamp_opt(seconds, nanos) {
+            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
                 serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
             } else {
                 serde_json::Value::Number((*v).into())

@@ -102,6 +102,16 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
     }
   };
 
+  const handleRefresh = async () => {
+    console.log('Refresh button clicked');
+    // Reset to first page and reload metadata and data
+    setCurrentPage(1);
+    setSearchTerm('');
+    setPendingSearchTerm('');
+    setIsSearchOpen(false);
+    await loadFile();
+  };
+
   const totalPages = metadata ? Math.ceil(metadata.num_rows / rowsPerPage) : 1;
   const fileName = filePath.split('/').pop() || filePath;
 
@@ -329,8 +339,14 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               Search
             </button>
             <button
-              onClick={loadData}
+              onClick={handleRefresh}
+              disabled={loading}
+              title="Refresh file"
               className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${
+                loading 
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''
+              } ${
                 effectiveTheme === 'dark' 
                   ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
