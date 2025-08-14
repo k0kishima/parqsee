@@ -1,8 +1,8 @@
-import { useState, useCallback, DragEvent, useEffect } from "react";
+import { useState, useCallback, DragEvent, useEffect, useMemo, useTransition, startTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { DataViewer } from "./components/DataViewer";
+import { TabContent, TabState } from "./components/TabContent";
 import { SettingsModal } from "./components/SettingsModal";
 import FileExplorer from "./components/FileExplorer";
 import TabBar from "./components/TabBar";
@@ -23,6 +23,8 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
+  const [isPending, startTransition] = useTransition();
   const { recentFiles, addRecentFile, removeRecentFile } = useRecentFiles();
   const { settings, effectiveTheme } = useSettings();
   
@@ -35,6 +37,38 @@ function App() {
         e.preventDefault();
         if (activeTabId) {
           handleTabClose(activeTabId);
+        }
+      }
+      // Cmd+Shift+[ or Cmd+Option+Left for previous tab (Mac standard)
+      else if ((e.metaKey && e.shiftKey && e.key === '[') || 
+               (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
+        e.preventDefault();
+        const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+        if (currentIndex > 0) {
+          handleTabSelect(tabs[currentIndex - 1].id);
+        } else if (tabs.length > 0) {
+          // Wrap to last tab
+          handleTabSelect(tabs[tabs.length - 1].id);
+        }
+      }
+      // Cmd+Shift+] or Cmd+Option+Right for next tab (Mac standard)
+      else if ((e.metaKey && e.shiftKey && e.key === ']') || 
+               (e.metaKey && e.altKey && e.key === 'ArrowRight')) {
+        e.preventDefault();
+        const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+        if (currentIndex < tabs.length - 1) {
+          handleTabSelect(tabs[currentIndex + 1].id);
+        } else if (tabs.length > 0) {
+          // Wrap to first tab
+          handleTabSelect(tabs[0].id);
+        }
+      }
+      // Cmd+1-9 to switch to specific tab
+      else if (e.metaKey && e.key >= '1' && e.key <= '9') {
+        e.preventDefault();
+        const tabIndex = parseInt(e.key) - 1;
+        if (tabIndex < tabs.length) {
+          handleTabSelect(tabs[tabIndex].id);
         }
       }
     };
@@ -187,15 +221,20 @@ function App() {
     }
   };
 
-  const handleTabSelect = (tabId: string) => {
+  const handleTabSelect = useCallback((tabId: string) => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab) {
-      setActiveTabId(tabId);
-      setCurrentFile(tab.path);
+      // Use requestAnimationFrame for smoother transitions
+      requestAnimationFrame(() => {
+        startTransition(() => {
+          setActiveTabId(tabId);
+          setCurrentFile(tab.path);
+        });
+      });
     }
-  };
+  }, [tabs]);
 
-  const handleTabClose = (tabId: string) => {
+  const handleTabClose = useCallback((tabId: string) => {
     const tabIndex = tabs.findIndex(t => t.id === tabId);
     const newTabs = tabs.filter(t => t.id !== tabId);
     setTabs(newTabs);
@@ -212,7 +251,7 @@ function App() {
         setCurrentFile(null);
       }
     }
-  };
+  }, [tabs, activeTabId]);
 
   if (currentFile && tabs.length > 0) {
     return (
@@ -258,17 +297,24 @@ function App() {
             onTabClose={handleTabClose}
           />
           
-          {/* DataViewer takes remaining space */}
-          <div className="flex-1 overflow-hidden">
-            <DataViewer 
-              filePath={currentFile} 
-              onClose={() => {
-                // Close current tab when DataViewer close button is clicked
-                if (activeTabId) {
-                  handleTabClose(activeTabId);
-                }
-              }} 
-            />
+          {/* Only render the active tab for better performance */}
+          <div className="flex-1 overflow-hidden relative">
+            {tabs.map(tab => (
+              <TabContent
+                key={tab.id}
+                tab={tab}
+                isActive={tab.id === activeTabId}
+                onClose={() => handleTabClose(tab.id)}
+                savedState={tabStates[tab.id]}
+                onStateChange={(state) => {
+                  setTabStates(prev => ({ ...prev, [tab.id]: state }));
+                }}
+              />
+            ))}
+            {/* Loading indicator for tab transitions */}
+            {isPending && (
+              <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500 animate-pulse" />
+            )}
           </div>
         </div>
       </div>

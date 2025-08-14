@@ -18,7 +18,7 @@ interface SettingsContextType {
 
 const defaultSettings: Settings = {
   theme: 'system',
-  rowsPerPage: 100,
+  rowsPerPage: 50,  // Reduced default for better performance
   showRecentFiles: true,
   typeDisplay: 'logical'
 };

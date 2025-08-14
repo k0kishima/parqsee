@@ -15,7 +15,7 @@ interface TabBarProps {
   onTabClose: (tabId: string) => void;
 }
 
-const TabBar: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose }) => {
+const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose }) => {
   const { effectiveTheme } = useSettings();
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
@@ -88,5 +88,22 @@ const TabBar: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabCl
     </div>
   );
 };
+
+// Memoize TabBar to prevent unnecessary re-renders
+const TabBar = React.memo(TabBarComponent, (prevProps, nextProps) => {
+  // Deep comparison for tabs array
+  if (prevProps.tabs.length !== nextProps.tabs.length) return false;
+  if (prevProps.activeTabId !== nextProps.activeTabId) return false;
+  
+  // Check if tabs content changed
+  for (let i = 0; i < prevProps.tabs.length; i++) {
+    if (prevProps.tabs[i].id !== nextProps.tabs[i].id || 
+        prevProps.tabs[i].name !== nextProps.tabs[i].name) {
+      return false;
+    }
+  }
+  
+  return true;
+});
 
 export default TabBar;

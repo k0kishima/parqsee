@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "../contexts/SettingsContext";
 import { SearchBar } from "./SearchBar";
@@ -21,7 +21,7 @@ interface ParquetMetadata {
   columns: ColumnInfo[];
 }
 
-export function DataViewer({ filePath, onClose }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const { settings, effectiveTheme } = useSettings();
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
   const [data, setData] = useState<any[]>([]);
@@ -418,46 +418,56 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row, rowIndex) => (
-                    <tr
-                      key={rowIndex}
-                      onClick={() => setSelectedRow(rowIndex)}
-                      className={`
-                        border-b cursor-pointer transition-colors
-                        ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'}
-                        ${selectedRow === rowIndex 
-                          ? effectiveTheme === 'dark' ? 'bg-blue-900 hover:bg-blue-800' : 'bg-blue-50 hover:bg-blue-100' 
-                          : effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-slate-50'
-                        }
-                      `}
-                    >
-                      {metadata?.columns.map((col, colIndex) => (
-                        <td
-                          key={colIndex}
-                          className={`px-4 py-2.5 text-sm border-r last:border-r-0 whitespace-nowrap ${
-                            effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'
-                          } ${
-                            isCurrentMatch(rowIndex, colIndex) 
-                              ? 'bg-orange-200' 
-                              : searchTerm && row[col.name] !== null && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
-                              ? 'bg-yellow-100'
-                              : ''
-                          }`}
-                        >
-                          {row[col.name] !== null && row[col.name] !== undefined ? (
-                            <span className={`font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-slate-900'}`}>
-                              {searchTerm && String(row[col.name]).toLowerCase().includes(searchTerm.toLowerCase())
-                                ? highlightText(String(row[col.name]))
-                                : String(row[col.name])
-                              }
-                            </span>
-                          ) : (
-                            <span className={`italic font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-400'}`}>NULL</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {data.map((row, rowIndex) => {
+                    const rowKey = `row-${currentPage}-${rowIndex}`;
+                    return (
+                      <tr
+                        key={rowKey}
+                        onClick={() => setSelectedRow(rowIndex)}
+                        className={`
+                          border-b cursor-pointer transition-colors
+                          ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'}
+                          ${selectedRow === rowIndex 
+                            ? effectiveTheme === 'dark' ? 'bg-blue-900 hover:bg-blue-800' : 'bg-blue-50 hover:bg-blue-100' 
+                            : effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-slate-50'
+                          }
+                        `}
+                      >
+                        {metadata?.columns.map((col, colIndex) => {
+                          const cellKey = `${rowKey}-${colIndex}`;
+                          const cellValue = row[col.name];
+                          const cellValueStr = cellValue !== null && cellValue !== undefined ? String(cellValue) : null;
+                          const hasSearchMatch = searchTerm && cellValueStr && cellValueStr.toLowerCase().includes(searchTerm.toLowerCase());
+                          
+                          return (
+                            <td
+                              key={cellKey}
+                              className={`px-4 py-2.5 text-sm border-r last:border-r-0 whitespace-nowrap ${
+                                effectiveTheme === 'dark' ? 'border-gray-700' : 'border-slate-100'
+                              } ${
+                                isCurrentMatch(rowIndex, colIndex) 
+                                  ? 'bg-orange-200' 
+                                  : hasSearchMatch
+                                  ? 'bg-yellow-100'
+                                  : ''
+                              }`}
+                            >
+                              {cellValueStr !== null ? (
+                                <span className={`font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-slate-900'}`}>
+                                  {hasSearchMatch
+                                    ? highlightText(cellValueStr)
+                                    : cellValueStr
+                                  }
+                                </span>
+                              ) : (
+                                <span className={`italic font-mono text-xs ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-400'}`}>NULL</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -541,3 +551,10 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
     </div>
   );
 }
+
+// Memoize DataViewer to prevent unnecessary re-renders
+export const DataViewer = React.memo(DataViewerComponent, (prevProps, nextProps) => {
+  // Only re-render if filePath changes
+  // onClose is a stable function reference, so we don't need to check it
+  return prevProps.filePath === nextProps.filePath;
+});
