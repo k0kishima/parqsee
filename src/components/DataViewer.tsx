@@ -48,6 +48,10 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   useEffect(() => {
     if (metadata) {
       loadData();
+      // Scroll to top of table when page changes
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTop = 0;
+      }
     }
   }, [currentPage, metadata, rowsPerPage]);
 
