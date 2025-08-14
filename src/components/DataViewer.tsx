@@ -33,6 +33,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const rowsPerPage = settings.rowsPerPage;
   
   // Track when search term changes but debounced hasn't fired yet
@@ -62,6 +63,8 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setIsSearchOpen(true);
+        // Trigger focus even if search bar is already open
+        setSearchFocusTrigger(prev => prev + 1);
       }
     };
 
@@ -292,6 +295,7 @@ export function DataViewer({ filePath, onClose }: DataViewerProps) {
         onNext={handleNextMatch}
         onPrevious={handlePreviousMatch}
         isSearching={isSearching}
+        focusTrigger={searchFocusTrigger}
       />
 
       {/* Header */}

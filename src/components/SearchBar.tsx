@@ -10,6 +10,7 @@ interface SearchBarProps {
   onNext: () => void;
   onPrevious: () => void;
   isSearching?: boolean;
+  focusTrigger?: number;
 }
 
 export function SearchBar({
@@ -22,6 +23,7 @@ export function SearchBar({
   onNext,
   onPrevious,
   isSearching = false,
+  focusTrigger = 0,
 }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
@@ -32,7 +34,7 @@ export function SearchBar({
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, [isOpen]);
+  }, [isOpen, focusTrigger]); // Also trigger on focusTrigger change
 
   useEffect(() => {
     setLocalSearchTerm(searchTerm);
