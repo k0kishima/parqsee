@@ -6,6 +6,8 @@ use parquet::record::Row;
 use base64::{Engine as _, engine::general_purpose};
 use tauri::{Emitter, DragDropEvent};
 use chrono::{NaiveDate, NaiveTime, DateTime};
+use std::io::Write;
+use csv::Writer;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetMetadata {
@@ -493,13 +495,185 @@ async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
+#[tauri::command]
+async fn export_data(
+    source_path: String,
+    export_path: String,
+    format: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<String, String> {
+    // Read parquet file
+    let file = File::open(&source_path).map_err(|e| e.to_string())?;
+    let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
+    
+    let metadata = reader.metadata();
+    let schema = metadata.file_metadata().schema();
+    let total_rows = metadata.file_metadata().num_rows() as usize;
+    
+    // Get column names
+    let columns: Vec<String> = schema
+        .get_fields()
+        .iter()
+        .map(|field| field.name().to_string())
+        .collect();
+    
+    let mut iter = reader.get_row_iter(None).map_err(|e| e.to_string())?;
+    
+    // Skip to offset if provided
+    let offset = offset.unwrap_or(0);
+    for _ in 0..offset {
+        if iter.next().is_none() {
+            break;
+        }
+    }
+    
+    // Determine how many rows to export
+    let limit = limit.unwrap_or(total_rows - offset);
+    let rows_to_export = limit.min(total_rows - offset);
+    
+    // Collect data
+    let mut rows_data = Vec::new();
+    for _ in 0..rows_to_export {
+        match iter.next() {
+            Some(Ok(row)) => {
+                rows_data.push(row);
+            }
+            Some(Err(e)) => return Err(e.to_string()),
+            None => break,
+        }
+    }
+    
+    // Export based on format
+    match format.to_lowercase().as_str() {
+        "csv" => export_to_csv(&export_path, &columns, &rows_data),
+        "json" => export_to_json(&export_path, &rows_data),
+        _ => Err(format!("Unsupported export format: {}", format)),
+    }?;
+    
+    Ok(format!("Successfully exported {} rows to {}", rows_data.len(), export_path))
+}
+
+fn export_to_csv(path: &str, columns: &[String], rows: &[Row]) -> Result<(), String> {
+    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    
+    // Write UTF-8 BOM for Excel compatibility
+    file.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
+    
+    let mut writer = Writer::from_writer(file);
+    
+    // Write header
+    writer.write_record(columns).map_err(|e| e.to_string())?;
+    
+    // Write data rows
+    for row in rows {
+        let mut record = Vec::new();
+        for col_name in columns {
+            let value = row.get_column_iter()
+                .find(|(name, _)| *name == col_name)
+                .map(|(_, field)| field_to_string(field))
+                .unwrap_or_else(|| "".to_string());
+            record.push(value);
+        }
+        writer.write_record(&record).map_err(|e| e.to_string())?;
+    }
+    
+    writer.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn export_to_json(path: &str, rows: &[Row]) -> Result<(), String> {
+    let json_rows: Vec<serde_json::Value> = rows.iter()
+        .map(|row| row_to_json(row))
+        .collect();
+    
+    let json_string = serde_json::to_string_pretty(&json_rows)
+        .map_err(|e| e.to_string())?;
+    
+    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    file.write_all(json_string.as_bytes()).map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+
+fn field_to_string(field: &parquet::record::Field) -> String {
+    match field {
+        parquet::record::Field::Bool(v) => v.to_string(),
+        parquet::record::Field::Byte(v) => v.to_string(),
+        parquet::record::Field::Short(v) => v.to_string(),
+        parquet::record::Field::Int(v) => v.to_string(),
+        parquet::record::Field::Long(v) => v.to_string(),
+        parquet::record::Field::UByte(v) => v.to_string(),
+        parquet::record::Field::UShort(v) => v.to_string(),
+        parquet::record::Field::UInt(v) => v.to_string(),
+        parquet::record::Field::ULong(v) => v.to_string(),
+        parquet::record::Field::Float(v) => v.to_string(),
+        parquet::record::Field::Double(v) => v.to_string(),
+        parquet::record::Field::Decimal(d) => format!("{:?}", d),
+        parquet::record::Field::Str(v) => v.clone(),
+        parquet::record::Field::Bytes(v) => general_purpose::STANDARD.encode(v.data()),
+        parquet::record::Field::Date(v) => {
+            let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+            let date = epoch + chrono::Duration::days(*v as i64);
+            date.format("%Y-%m-%d").to_string()
+        },
+        parquet::record::Field::TimestampMillis(v) => {
+            let seconds = v / 1000;
+            let nanos = ((v % 1000) * 1_000_000) as u32;
+            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
+                dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+            } else {
+                v.to_string()
+            }
+        },
+        parquet::record::Field::TimestampMicros(v) => {
+            let seconds = v / 1_000_000;
+            let nanos = ((v % 1_000_000) * 1000) as u32;
+            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
+                dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+            } else {
+                v.to_string()
+            }
+        },
+        parquet::record::Field::TimeMillis(v) => {
+            let hours = v / (60 * 60 * 1000);
+            let minutes = (v % (60 * 60 * 1000)) / (60 * 1000);
+            let seconds = (v % (60 * 1000)) / 1000;
+            let millis = v % 1000;
+            if let Some(time) = NaiveTime::from_hms_milli_opt(hours as u32, minutes as u32, seconds as u32, millis as u32) {
+                time.format("%H:%M:%S%.3f").to_string()
+            } else {
+                v.to_string()
+            }
+        },
+        parquet::record::Field::TimeMicros(v) => {
+            let hours = v / (60 * 60 * 1_000_000);
+            let minutes = (v % (60 * 60 * 1_000_000)) / (60 * 1_000_000);
+            let seconds = (v % (60 * 1_000_000)) / 1_000_000;
+            let micros = v % 1_000_000;
+            if let Some(time) = NaiveTime::from_hms_micro_opt(hours as u32, minutes as u32, seconds as u32, micros as u32) {
+                time.format("%H:%M:%S%.6f").to_string()
+            } else {
+                v.to_string()
+            }
+        },
+        parquet::record::Field::Float16(v) => v.to_f64().to_string(),
+        parquet::record::Field::Group(_) => "[GROUP]".to_string(),
+        parquet::record::Field::ListInternal(_) => "[LIST]".to_string(),
+        parquet::record::Field::MapInternal(_) => "[MAP]".to_string(),
+        parquet::record::Field::Null => "".to_string(),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info, list_directory, check_file_exists])
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![open_parquet_file, read_parquet_data, get_file_info, list_directory, check_file_exists, export_data])
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {

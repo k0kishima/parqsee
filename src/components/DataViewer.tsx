@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "../contexts/SettingsContext";
 import { SearchBar } from "./SearchBar";
+import { ExportModal } from "./ExportModal";
 
 interface DataViewerProps {
   filePath: string;
@@ -34,6 +35,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const rowsPerPage = settings.rowsPerPage;
   
   // Track when search term changes but debounced hasn't fired yet
@@ -362,6 +364,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               Refresh
             </button>
             <button
+              onClick={() => setIsExportModalOpen(true)}
               className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${
                 effectiveTheme === 'dark' 
                   ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
@@ -568,6 +571,16 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
           </>
         )}
       </div>
+
+      {/* Export Modal */}
+      {metadata && (
+        <ExportModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          filePath={filePath}
+          totalRows={metadata.num_rows}
+        />
+      )}
     </div>
   );
 }
