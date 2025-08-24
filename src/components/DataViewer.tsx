@@ -37,10 +37,6 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const rowsPerPage = settings.rowsPerPage;
-  
-  // Track when search term changes but debounced hasn't fired yet
-  const [pendingSearchTerm, setPendingSearchTerm] = useState("");
-  const searchTimerRef = useRef<NodeJS.Timeout>();
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -113,7 +109,6 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
     // Reset to first page and reload metadata and data
     setCurrentPage(1);
     setSearchTerm('');
-    setPendingSearchTerm('');
     setIsSearchOpen(false);
     await loadFile();
   };
@@ -121,72 +116,63 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const totalPages = metadata ? Math.ceil(metadata.num_rows / rowsPerPage) : 1;
   const fileName = filePath.split('/').pop() || filePath;
 
-  // Search functionality
+  // Optimized search functionality with early returns
   const searchMatches = useMemo(() => {
     if (!searchTerm || !metadata || !data) return [];
 
     const matches: Array<{ rowIndex: number; colIndex: number; value: string }> = [];
     const lowerSearchTerm = searchTerm.toLowerCase();
+    const maxMatches = 1000; // Limit to prevent performance issues
 
-    // Search in column names
-    metadata.columns.forEach((col, colIndex) => {
+    // Search in column names first (fast)
+    for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
+      const col = metadata.columns[colIndex];
       if (col.name.toLowerCase().includes(lowerSearchTerm)) {
         matches.push({ rowIndex: -1, colIndex, value: col.name });
+        if (matches.length >= maxMatches) return matches;
       }
-    });
+    }
 
-    // Search in data
-    data.forEach((row, rowIndex) => {
-      metadata.columns.forEach((col, colIndex) => {
+    // Search in data with early exit
+    outerLoop: for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
+      const row = data[rowIndex];
+      for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
+        const col = metadata.columns[colIndex];
         const value = row[col.name];
         if (value !== null && value !== undefined) {
           const stringValue = String(value);
           if (stringValue.toLowerCase().includes(lowerSearchTerm)) {
             matches.push({ rowIndex, colIndex, value: stringValue });
+            if (matches.length >= maxMatches) break outerLoop;
           }
         }
-      });
-    });
+      }
+    }
 
     return matches;
   }, [searchTerm, data, metadata]);
 
-  const handleSearchChange = useCallback((term: string) => {
-    setPendingSearchTerm(term);
+  const handleSearchSubmit = useCallback((value: string) => {
+    const trimmedValue = value.trim();
     
-    // Clear existing timer
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
-
-    // Show searching indicator only when there's text and after a short delay
-    if (term.trim()) {
-      // Delay before showing "Searching..." and performing search
-      searchTimerRef.current = setTimeout(() => {
-        setIsSearching(true);
-        setSearchTerm(term);
+    if (trimmedValue) {
+      // Show searching indicator
+      setIsSearching(true);
+      
+      // Perform search immediately
+      setTimeout(() => {
+        setSearchTerm(trimmedValue);
         setCurrentMatchIndex(0);
-        // Hide searching indicator shortly after
-        setTimeout(() => {
-          setIsSearching(false);
-        }, 50); // Very short delay just to show the indicator
-      }, 400); // Wait 400ms before starting search
+        setIsSearching(false);
+      }, 50); // Very short delay just to show the searching indicator
     } else {
-      // Clear search immediately if empty
-      setSearchTerm(term);
+      // Clear search if input is empty
+      setSearchTerm("");
       setCurrentMatchIndex(0);
       setIsSearching(false);
     }
   }, []);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) {
-        clearTimeout(searchTimerRef.current);
-      }
-    };
-  }, []);
 
   const scrollToMatch = useCallback((matchIndex: number) => {
     if (!tableContainerRef.current || !searchMatches[matchIndex]) return;
@@ -297,12 +283,11 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
       {/* Search Bar */}
       <SearchBar
         isOpen={isSearchOpen}
-        searchTerm={pendingSearchTerm || searchTerm}
-        onSearchChange={handleSearchChange}
+        searchTerm={searchTerm}
+        onSearchSubmit={handleSearchSubmit}
         onClose={() => {
           setIsSearchOpen(false);
           setSearchTerm("");
-          setPendingSearchTerm("");
           setCurrentMatchIndex(0);
           setIsSearching(false);
         }}
@@ -586,8 +571,4 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
 }
 
 // Memoize DataViewer to prevent unnecessary re-renders
-export const DataViewer = React.memo(DataViewerComponent, (prevProps, nextProps) => {
-  // Only re-render if filePath changes
-  // onClose is a stable function reference, so we don't need to check it
-  return prevProps.filePath === nextProps.filePath;
-});
+export const DataViewer = React.memo(DataViewerComponent);

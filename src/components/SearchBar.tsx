@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SearchBarProps {
   isOpen: boolean;
   searchTerm: string;
-  onSearchChange: (term: string) => void;
+  onSearchSubmit: (value: string) => void;
   onClose: () => void;
   currentMatch: number;
   totalMatches: number;
@@ -11,12 +11,13 @@ interface SearchBarProps {
   onPrevious: () => void;
   isSearching?: boolean;
   focusTrigger?: number;
+  initialValue?: string;
 }
 
 export function SearchBar({
   isOpen,
   searchTerm,
-  onSearchChange,
+  onSearchSubmit,
   onClose,
   currentMatch,
   totalMatches,
@@ -24,53 +25,39 @@ export function SearchBar({
   onPrevious,
   isSearching = false,
   focusTrigger = 0,
+  initialValue = "",
 }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
-  const debounceTimerRef = useRef<NodeJS.Timeout>();
+  // Manage input value internally to prevent parent re-renders
+  const [localInputValue, setLocalInputValue] = useState(initialValue);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, [isOpen, focusTrigger]); // Also trigger on focusTrigger change
+  }, [isOpen, focusTrigger]);
 
+  // Reset local input when search bar is closed
   useEffect(() => {
-    setLocalSearchTerm(searchTerm);
-  }, [searchTerm]);
-
-  const handleSearchChange = useCallback((value: string) => {
-    setLocalSearchTerm(value);
-    
-    // Clear existing timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
+    if (!isOpen) {
+      setLocalInputValue("");
     }
-
-    // Set new timer for debouncing
-    debounceTimerRef.current = setTimeout(() => {
-      onSearchChange(value);
-    }, 300); // 300ms delay for faster response
-  }, [onSearchChange]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  }, [isOpen]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       onClose();
     } else if (e.key === "Enter") {
-      e.preventDefault(); // Prevent form submission
-      if (e.shiftKey) {
+      e.preventDefault();
+      if (!searchTerm || searchTerm !== localInputValue) {
+        // If no search has been performed yet or input changed, perform search
+        onSearchSubmit(localInputValue);
+      } else if (e.shiftKey) {
+        // Navigate to previous match
         onPrevious();
       } else {
+        // Navigate to next match
         onNext();
       }
     } else if (e.key === "ArrowUp") {
@@ -87,6 +74,11 @@ export function SearchBar({
         onNext();
       }
     }
+  };
+
+  const handleClear = () => {
+    setLocalInputValue("");
+    onSearchSubmit(""); // Clear search results
   };
 
   if (!isOpen) return null;
@@ -110,19 +102,19 @@ export function SearchBar({
         <input
           ref={inputRef}
           type="text"
-          value={localSearchTerm}
-          onChange={(e) => handleSearchChange(e.target.value)}
+          value={localInputValue}
+          onChange={(e) => setLocalInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Search in table..."
+          placeholder="Type and press Enter to search..."
           className="pl-10 pr-3 py-2 w-64 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
         />
-        {localSearchTerm && (
+        {localInputValue && (
           <button
-            onClick={() => handleSearchChange("")}
+            onClick={handleClear}
             className="absolute right-2 p-1 hover:bg-slate-100 rounded"
             title="Clear search"
           >
@@ -143,7 +135,7 @@ export function SearchBar({
         )}
       </div>
 
-      {localSearchTerm && !isSearching && totalMatches > 0 && (
+      {searchTerm && !isSearching && totalMatches > 0 && (
         <div className="flex items-center space-x-2 text-sm text-slate-600">
           <span className="whitespace-nowrap">
             {currentMatch} / {totalMatches}
@@ -193,14 +185,14 @@ export function SearchBar({
         </div>
       )}
 
-      {localSearchTerm && isSearching && (
+      {isSearching && (
         <div className="flex items-center space-x-2">
           <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-600"></div>
           <span className="text-sm text-slate-500">Searching...</span>
         </div>
       )}
 
-      {localSearchTerm && !isSearching && totalMatches === 0 && (
+      {searchTerm && !isSearching && totalMatches === 0 && (
         <span className="text-sm text-slate-500">No results</span>
       )}
 
