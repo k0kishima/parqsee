@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface SearchBarProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export function SearchBar({
   focusTrigger = 0,
   initialValue = "",
 }: SearchBarProps) {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   // Manage input value internally to prevent parent re-renders
   const [localInputValue, setLocalInputValue] = useState(initialValue);
@@ -105,7 +107,7 @@ export function SearchBar({
           value={localInputValue}
           onChange={(e) => setLocalInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type and press Enter to search..."
+          placeholder={t('viewer.searchPlaceholder')}
           className="pl-10 pr-3 py-2 w-64 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           autoComplete="off"
           autoCorrect="off"
@@ -199,7 +201,7 @@ export function SearchBar({
       <button
         onClick={onClose}
         className="p-1.5 hover:bg-slate-100 rounded-md"
-        title="Close (Esc)"
+        title={t('viewer.closeTooltip')}
       >
         <svg
           className="w-4 h-4 text-slate-400"

@@ -1,0 +1,102 @@
+{
+    "common": {
+        "fileExplorer": "File Explorer",
+        "openFile": "Open File",
+        "recentFiles": "Recent Files",
+        "cancel": "Cancel",
+        "saveChanges": "Save Changes",
+        "close": "Close",
+        "closeTab": "Close tab",
+        "showSidebar": "Show sidebar",
+        "hideSidebar": "Hide sidebar",
+        "export": "Export",
+        "appName": "Parqsee"
+    },
+    "welcome": {
+        "subtitle": "Fast and simple Parquet file viewer",
+        "dropZone": {
+            "title": "Drop your Parquet file here",
+            "subtitle": "or click the button below to browse",
+            "browse": "Browse Files",
+            "hint": "Supports .parquet files • Press ⌘+O to open"
+        },
+        "recentFiles": {
+            "empty": "No recent files yet. Open a Parquet file to see it here.",
+            "remove": "Remove from recent files"
+        },
+        "features": {
+            "performance": {
+                "title": "Fast Performance",
+                "desc": "Native Rust backend for blazing fast file processing"
+            },
+            "usability": {
+                "title": "Easy to Use",
+                "desc": "Simple drag & drop interface with keyboard shortcuts"
+            },
+            "largeFiles": {
+                "title": "Large Files",
+                "desc": "Efficient pagination for handling massive datasets"
+            }
+        }
+    },
+    "settings": {
+        "title": "Settings",
+        "language": "Language",
+        "languageDesc": "Choose your preferred language for the interface",
+        "theme": "Theme",
+        "themeOptions": {
+            "light": "Light",
+            "dark": "Dark",
+            "system": "System"
+        },
+        "rowsPerPage": "Rows per page",
+        "rowsPerPageDesc": "Number of rows to display per page in the data viewer",
+        "typeDisplay": "Column Type Display",
+        "typeDisplayDesc": "Choose how to display column data types in the viewer",
+        "typeDisplayOptions": {
+            "logical": "Logical",
+            "physical": "Physical",
+            "both": "Both"
+        },
+        "showRecentFiles": "Show recent files",
+        "recentFilesDesc": "Recent files are limited to the most recent 5 files",
+        "clearRecentFiles": "Clear Recent Files",
+        "confirmClearRecent": "Are you sure you want to clear all recent files?"
+    },
+    "viewer": {
+        "search": "Search",
+        "searchPlaceholder": "Type and press Enter to search...",
+        "closeTooltip": "Close (Esc)",
+        "refresh": "Refresh",
+        "export": "Export",
+        "loading": "Loading data...",
+        "error": "Error Loading File",
+        "pagination": {
+            "showing": "Showing {{start}} to {{end}} of {{total}} entries",
+            "previous": "Previous",
+            "next": "Next",
+            "of": "of {{total}}"
+        },
+        "summary": "{{rows}} rows × {{columns}} columns"
+    },
+    "export": {
+        "title": "Export Data",
+        "format": "Export Format",
+        "formats": {
+            "csv": "CSV (Comma-separated values)",
+            "json": "JSON (JavaScript Object Notation)"
+        },
+        "range": "Export Range",
+        "ranges": {
+            "all": "All rows ({{total}} rows)",
+            "custom": "Custom range"
+        },
+        "startRow": "Start Row",
+        "endRow": "End Row",
+        "exporting": "Exporting...",
+        "success": {
+            "title": "Export Complete",
+            "body": "Successfully exported to {{file}}"
+        }
+    }
+}

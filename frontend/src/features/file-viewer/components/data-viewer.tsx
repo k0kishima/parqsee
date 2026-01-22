@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { ExportModal } from "./export-modal";
@@ -11,6 +12,7 @@ interface DataViewerProps {
 
 function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const { settings, effectiveTheme } = useSettings();
+  const { t } = useTranslation();
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -246,13 +248,13 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
       <div className={`h-full p-8 ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
         <div className="max-w-4xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 shadow-sm">
-            <h2 className="text-red-800 font-semibold mb-2 text-lg">Error Loading File</h2>
+            <h2 className="text-red-800 font-semibold mb-2 text-lg">{t('viewer.error')}</h2>
             <p className="text-red-600 mb-4">{error}</p>
             <button
               onClick={onClose}
               className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm"
             >
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>
@@ -291,7 +293,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               </h1>
               {metadata && (
                 <p className={`text-sm mt-0.5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
-                  {metadata.num_rows.toLocaleString()} rows × {metadata.num_columns} columns
+                  {t('viewer.summary', { rows: metadata.num_rows.toLocaleString(), columns: metadata.num_columns })}
                 </p>
               )}
             </div>
@@ -308,7 +310,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              Search
+              {t('viewer.search')}
             </button>
             <button
               onClick={handleRefresh}
@@ -325,7 +327,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Refresh
+              {t('viewer.refresh')}
             </button>
             <button
               onClick={() => setIsExportModalOpen(true)}
@@ -337,7 +339,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              Export
+              {t('viewer.export')}
             </button>
             <button
               onClick={onClose}
@@ -349,7 +351,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>
@@ -361,7 +363,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-              <div className={`${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>Loading data...</div>
+              <div className={`${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>{t('viewer.loading')}</div>
             </div>
           </div>
         ) : (
@@ -456,9 +458,11 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
             {/* Footer with Pagination */}
             <div className={`px-6 py-3 flex items-center justify-between border-t ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
               <div className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
-                Showing {((currentPage - 1) * rowsPerPage) + 1} to{' '}
-                {Math.min(currentPage * rowsPerPage, metadata?.num_rows || 0)} of{' '}
-                {metadata?.num_rows.toLocaleString()} entries
+                {t('viewer.pagination.showing', {
+                  start: ((currentPage - 1) * rowsPerPage) + 1,
+                  end: Math.min(currentPage * rowsPerPage, metadata?.num_rows || 0),
+                  total: metadata?.num_rows.toLocaleString()
+                })}
               </div>
 
               <div className="flex items-center space-x-2">
@@ -479,7 +483,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
                     : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                     }`}
                 >
-                  Previous
+                  {t('viewer.pagination.previous')}
                 </button>
 
                 <div className="flex items-center space-x-1">
@@ -499,7 +503,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
                       : 'bg-white border-slate-300 text-slate-700'
                       }`}
                   />
-                  <span className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>of {totalPages}</span>
+                  <span className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>{t('viewer.pagination.of', { total: totalPages })}</span>
                 </div>
 
                 <button
@@ -510,7 +514,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
                     : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                     }`}
                 >
-                  Next
+                  {t('viewer.pagination.next')}
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}

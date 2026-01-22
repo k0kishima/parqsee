@@ -1,4 +1,5 @@
 import React, { useState, useCallback, DragEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { useSettings } from '../../../contexts/SettingsContext';
 
@@ -9,6 +10,7 @@ interface DropZoneProps {
 
 export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) => {
     const { effectiveTheme } = useSettings();
+    const { t } = useTranslation();
     const [isDragging, setIsDragging] = useState(false);
 
     const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -80,10 +82,10 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                 </div>
 
                 <h2 className={`text-xl font-semibold mb-2 ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-slate-900'}`}>
-                    Drop your Parquet file here
+                    {t('welcome.dropZone.title')}
                 </h2>
                 <p className={`text-sm mb-6 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-500'}`}>
-                    or click the button below to browse
+                    {t('welcome.dropZone.subtitle')}
                 </p>
 
                 <button
@@ -91,11 +93,11 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     className={`inline-flex items-center px-6 py-2.5 text-sm text-white rounded-lg transition-colors ${effectiveTheme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-slate-900 hover:bg-slate-800'
                         }`}
                 >
-                    Browse Files
+                    {t('welcome.dropZone.browse')}
                 </button>
 
                 <p className={`mt-6 text-xs ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-400'}`}>
-                    Supports .parquet files • Press ⌘+O to open
+                    {t('welcome.dropZone.hint')}
                 </p>
             </div>
 

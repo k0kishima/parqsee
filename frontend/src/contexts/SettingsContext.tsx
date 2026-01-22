@@ -1,13 +1,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import i18n from '../lib/i18n';
 
 type Theme = 'light' | 'dark' | 'system';
 type TypeDisplay = 'logical' | 'physical' | 'both';
+type Language = 'en' | 'ja';
 
 interface Settings {
   theme: Theme;
   rowsPerPage: number;
   showRecentFiles: boolean;
   typeDisplay: TypeDisplay;
+  language: Language;
 }
 
 interface SettingsContextType {
@@ -20,7 +23,8 @@ const defaultSettings: Settings = {
   theme: 'system',
   rowsPerPage: 50,  // Reduced default for better performance
   showRecentFiles: true,
-  typeDisplay: 'logical'
+  typeDisplay: 'logical',
+  language: 'en'
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -37,6 +41,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   });
 
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
+
+  // Sync language with i18n
+  // Sync language with i18n
+  useEffect(() => {
+    if (i18n.language !== settings.language) {
+      i18n.changeLanguage(settings.language);
+    }
+  }, [settings.language]);
 
   useEffect(() => {
     // Save settings to localStorage when they change

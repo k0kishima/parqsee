@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
+import { useTranslation } from "react-i18next";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { exportData } from "../api";
 
@@ -13,6 +14,7 @@ interface ExportModalProps {
 
 export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModalProps) {
   const { effectiveTheme } = useSettings();
+  const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
   const [startRow, setStartRow] = useState(1);
@@ -79,8 +81,8 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
       // Send notification
       const fileName = savePath.split('/').pop() || savePath.split('\\').pop() || savePath;
       await sendNotification({
-        title: "Export Complete",
-        body: `Successfully exported to ${fileName}`,
+        title: t('export.success.title'),
+        body: t('export.success.body', { file: fileName }),
         icon: "done"
       });
 
@@ -102,7 +104,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           }`}>
           <h2 className={`text-lg font-semibold ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-gray-900'
             }`}>
-            Export Data
+            {t('export.title')}
           </h2>
         </div>
 
@@ -111,7 +113,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           <div>
             <label className={`block text-sm font-medium mb-2 ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-gray-700'
               }`}>
-              Export Format
+              {t('export.format')}
             </label>
             <div className="space-y-2">
               <label className="flex items-center">
@@ -123,7 +125,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   className="mr-2"
                 />
                 <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                  CSV (Comma-separated values)
+                  {t('export.formats.csv')}
                 </span>
               </label>
               <label className="flex items-center">
@@ -135,7 +137,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   className="mr-2"
                 />
                 <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                  JSON (JavaScript Object Notation)
+                  {t('export.formats.json')}
                 </span>
               </label>
             </div>
@@ -145,7 +147,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           <div>
             <label className={`block text-sm font-medium mb-2 ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-gray-700'
               }`}>
-              Export Range
+              {t('export.range')}
             </label>
             <div className="space-y-2">
               <label className="flex items-center">
@@ -157,7 +159,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   className="mr-2"
                 />
                 <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                  All rows ({totalRows.toLocaleString()} rows)
+                  {t('export.ranges.all', { total: totalRows.toLocaleString() })}
                 </span>
               </label>
               <label className="flex items-center">
@@ -169,7 +171,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   className="mr-2"
                 />
                 <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                  Custom range
+                  {t('export.ranges.custom')}
                 </span>
               </label>
             </div>
@@ -181,7 +183,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
               <div className="flex-1">
                 <label className={`block text-xs mb-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'
                   }`}>
-                  Start Row
+                  {t('export.startRow')}
                 </label>
                 <input
                   type="number"
@@ -198,7 +200,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
               <div className="flex-1">
                 <label className={`block text-xs mb-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'
                   }`}>
-                  End Row
+                  {t('export.endRow')}
                 </label>
                 <input
                   type="number"
@@ -233,7 +235,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
               : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
               } ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleExport}
@@ -243,7 +245,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
               : 'bg-blue-600 hover:bg-blue-700'
               }`}
           >
-            {isExporting ? 'Exporting...' : 'Export'}
+            {isExporting ? t('export.exporting') : t('common.export')}
           </button>
         </div>
       </div>

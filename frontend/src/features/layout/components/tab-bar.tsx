@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, FileText } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 
@@ -17,6 +18,7 @@ interface TabBarProps {
 
 const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose }) => {
   const { effectiveTheme } = useSettings();
+  const { t } = useTranslation();
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation(); // Prevent tab selection when closing
@@ -73,7 +75,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
                   p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600
                   ${tabs.length === 1 ? 'hidden' : ''}
                 `}
-                title="Close tab"
+                title={t('common.closeTab')}
               >
                 <X className={`w-3 h-3 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'
                   }`} />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight, ChevronDown, Folder, FileText, File } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { listDirectory, FileEntry } from '../api';
@@ -17,6 +18,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [currentDir, setCurrentDir] = useState<string>('');
   const { effectiveTheme } = useSettings();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (currentPath) {
@@ -146,7 +148,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   return (
     <div className={`${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-r overflow-y-auto ${className}`}>
       <div className={`p-3 border-b ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-        <h3 className={`text-sm font-semibold ${effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>File Explorer</h3>
+        <h3 className={`text-sm font-semibold ${effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{t('common.fileExplorer')}</h3>
         {currentDir && (
           <p className={`text-xs mt-1 truncate ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} title={currentDir}>
             {currentDir}

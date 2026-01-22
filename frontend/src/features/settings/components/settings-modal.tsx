@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
 
@@ -11,6 +12,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { settings, updateSettings } = useSettings();
   const { clearRecentFiles } = useRecentFiles();
   const [localSettings, setLocalSettings] = useState(settings);
+  const { t } = useTranslation();
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -43,7 +45,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-primary">
             <h2 className="text-lg font-semibold text-primary">
-              Settings
+              {t('settings.title')}
             </h2>
             <button
               onClick={handleCancel}
@@ -57,10 +59,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {/* Content */}
           <div className="px-6 py-6 space-y-6 max-h-[60vh] overflow-y-auto">
+
+            {/* Language Setting */}
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-2">
+                {t('settings.language')}
+              </label>
+              <div className="relative">
+                <select
+                  value={localSettings.language}
+                  onChange={(e) => setLocalSettings({ ...localSettings, language: e.target.value as 'en' | 'ja' })}
+                  className="w-full appearance-none px-4 py-2.5 text-sm border border-primary rounded-lg bg-primary text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-secondary transition-colors cursor-pointer"
+                >
+                  <option value="en">English (US)</option>
+                  <option value="ja">日本語</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-secondary">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-tertiary">
+                {t('settings.languageDesc')}
+              </p>
+            </div>
+
             {/* Theme Setting */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">
-                Theme
+                {t('settings.theme')}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <button
@@ -76,7 +104,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <svg className="w-6 h-6 mb-2 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
-                  <span className="text-sm font-medium text-primary">Light</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.themeOptions.light')}</span>
                 </button>
 
                 <button
@@ -92,7 +120,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <svg className="w-6 h-6 mb-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                   </svg>
-                  <span className="text-sm font-medium text-primary">Dark</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.themeOptions.dark')}</span>
                 </button>
 
                 <button
@@ -108,7 +136,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <svg className="w-6 h-6 mb-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <span className="text-sm font-medium text-primary">System</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.themeOptions.system')}</span>
                 </button>
               </div>
             </div>
@@ -116,7 +144,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {/* Rows Per Page Setting */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">
-                Rows per page
+                {t('settings.rowsPerPage')}
               </label>
               <div className="flex items-center space-x-4">
                 <input
@@ -145,15 +173,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   />
                 </div>
               </div>
+
               <p className="mt-2 text-xs text-tertiary">
-                Number of rows to display per page in the data viewer
+                {t('settings.rowsPerPageDesc')}
               </p>
             </div>
 
             {/* Type Display Setting */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">
-                Column Type Display
+                {t('settings.typeDisplay')}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <button
@@ -167,7 +196,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   `}
                 >
                   <span className="text-xs font-mono mb-1 text-primary">DATE</span>
-                  <span className="text-sm font-medium text-primary">Logical</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.typeDisplayOptions.logical')}</span>
                 </button>
 
                 <button
@@ -181,7 +210,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   `}
                 >
                   <span className="text-xs font-mono mb-1 text-primary">INT32</span>
-                  <span className="text-sm font-medium text-primary">Physical</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.typeDisplayOptions.physical')}</span>
                 </button>
 
                 <button
@@ -195,22 +224,22 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   `}
                 >
                   <span className="text-xs font-mono mb-1 text-primary">DATE/INT32</span>
-                  <span className="text-sm font-medium text-primary">Both</span>
+                  <span className="text-sm font-medium text-primary">{t('settings.typeDisplayOptions.both')}</span>
                 </button>
               </div>
               <p className="mt-2 text-xs text-tertiary">
-                Choose how to display column data types in the viewer
+                {t('settings.typeDisplayDesc')}
               </p>
             </div>
 
             {/* Recent Files Settings */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">
-                Recent Files
+                {t('common.recentFiles')}
               </label>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-primary">Show recent files</span>
+                  <span className="text-sm text-primary">{t('settings.showRecentFiles')}</span>
                   <button
                     onClick={() => setLocalSettings({ ...localSettings, showRecentFiles: !localSettings.showRecentFiles })}
                     className={`
@@ -228,19 +257,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
 
                 <p className="text-xs text-tertiary">
-                  Recent files are limited to the most recent 5 files
+                  {t('settings.recentFilesDesc')}
                 </p>
 
                 <button
                   onClick={() => {
-                    if (confirm('Are you sure you want to clear all recent files?')) {
+                    if (confirm(t('settings.confirmClearRecent'))) {
                       clearRecentFiles();
                     }
                   }}
                   className="w-full px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
                   disabled={!localSettings.showRecentFiles}
                 >
-                  Clear Recent Files
+                  {t('settings.clearRecentFiles')}
                 </button>
               </div>
             </div>
@@ -252,17 +281,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               onClick={handleCancel}
               className="px-4 py-2 text-sm font-medium text-secondary hover:bg-tertiary rounded-md transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
             >
-              Save Changes
+              {t('common.saveChanges')}
             </button>
           </div>
         </div>
-      </div>
+      </div >
     </>
   );
 }

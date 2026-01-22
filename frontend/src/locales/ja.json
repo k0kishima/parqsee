@@ -1,0 +1,102 @@
+{
+  "common": {
+    "fileExplorer": "ファイルエクスプローラー",
+    "openFile": "ファイルを開く",
+    "recentFiles": "最近開いたファイル",
+    "cancel": "キャンセル",
+    "saveChanges": "変更を保存",
+    "close": "閉じる",
+    "closeTab": "タブを閉じる",
+    "showSidebar": "サイドバーを表示",
+    "hideSidebar": "サイドバーを隠す",
+    "export": "エクスポート",
+    "appName": "Parqsee"
+  },
+  "welcome": {
+    "subtitle": "高速でシンプルな Parquet ファイルビューアー",
+    "dropZone": {
+      "title": "Parquet ファイルをここにドロップ",
+      "subtitle": "または下のボタンをクリックして参照",
+      "browse": "ファイルを参照",
+      "hint": ".parquet ファイルに対応 • ⌘+O で開く"
+    },
+    "recentFiles": {
+      "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
+      "remove": "履歴から削除"
+    },
+    "features": {
+      "performance": {
+        "title": "高速なパフォーマンス",
+        "desc": "Rust 製バックエンドによる爆速ファイル処理"
+      },
+      "usability": {
+        "title": "使いやすい UI",
+        "desc": "ドラッグ＆ドロップとキーボードショートカットに対応"
+      },
+      "largeFiles": {
+        "title": "巨大ファイル対応",
+        "desc": "効率的なページネーションで大規模データセットも快適"
+      }
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "language": "言語",
+    "languageDesc": "インターフェースの言語を選択してください",
+    "theme": "テーマ",
+    "themeOptions": {
+      "light": "ライト",
+      "dark": "ダーク",
+      "system": "システム"
+    },
+    "rowsPerPage": "1ページあたりの行数",
+    "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
+    "typeDisplay": "列の型表示",
+    "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
+    "typeDisplayOptions": {
+      "logical": "論理型 (DATEなど)",
+      "physical": "物理型 (INT32など)",
+      "both": "両方"
+    },
+    "showRecentFiles": "最近開いたファイルを表示",
+    "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
+    "clearRecentFiles": "履歴を削除",
+    "confirmClearRecent": "本当にすべての履歴を削除しますか？"
+  },
+  "viewer": {
+    "search": "検索",
+    "searchPlaceholder": "検索ワードを入力してEnter...",
+    "closeTooltip": "閉じる (Esc)",
+    "refresh": "更新",
+    "export": "エクスポート",
+    "loading": "読み込み中...",
+    "error": "ファイルの読み込みエラー",
+    "pagination": {
+      "showing": "{{total}} 件中 {{start}} から {{end}} 件を表示",
+      "previous": "前へ",
+      "next": "次へ",
+      "of": "/ {{total}}"
+    },
+    "summary": "{{rows}} 行 × {{columns}} 列"
+  },
+  "export": {
+    "title": "データのエクスポート",
+    "format": "エクスポート形式",
+    "formats": {
+      "csv": "CSV (カンマ区切り)",
+      "json": "JSON (JavaScript Object Notation)"
+    },
+    "range": "エクスポート範囲",
+    "ranges": {
+      "all": "すべての行 ({{total}} 行)",
+      "custom": "カスタム範囲"
+    },
+    "startRow": "開始行",
+    "endRow": "終了行",
+    "exporting": "エクスポート中...",
+    "success": {
+      "title": "エクスポート完了",
+      "body": "{{file}} へのエクスポートに成功しました"
+    }
+  }
+}
