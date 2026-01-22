@@ -20,7 +20,16 @@ A fast and simple Parquet file viewer built with Tauri v2, React, and TypeScript
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (version 18 or higher)
+- [pnpm](https://pnpm.io/) (package manager)
 - [Rust](https://rustup.rs/) (latest stable version)
+
+#### Installing pnpm
+
+If you don't have pnpm installed:
+
+```bash
+npm install -g pnpm
+```
 
 #### Installing Rust
 
@@ -28,19 +37,6 @@ If you don't have Rust installed, run the following command:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-After installation, restart your terminal or run:
-
-```bash
-source "$HOME/.cargo/env"
-```
-
-Verify the installation:
-
-```bash
-rustc --version
-cargo --version
 ```
 
 ### Installation
@@ -52,24 +48,29 @@ cargo --version
    ```
 
 2. **Install dependencies**
+   Navigate to the frontend directory and install dependencies:
    ```bash
-   npm install
+   cd frontend
+   pnpm install
    ```
 
 3. **Run the application**
+   From the `frontend` directory:
    ```bash
-   npm run tauri dev
+   pnpm tauri dev
    ```
 
 The application will start in development mode and open automatically.
 
 ### Building for Production
 
+From the `frontend` directory:
+
 ```bash
-npm run tauri build
+pnpm tauri build
 ```
 
-This creates platform-specific installers in `src-tauri/target/release/bundle/`
+This creates platform-specific installers in `backend/target/release/bundle/` (note: backend artifacts are stored in `backend/target`, not `src-tauri`).
 
 ## Usage
 
@@ -101,6 +102,7 @@ This creates platform-specific installers in `src-tauri/target/release/bundle/`
 - **Tailwind CSS v4** - Utility-first CSS framework
 - **Vite** - Build tool and dev server
 - **Lucide React** - Modern icon library
+- **pnpm** - Fast, disk space efficient package manager
 
 ### Backend
 - **Tauri v2** - Desktop app framework
@@ -109,46 +111,47 @@ This creates platform-specific installers in `src-tauri/target/release/bundle/`
 
 ## Project Structure
 
+This project follows a "Bulletproof React" architecture with a clear separation of frontend and backend.
+
 ```
 parqsee/
-├── src/                    # React frontend source
-│   ├── App.tsx            # Main application component
-│   ├── components/        # React components
-│   │   ├── DataViewer.tsx    # Parquet data display
-│   │   ├── FileExplorer.tsx  # File navigation sidebar
-│   │   ├── TabBar.tsx        # Multi-file tab management
-│   │   ├── SearchBar.tsx     # Search functionality
-│   │   └── SettingsModal.tsx # Settings dialog
-│   ├── contexts/          # React context providers
-│   │   ├── RecentFilesContext.tsx
-│   │   └── SettingsContext.tsx
-│   └── main.tsx          # Application entry point
-├── src-tauri/            # Rust backend source
+├── frontend/                 # React frontend source
 │   ├── src/
-│   │   ├── lib.rs       # Tauri command handlers
-│   │   └── main.rs      # Application entry point
-│   ├── Cargo.toml       # Rust dependencies
-│   └── tauri.conf.json  # Tauri configuration
-├── package.json         # Node.js dependencies
-└── vite.config.ts      # Vite configuration
+│   │   ├── features/         # Feature-based groupings
+│   │   │   ├── file-viewer/  # Core viewer components & API
+│   │   │   ├── file-explorer/# File navigation components & API
+│   │   │   ├── settings/     # Settings components & API
+│   │   │   ├── welcome/      # Welcome screen
+│   │   │   └── layout/       # Shared layout components (TabBar etc.)
+│   │   ├── contexts/         # Global state (Settings, RecentFiles)
+│   │   ├── App.tsx           # Application shell & routing
+│   │   └── main.tsx          # Entry point
+│   ├── package.json          # Frontend dependencies
+│   └── vite.config.ts        # Vite config
+├── backend/                  # Rust backend source (formerly src-tauri)
+│   ├── src/
+│   │   ├── lib.rs            # Tauri command handlers
+│   │   └── main.rs           # Application entry point
+│   ├── Cargo.toml            # Rust dependencies
+│   └── tauri.conf.json       # Tauri configuration
+└── README.md
 ```
 
 ## Development
 
-### Available Scripts
+### Available Scripts (in `frontend/` directory)
 
-- `npm run dev` - Start Vite dev server (frontend only)
-- `npm run tauri dev` - Start Tauri development mode (full app)
-- `npm run build` - Build frontend assets
-- `npm run tauri build` - Build production desktop app
+- `pnpm dev` - Start Vite dev server (web only)
+- `pnpm tauri dev` - Start Tauri development mode (full app)
+- `pnpm build` - Build frontend assets
+- `pnpm tauri build` - Build production desktop app
 - `tsc` - Run TypeScript compiler
 
 ### Adding Features
 
-1. **Frontend Components**: Add React components in `src/components/`
-2. **Backend Commands**: Add Tauri commands in `src-tauri/src/lib.rs`
-3. **Styling**: Use Tailwind CSS classes with dark mode support
-4. **State Management**: Use React Context for global state
+1. **Frontend**: Create a new feature folder in `frontend/src/features/` with `components/`, `api/`, `hooks/`.
+2. **Backend**: Add Tauri commands in `backend/src/lib.rs`.
+3. **Integration**: Create wrapper functions in your feature's `api/index.ts` to call Tauri commands.
 
 ### Tauri Commands
 
@@ -158,6 +161,8 @@ The following commands are exposed from Rust to the frontend:
 - `get_file_info(path: string)` - Returns file metadata
 - `read_parquet_data(path, offset, limit, sort_column?, sort_direction?)` - Reads paginated/sorted data
 - `list_directory(path: string)` - Lists files and directories for file explorer
+- `check_file_exists(path: string)` - Verifies file existence
+- `export_data(...)` - Exports Parquet data to CSV/JSON
 
 ## Troubleshooting
 
@@ -169,7 +174,7 @@ The following commands are exposed from Rust to the frontend:
 
 2. **Rust compilation errors**
    - Make sure you have the latest Rust version: `rustup update`
-   - Clear Cargo cache: `cargo clean`
+   - Clear Cargo cache: `cargo clean` (inside `backend` directory)
 
 3. **File not opening**
    - Ensure the file has `.parquet` extension
@@ -179,7 +184,7 @@ The following commands are exposed from Rust to the frontend:
 ### Performance Tips
 
 - For very large files (>1GB), consider using pagination settings
-- Use search to find specific data instead of scrolling through all rows
+- Use search to find specific data instead of scroll through all rows
 - Close unused tabs to free up memory
 
 ## Contributing
