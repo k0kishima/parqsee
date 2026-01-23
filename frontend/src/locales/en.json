@@ -13,7 +13,6 @@
         "appName": "Parqsee"
     },
     "welcome": {
-        "subtitle": "Fast and simple Parquet file viewer",
         "dropZone": {
             "title": "Drop your Parquet file here",
             "subtitle": "or click the button below to browse",

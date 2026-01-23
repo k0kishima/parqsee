@@ -230,20 +230,14 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           <button
             onClick={onClose}
             disabled={isExporting}
-            className={`px-4 py-2 text-sm border rounded-md ${effectiveTheme === 'dark'
-              ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600'
-              : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-              } ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`btn-secondary border ${effectiveTheme === 'dark' ? 'border-gray-600' : 'border-gray-300'} ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={handleExport}
             disabled={isExporting}
-            className={`px-4 py-2 text-sm text-white rounded-md ${isExporting
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+            className={`btn-primary ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isExporting ? t('export.exporting') : t('common.export')}
           </button>

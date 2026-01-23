@@ -279,13 +279,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <div className="flex items-center justify-end space-x-3 px-6 py-4 border-t border-primary">
             <button
               onClick={handleCancel}
-              className="px-4 py-2 text-sm font-medium text-secondary hover:bg-tertiary rounded-md transition-colors"
+              className="btn-secondary"
             >
               {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              className="btn-primary"
             >
               {t('common.saveChanges')}
             </button>

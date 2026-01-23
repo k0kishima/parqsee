@@ -90,8 +90,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
 
                 <button
                     onClick={onBrowse}
-                    className={`inline-flex items-center px-6 py-2.5 text-sm text-white rounded-lg transition-colors ${effectiveTheme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-slate-900 hover:bg-slate-800'
-                        }`}
+                    className="btn-primary"
                 >
                     {t('welcome.dropZone.browse')}
                 </button>
