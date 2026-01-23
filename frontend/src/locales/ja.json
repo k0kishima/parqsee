@@ -76,7 +76,20 @@
       "next": "次へ",
       "of": "/ {{total}}"
     },
-    "summary": "{{rows}} 行 × {{columns}} 列"
+    "summary": "{{rows}} 行 × {{columns}} 列",
+    "tabs": {
+      "content": "内容",
+      "query": "クエリ"
+    },
+    "query": {
+      "run": "実行",
+      "running": "実行中...",
+      "rows": "{{count}} 件",
+      "duration": "処理時間: {{ms}}ms",
+      "noResults": "表示する結果がありません",
+      "executing": "クエリ実行中...",
+      "error": "エラー"
+    }
   },
   "export": {
     "title": "データのエクスポート",

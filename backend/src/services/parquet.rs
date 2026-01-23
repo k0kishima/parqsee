@@ -54,9 +54,6 @@ pub fn get_metadata(path: &str) -> Result<ParquetMetadata, String> {
                     parquet::basic::LogicalType::Bson => "BSON".to_string(),
                     parquet::basic::LogicalType::Uuid => "UUID".to_string(),
                     parquet::basic::LogicalType::Float16 => "FLOAT16".to_string(),
-                    parquet::basic::LogicalType::Variant => "VARIANT".to_string(),
-                    parquet::basic::LogicalType::Geometry => "GEOMETRY".to_string(),
-                    parquet::basic::LogicalType::Geography => "GEOGRAPHY".to_string(),
                 }
             } else {
                 // Check converted type for older Parquet files or fall back to physical type
@@ -133,9 +130,6 @@ pub fn get_metadata(path: &str) -> Result<ParquetMetadata, String> {
                     parquet::basic::LogicalType::Bson => "BSON".to_string(),
                     parquet::basic::LogicalType::Uuid => "UUID".to_string(),
                     parquet::basic::LogicalType::Float16 => "FLOAT16".to_string(),
-                    parquet::basic::LogicalType::Variant => "VARIANT".to_string(),
-                    parquet::basic::LogicalType::Geometry => "GEOMETRY".to_string(),
-                    parquet::basic::LogicalType::Geography => "GEOGRAPHY".to_string(),
                 })
             } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE
             {

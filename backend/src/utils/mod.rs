@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use chrono::{DateTime, NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate};
 use parquet::record::{Field, Row};
 use serde_json::Value;
 
@@ -57,41 +57,10 @@ pub fn field_to_json(field: &Field) -> Value {
                 Value::Number((*v).into())
             }
         }
-        Field::TimeMillis(v) => {
-            let hours = v / (60 * 60 * 1000);
-            let minutes = (v % (60 * 60 * 1000)) / (60 * 1000);
-            let seconds = (v % (60 * 1000)) / 1000;
-            let millis = v % 1000;
-            if let Some(time) = NaiveTime::from_hms_milli_opt(
-                hours as u32,
-                minutes as u32,
-                seconds as u32,
-                millis as u32,
-            ) {
-                Value::String(time.format("%H:%M:%S%.3f").to_string())
-            } else {
-                Value::Number((*v).into())
-            }
-        }
-        Field::TimeMicros(v) => {
-            let hours = v / (60 * 60 * 1_000_000);
-            let minutes = (v % (60 * 60 * 1_000_000)) / (60 * 1_000_000);
-            let seconds = (v % (60 * 1_000_000)) / 1_000_000;
-            let micros = v % 1_000_000;
-            if let Some(time) = NaiveTime::from_hms_micro_opt(
-                hours as u32,
-                minutes as u32,
-                seconds as u32,
-                micros as u32,
-            ) {
-                Value::String(time.format("%H:%M:%S%.6f").to_string())
-            } else {
-                Value::Number((*v).into())
-            }
-        }
         Field::Float16(v) => Value::Number(
             serde_json::Number::from_f64(v.to_f64()).unwrap_or(serde_json::Number::from(0)),
         ),
+
         Field::Group(g) => row_to_json(g),
         Field::ListInternal(list) => {
             let items: Vec<Value> = list.elements().iter().map(|f| field_to_json(f)).collect();
@@ -147,39 +116,8 @@ pub fn field_to_string(field: &Field) -> String {
                 v.to_string()
             }
         }
-        Field::TimeMillis(v) => {
-            let hours = v / (60 * 60 * 1000);
-            let minutes = (v % (60 * 60 * 1000)) / (60 * 1000);
-            let seconds = (v % (60 * 1000)) / 1000;
-            let millis = v % 1000;
-            if let Some(time) = NaiveTime::from_hms_milli_opt(
-                hours as u32,
-                minutes as u32,
-                seconds as u32,
-                millis as u32,
-            ) {
-                time.format("%H:%M:%S%.3f").to_string()
-            } else {
-                v.to_string()
-            }
-        }
-        Field::TimeMicros(v) => {
-            let hours = v / (60 * 60 * 1_000_000);
-            let minutes = (v % (60 * 60 * 1_000_000)) / (60 * 1_000_000);
-            let seconds = (v % (60 * 1_000_000)) / 1_000_000;
-            let micros = v % 1_000_000;
-            if let Some(time) = NaiveTime::from_hms_micro_opt(
-                hours as u32,
-                minutes as u32,
-                seconds as u32,
-                micros as u32,
-            ) {
-                time.format("%H:%M:%S%.6f").to_string()
-            } else {
-                v.to_string()
-            }
-        }
         Field::Float16(v) => v.to_f64().to_string(),
+
         Field::Group(_) => "[GROUP]".to_string(),
         Field::ListInternal(_) => "[LIST]".to_string(),
         Field::MapInternal(_) => "[MAP]".to_string(),

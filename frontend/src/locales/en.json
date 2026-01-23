@@ -76,7 +76,20 @@
             "next": "Next",
             "of": "of {{total}}"
         },
-        "summary": "{{rows}} rows × {{columns}} columns"
+        "summary": "{{rows}} rows × {{columns}} columns",
+        "tabs": {
+            "content": "Content",
+            "query": "Query"
+        },
+        "query": {
+            "run": "Run",
+            "running": "Running...",
+            "rows": "{{count}} rows",
+            "duration": "Duration: {{ms}}ms",
+            "noResults": "No results to display",
+            "executing": "Executing query...",
+            "error": "Error"
+        }
     },
     "export": {
         "title": "Export Data",

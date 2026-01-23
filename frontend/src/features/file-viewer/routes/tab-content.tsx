@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Table, Database } from 'lucide-react';
+import { useSettings } from '../../../contexts/SettingsContext';
 import { DataViewer } from '../components/data-viewer';
+import { QueryView } from '../../query/routes/query-view';
 
 interface TabContentProps {
   tab: {
@@ -17,16 +21,36 @@ export interface TabState {
   scrollPosition?: number;
   currentPage?: number;
   searchTerm?: string;
+  viewMode?: 'browse' | 'query';
   // Add more state as needed
 }
 
 export const TabContent: React.FC<TabContentProps> = React.memo(({
   tab,
   isActive,
-  onClose
+  onClose,
+  savedState,
+  onStateChange
 }) => {
+  const { t } = useTranslation();
+  const { effectiveTheme } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasBeenActive, setHasBeenActive] = useState(false);
+
+  // Local state if onStateChange is not provided (though it should be)
+  const [localViewMode, setLocalViewMode] = useState<'browse' | 'query'>('browse');
+
+  const viewMode = savedState?.viewMode || localViewMode;
+
+  const handleViewModeChange = (mode: 'browse' | 'query') => {
+    setLocalViewMode(mode);
+    if (onStateChange) {
+      onStateChange({
+        ...savedState,
+        viewMode: mode
+      });
+    }
+  };
 
   useEffect(() => {
     if (isActive && !hasBeenActive) {
@@ -40,25 +64,80 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
     return <div className="flex-1" />;
   }
 
+  // Determine styles based on theme
+  const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-white';
+  const toolbarBg = effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200';
+
+  const getButtonStyle = (mode: 'browse' | 'query') => {
+    const isSelected = viewMode === mode;
+    if (effectiveTheme === 'dark') {
+      return isSelected
+        ? 'bg-gray-800 text-blue-400 ring-1 ring-white/10'
+        : 'text-gray-400 hover:bg-gray-800';
+    } else {
+      return isSelected
+        ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5'
+        : 'text-gray-600 hover:bg-gray-100';
+    }
+  };
+
   return (
     <div
       ref={containerRef}
+      className={`flex flex-col ${containerBg}`}
       style={{
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        display: isActive ? 'block' : 'none',
+        display: isActive ? 'flex' : 'none',
         // Enable hardware acceleration
         transform: 'translateZ(0)',
         willChange: isActive ? 'auto' : 'contents'
       }}
     >
-      <DataViewer
-        filePath={tab.path}
-        onClose={onClose}
-      />
+      {/* View Switcher Toolbar */}
+      <div className={`flex items-center gap-1 p-1 border-b ${toolbarBg}`}>
+        <button
+          onClick={() => handleViewModeChange('browse')}
+          className={`
+                    flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors
+                    ${getButtonStyle('browse')}
+                `}
+        >
+          <Table size={14} />
+          <span>{t('viewer.tabs.content')}</span>
+        </button>
+        <button
+          onClick={() => handleViewModeChange('query')}
+          className={`
+                    flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors
+                    ${getButtonStyle('query')}
+                `}
+        >
+          <Database size={14} />
+          <span>{t('viewer.tabs.query')}</span>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-hidden relative">
+        <div
+          className="h-full w-full"
+          style={{ display: viewMode === 'browse' ? 'block' : 'none' }}
+        >
+          <DataViewer
+            filePath={tab.path}
+            onClose={onClose}
+          />
+        </div>
+        <div
+          className={`absolute inset-0 z-10 ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}
+          style={{ display: viewMode === 'query' ? 'block' : 'none' }}
+        >
+          <QueryView filePath={tab.path} />
+        </div>
+      </div>
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -66,6 +145,12 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   if (prevProps.isActive !== nextProps.isActive) return false;
   if (prevProps.tab.id !== nextProps.tab.id) return false;
   if (prevProps.tab.path !== nextProps.tab.path) return false;
+
+  // Check if viewMode changed in savedState
+  const prevViewMode = prevProps.savedState?.viewMode;
+  const nextViewMode = nextProps.savedState?.viewMode;
+  if (prevViewMode !== nextViewMode) return false;
+
   return true; // Props are equal, skip re-render
 });
 
