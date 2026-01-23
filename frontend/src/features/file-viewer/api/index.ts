@@ -39,8 +39,12 @@ export const getFileInfo = async (path: string): Promise<FileInfo> => {
     return await invoke('get_file_info', { path });
 };
 
-export const readParquetData = async (path: string, offset: number, limit: number): Promise<any[]> => {
-    return await invoke('read_parquet_data', { path, offset, limit });
+export const readParquetData = async (path: string, offset: number, limit: number, filter?: string): Promise<any[]> => {
+    return await invoke('read_parquet_data', { path, offset, limit, filter });
+};
+
+export const countParquetData = async (path: string, filter?: string): Promise<number> => {
+    return await invoke('count_parquet_data', { path, filter });
 };
 
 export const exportData = async (params: ExportDataParams): Promise<string> => {

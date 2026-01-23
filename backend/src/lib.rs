@@ -18,6 +18,7 @@ pub fn run() {
             commands::file::check_file_exists,
             commands::file::list_directory,
             commands::data::read_parquet_data,
+            commands::data::count_parquet_data,
             commands::data::export_data,
             commands::query::execute_sql
         ])

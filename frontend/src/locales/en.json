@@ -10,7 +10,10 @@
         "showSidebar": "Show sidebar",
         "hideSidebar": "Hide sidebar",
         "export": "Export",
-        "appName": "Parqsee"
+        "appName": "Parqsee",
+        "apply": "Apply",
+        "clear": "Clear",
+        "addCondition": "Add Condition"
     },
     "welcome": {
         "dropZone": {
@@ -76,6 +79,9 @@
             "next": "Next",
             "of": "of {{total}}"
         },
+        "filter": "Filter",
+        "filterPlaceholder": "WHERE clause (e.g. id > 5)",
+        "filterValuePlaceholder": "Value...",
         "summary": "{{rows}} rows × {{columns}} columns",
         "tabs": {
             "content": "Content",

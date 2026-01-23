@@ -22,9 +22,6 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading }
     const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200';
     const toolbarBg = effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-800' : 'bg-gray-50 border-gray-200';
     const textareaColor = effectiveTheme === 'dark' ? 'text-gray-100' : 'text-gray-900';
-    const buttonBg = isLoading
-        ? (effectiveTheme === 'dark' ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
-        : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm';
 
     return (
         <div className={`flex flex-col h-full border-b ${containerBg}`}>
@@ -34,8 +31,8 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading }
                     onClick={() => onExecute(query)}
                     disabled={isLoading}
                     className={`
-                        flex items-center gap-2 px-4 py-1.5 rounded text-sm font-medium transition-colors
-                        ${buttonBg} ${isLoading ? 'cursor-not-allowed' : ''}
+                        btn-primary px-4 py-1.5 text-sm h-8 gap-2
+                        ${isLoading ? 'cursor-not-allowed opacity-70' : ''}
                     `}
                 >
                     <Play className="w-3.5 h-3.5 fill-current" />

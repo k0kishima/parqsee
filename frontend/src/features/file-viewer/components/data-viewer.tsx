@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
+import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
-import { openParquetFile, readParquetData, ParquetMetadata } from "../api";
+import { openParquetFile, readParquetData, countParquetData, ParquetMetadata } from "../api";
 
 interface DataViewerProps {
   filePath: string;
@@ -25,6 +26,11 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  // Filter state
+  const [activeFilter, setActiveFilter] = useState("");
+  const [totalRows, setTotalRows] = useState(0);
+
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -40,12 +46,12 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
         tableContainerRef.current.scrollTop = 0;
       }
     }
-  }, [currentPage, metadata, rowsPerPage]);
+  }, [currentPage, metadata, rowsPerPage, activeFilter]);
 
   useEffect(() => {
-    // Reset to first page when rows per page changes
+    // Reset to first page when rows per page changes or filter changes
     setCurrentPage(1);
-  }, [rowsPerPage]);
+  }, [rowsPerPage, activeFilter]);
 
   // Keyboard shortcut for search
   useEffect(() => {
@@ -68,6 +74,8 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
       setLoading(true);
       const meta = await openParquetFile(filePath);
       setMetadata(meta);
+      setTotalRows(meta.num_rows);
+      setActiveFilter("");
     } catch (err) {
       setError(err as string);
       setLoading(false);
@@ -79,7 +87,16 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
 
     try {
       setLoading(true);
-      const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage);
+
+      // Update total rows based on filter
+      if (activeFilter) {
+        const count = await countParquetData(filePath, activeFilter);
+        setTotalRows(count);
+      } else {
+        setTotalRows(metadata.num_rows);
+      }
+
+      const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
       setData(rows);
       setLoading(false);
     } catch (err) {
@@ -89,7 +106,6 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   };
 
   const handleRefresh = async () => {
-    console.log('Refresh button clicked');
     // Reset to first page and reload metadata and data
     setCurrentPage(1);
     setSearchTerm('');
@@ -97,7 +113,11 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
     await loadFile();
   };
 
-  const totalPages = metadata ? Math.ceil(metadata.num_rows / rowsPerPage) : 1;
+  const handleFilterChange = useCallback((filter: string) => {
+    setActiveFilter(filter);
+  }, []);
+
+  const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
   const fileName = filePath.split('/').pop() || filePath;
 
   // Optimized search functionality with early returns
@@ -138,19 +158,14 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
 
   const handleSearchSubmit = useCallback((value: string) => {
     const trimmedValue = value.trim();
-
     if (trimmedValue) {
-      // Show searching indicator
       setIsSearching(true);
-
-      // Perform search immediately
       setTimeout(() => {
         setSearchTerm(trimmedValue);
         setCurrentMatchIndex(0);
         setIsSearching(false);
-      }, 50); // Very short delay just to show the searching indicator
+      }, 50);
     } else {
-      // Clear search if input is empty
       setSearchTerm("");
       setCurrentMatchIndex(0);
       setIsSearching(false);
@@ -262,6 +277,9 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
     );
   }
 
+  const headerBg = effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200';
+
+
   return (
     <div className={`h-full flex flex-col relative ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
       {/* Search Bar */}
@@ -284,7 +302,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
       />
 
       {/* Header */}
-      <div className={`shadow-sm border-b ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
+      <div className={`shadow-sm border-b ${headerBg}`}>
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-6">
             <div>
@@ -293,7 +311,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               </h1>
               {metadata && (
                 <p className={`text-sm mt-0.5 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
-                  {t('viewer.summary', { rows: metadata.num_rows.toLocaleString(), columns: metadata.num_columns })}
+                  {t('viewer.summary', { rows: totalRows.toLocaleString(), columns: metadata.num_columns })}
                 </p>
               )}
             </div>
@@ -355,6 +373,13 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
             </button>
           </div>
         </div>
+
+        {/* Filter Bar - Sequel Pro Style */}
+        <FilterBar
+          columns={metadata?.columns || []}
+          onFilterChange={handleFilterChange}
+          activeFilter={activeFilter}
+        />
       </div>
 
       {/* Main Content */}
@@ -459,9 +484,9 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
             <div className={`px-6 py-3 flex items-center justify-between border-t ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
               <div className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
                 {t('viewer.pagination.showing', {
-                  start: ((currentPage - 1) * rowsPerPage) + 1,
-                  end: Math.min(currentPage * rowsPerPage, metadata?.num_rows || 0),
-                  total: metadata?.num_rows.toLocaleString()
+                  start: totalRows > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0,
+                  end: Math.min(currentPage * rowsPerPage, totalRows),
+                  total: totalRows.toLocaleString()
                 })}
               </div>
 

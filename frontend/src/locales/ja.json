@@ -10,7 +10,10 @@
     "showSidebar": "サイドバーを表示",
     "hideSidebar": "サイドバーを隠す",
     "export": "エクスポート",
-    "appName": "Parqsee"
+    "appName": "Parqsee",
+    "apply": "適用",
+    "clear": "クリア",
+    "addCondition": "条件を追加"
   },
   "welcome": {
     "dropZone": {
@@ -76,6 +79,9 @@
       "next": "次へ",
       "of": "/ {{total}}"
     },
+    "filter": "フィルター",
+    "filterPlaceholder": "抽出条件 (例: id > 5)",
+    "filterValuePlaceholder": "値...",
     "summary": "{{rows}} 行 × {{columns}} 列",
     "tabs": {
       "content": "内容",

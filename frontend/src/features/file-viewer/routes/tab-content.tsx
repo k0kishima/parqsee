@@ -72,12 +72,12 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
     const isSelected = viewMode === mode;
     if (effectiveTheme === 'dark') {
       return isSelected
-        ? 'bg-gray-800 text-blue-400 ring-1 ring-white/10'
+        ? 'bg-gray-800 text-gray-200 ring-1 ring-white/10'
         : 'text-gray-400 hover:bg-gray-800';
     } else {
       return isSelected
-        ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5'
-        : 'text-gray-600 hover:bg-gray-100';
+        ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5'
+        : 'text-slate-500 hover:bg-gray-100';
     }
   };
 
