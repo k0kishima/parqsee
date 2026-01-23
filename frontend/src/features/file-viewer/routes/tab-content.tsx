@@ -4,6 +4,7 @@ import { Table, Database } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
+import { ParquetMetadata } from "../api";
 
 interface TabContentProps {
   tab: {
@@ -22,7 +23,13 @@ export interface TabState {
   currentPage?: number;
   searchTerm?: string;
   viewMode?: 'browse' | 'query';
-  // Add more state as needed
+  activeFilter?: string;
+  selectedRow?: number | null;
+  isSearchOpen?: boolean;
+  // Cache for virtualization
+  metadata?: ParquetMetadata;
+  data?: any[];
+  totalRows?: number;
 }
 
 export const TabContent: React.FC<TabContentProps> = React.memo(({
@@ -60,10 +67,6 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
 
   // Only render DataViewer if tab is active or has been active before
   // This lazy loads tabs when they're first accessed
-  if (!isActive && !hasBeenActive) {
-    return <div className="flex-1" />;
-  }
-
   // Determine styles based on theme
   const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-white';
   const toolbarBg = effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200';
@@ -81,6 +84,11 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
     }
   };
 
+  // Virtualization: Don't render anything if not active to save memory/CPU
+  if (!isActive) {
+    return null;
+  }
+
   return (
     <div
       ref={containerRef}
@@ -91,10 +99,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
         left: 0,
         right: 0,
         bottom: 0,
-        display: isActive ? 'flex' : 'none',
-        // Enable hardware acceleration
-        transform: 'translateZ(0)',
-        willChange: isActive ? 'auto' : 'contents'
+        display: 'flex', // Always flex since we handle visibility via unmounting
       }}
     >
       {/* View Switcher Toolbar */}
@@ -121,6 +126,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
         </button>
       </div>
 
+
       <div className="flex-1 overflow-hidden relative">
         <div
           className="h-full w-full"
@@ -129,6 +135,16 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           <DataViewer
             filePath={tab.path}
             onClose={onClose}
+            initialState={savedState}
+            onStateChange={(state) => {
+              // Merge with existing state to preserve viewMode
+              if (onStateChange) {
+                onStateChange({
+                  ...savedState,
+                  ...state
+                });
+              }
+            }}
           />
         </div>
         <div
@@ -138,7 +154,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           <QueryView filePath={tab.path} />
         </div>
       </div>
-    </div>
+    </div >
   );
 }, (prevProps, nextProps) => {
   // Custom comparison to prevent unnecessary re-renders

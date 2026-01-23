@@ -5,34 +5,64 @@ import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { openParquetFile, readParquetData, countParquetData, ParquetMetadata } from "../api";
+import { TabState } from "../routes/tab-content";
 
 interface DataViewerProps {
   filePath: string;
   onClose: () => void;
+  initialState?: TabState;
+  onStateChange?: (state: TabState) => void;
 }
 
-function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose, initialState, onStateChange }: DataViewerProps) {
   const { settings, effectiveTheme } = useSettings();
   const { t } = useTranslation();
-  const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize from cache if available
+  const [metadata, setMetadata] = useState<ParquetMetadata | null>(initialState?.metadata || null);
+  const [data, setData] = useState<any[]>(initialState?.data || []);
+  const [totalRows, setTotalRows] = useState(initialState?.totalRows || 0);
+
+  // If we have data, we're not loading
+  const [loading, setLoading] = useState(!initialState?.data);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedRow, setSelectedRow] = useState<number | null>(null);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+
+  // Track if we should skip the initial load (because we have cached data)
+  const shouldSkipLoad = useRef(!!initialState?.data);
+
+  // Initialize state from props
+  const [currentPage, setCurrentPage] = useState(initialState?.currentPage || 1);
+  const [selectedRow, setSelectedRow] = useState<number | null>(initialState?.selectedRow || null);
+  const [isSearchOpen, setIsSearchOpen] = useState(initialState?.isSearchOpen || false);
+  const [searchTerm, setSearchTerm] = useState(initialState?.searchTerm || "");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Filter state
-  const [activeFilter, setActiveFilter] = useState("");
-  const [totalRows, setTotalRows] = useState(0);
+  const [activeFilter, setActiveFilter] = useState(initialState?.activeFilter || "");
 
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sync state changes to parent
+  useEffect(() => {
+    if (onStateChange) {
+      onStateChange({
+        currentPage,
+        searchTerm,
+        activeFilter,
+        selectedRow,
+        isSearchOpen,
+        viewMode: 'browse', // DataViewer is always browse mode
+        // Cache data
+        metadata: metadata || undefined,
+        data,
+        totalRows
+      });
+    }
+  }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen, onStateChange, metadata, data, totalRows]);
 
   useEffect(() => {
     loadFile();
@@ -50,7 +80,10 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
 
   useEffect(() => {
     // Reset to first page when rows per page changes or filter changes
-    setCurrentPage(1);
+    // Only if NOT using cached initial state
+    if (!shouldSkipLoad.current) {
+      setCurrentPage(1);
+    }
   }, [rowsPerPage, activeFilter]);
 
   // Keyboard shortcut for search
@@ -70,6 +103,9 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   }, []);
 
   const loadFile = async () => {
+    // Skip if we have cached data for this file
+    if (shouldSkipLoad.current) return;
+
     try {
       setLoading(true);
       const meta = await openParquetFile(filePath);
@@ -84,6 +120,12 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
 
   const loadData = async () => {
     if (!metadata) return;
+
+    // Skip if cache is active
+    if (shouldSkipLoad.current) {
+      shouldSkipLoad.current = false;
+      return;
+    }
 
     try {
       setLoading(true);
@@ -106,10 +148,12 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
   };
 
   const handleRefresh = async () => {
-    // Reset to first page and reload metadata and data
+    // Force reload
+    shouldSkipLoad.current = false;
     setCurrentPage(1);
     setSearchTerm('');
     setIsSearchOpen(false);
+    setMetadata(null); // Clear metadata to force reload
     await loadFile();
   };
 
