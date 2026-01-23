@@ -71,9 +71,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
               <button
                 onClick={(e) => handleCloseTab(e, tab.id)}
                 className={`
-                  opacity-0 group-hover:opacity-100 transition-opacity
                   p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600
-                  ${tabs.length === 1 ? 'hidden' : ''}
+                  transition-colors
                 `}
                 title={t('common.closeTab')}
               >

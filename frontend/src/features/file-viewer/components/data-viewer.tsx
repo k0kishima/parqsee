@@ -359,18 +359,7 @@ function DataViewerComponent({ filePath, onClose }: DataViewerProps) {
               </svg>
               {t('viewer.export')}
             </button>
-            <button
-              onClick={onClose}
-              className={`inline-flex items-center px-3 py-1.5 text-sm rounded-md transition-colors ${effectiveTheme === 'dark'
-                ? 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              {t('common.close')}
-            </button>
+
           </div>
         </div>
 
