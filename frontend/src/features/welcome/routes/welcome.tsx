@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { WelcomeHeader } from '../components/welcome-header';
@@ -14,7 +14,7 @@ interface WelcomeProps {
 export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }) => {
     const { effectiveTheme } = useSettings();
 
-    const handleBrowse = async () => {
+    const handleBrowse = useCallback(async () => {
         try {
             // Check if we can use Tauri APIs
             const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof open === 'function';
@@ -36,7 +36,19 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }
         } catch (error) {
             console.error("Failed to select file:", error);
         }
-    };
+    }, [onFileSelect]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+                e.preventDefault();
+                handleBrowse();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleBrowse]);
 
     return (
         <div className={`h-screen flex flex-col ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
