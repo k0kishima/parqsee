@@ -4,7 +4,7 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
-import { openParquetFile, readParquetData, countParquetData, ParquetMetadata } from "../api";
+import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 
 interface DataViewerProps {
@@ -18,17 +18,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const { settings, effectiveTheme } = useSettings();
   const { t } = useTranslation();
 
-  // Initialize from cache if available
-  const [metadata, setMetadata] = useState<ParquetMetadata | null>(initialState?.metadata || null);
-  const [data, setData] = useState<any[]>(initialState?.data || []);
-  const [totalRows, setTotalRows] = useState(initialState?.totalRows || 0);
-
-  // If we have data, we're not loading
-  const [loading, setLoading] = useState(!initialState?.data);
+  const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
+  const [data, setData] = useState<any[]>([]);
+  const [totalRows, setTotalRows] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Track if we should skip the initial load (because we have cached data)
-  const shouldSkipLoad = useRef(!!initialState?.data);
+  // Use ref to break dependency cycle for onStateChange
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
 
   // Initialize state from props
   const [currentPage, setCurrentPage] = useState(initialState?.currentPage || 1);
@@ -48,21 +48,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   // Sync state changes to parent
   useEffect(() => {
-    if (onStateChange) {
-      onStateChange({
+    if (onStateChangeRef.current) {
+      onStateChangeRef.current({
         currentPage,
         searchTerm,
         activeFilter,
         selectedRow,
         isSearchOpen,
-        viewMode: 'browse', // DataViewer is always browse mode
-        // Cache data
-        metadata: metadata || undefined,
-        data,
-        totalRows
+        viewMode: 'browse',
       });
     }
-  }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen, onStateChange, metadata, data, totalRows]);
+  }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
 
   useEffect(() => {
     loadFile();
@@ -79,11 +75,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   }, [currentPage, metadata, rowsPerPage, activeFilter]);
 
   useEffect(() => {
-    // Reset to first page when rows per page changes or filter changes
-    // Only if NOT using cached initial state
-    if (!shouldSkipLoad.current) {
-      setCurrentPage(1);
-    }
+    setCurrentPage(1);
   }, [rowsPerPage, activeFilter]);
 
   // Keyboard shortcut for search
@@ -103,9 +95,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   }, []);
 
   const loadFile = async () => {
-    // Skip if we have cached data for this file
-    if (shouldSkipLoad.current) return;
-
     try {
       setLoading(true);
       const meta = await openParquetFile(filePath);
@@ -120,12 +109,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   const loadData = async () => {
     if (!metadata) return;
-
-    // Skip if cache is active
-    if (shouldSkipLoad.current) {
-      shouldSkipLoad.current = false;
-      return;
-    }
 
     try {
       setLoading(true);
@@ -148,12 +131,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   };
 
   const handleRefresh = async () => {
-    // Force reload
-    shouldSkipLoad.current = false;
     setCurrentPage(1);
     setSearchTerm('');
     setIsSearchOpen(false);
-    setMetadata(null); // Clear metadata to force reload
+    setMetadata(null);
+    await evictCache(filePath);
     await loadFile();
   };
 

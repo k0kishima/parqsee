@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useTransit
 import { listen } from '@tauri-apps/api/event';
 import { useRecentFiles } from './RecentFilesContext';
 
-import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo } from '../features/file-viewer/api';
+import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
 
 interface Tab {
@@ -55,6 +55,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [tabs]);
 
     const handleTabClose = useCallback((tabId: string) => {
+        const closedTab = tabs.find(t => t.id === tabId);
         const tabIndex = tabs.findIndex(t => t.id === tabId);
         const newTabs = tabs.filter(t => t.id !== tabId);
         setTabs(newTabs);
@@ -63,6 +64,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const newTabStates = { ...tabStates };
         delete newTabStates[tabId];
         setTabStates(newTabStates);
+
+        // Evict backend cache if no other tab uses the same file
+        if (closedTab && !newTabs.some(t => t.path === closedTab.path)) {
+            evictCache(closedTab.path).catch(err => console.error('Failed to evict cache:', err));
+        }
 
         if (activeTabId === tabId) {
             if (newTabs.length > 0) {

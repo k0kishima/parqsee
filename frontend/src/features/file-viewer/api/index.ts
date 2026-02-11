@@ -47,6 +47,10 @@ export const countParquetData = async (path: string, filter?: string): Promise<n
     return await invoke('count_parquet_data', { path, filter });
 };
 
+export const evictCache = async (path: string): Promise<void> => {
+    return await invoke('evict_cache', { path });
+};
+
 export const exportData = async (params: ExportDataParams): Promise<string> => {
     return await invoke('export_data', params as any);
 };

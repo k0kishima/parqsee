@@ -1,10 +1,90 @@
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs::File;
+use std::sync::Mutex;
 
 use crate::models::{ColumnInfo, ParquetMetadata};
 
-pub fn get_metadata(path: &str) -> Result<ParquetMetadata, String> {
+/// Cache for DataFusion SessionContext and Parquet metadata.
+/// Stored as Tauri managed state to avoid re-creating sessions on every request.
+pub struct ParquetCache {
+    sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
+    metadata: Mutex<HashMap<String, ParquetMetadata>>,
+}
+
+impl ParquetCache {
+    pub fn new() -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            metadata: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Get or create a SessionContext for the given file path.
+    /// Returns a cloned SessionContext (SessionContext uses Arc internally, so cloning is cheap).
+    pub async fn get_or_create_session(
+        &self,
+        path: &str,
+    ) -> Result<datafusion::execution::context::SessionContext, String> {
+        // Check cache first
+        {
+            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+            if let Some(ctx) = sessions.get(path) {
+                return Ok(ctx.clone());
+            }
+        }
+
+        // Create new session and register the parquet file
+        let ctx = datafusion::execution::context::SessionContext::new();
+        let options = datafusion::prelude::ParquetReadOptions::default();
+        ctx.register_parquet("t", path, options)
+            .await
+            .map_err(|e| format!("Failed to register parquet file: {}", e))?;
+
+        // Store in cache
+        {
+            let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+            sessions.insert(path.to_string(), ctx.clone());
+        }
+
+        Ok(ctx)
+    }
+
+    /// Get cached metadata, or compute and cache it.
+    pub fn get_or_create_metadata(&self, path: &str) -> Result<ParquetMetadata, String> {
+        // Check cache first
+        {
+            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
+            if let Some(meta) = metadata_cache.get(path) {
+                return Ok(meta.clone());
+            }
+        }
+
+        // Compute metadata
+        let meta = compute_metadata(path)?;
+
+        // Store in cache
+        {
+            let mut metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
+            metadata_cache.insert(path.to_string(), meta.clone());
+        }
+
+        Ok(meta)
+    }
+
+    /// Remove cached entries for a given file path.
+    pub fn evict(&self, path: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.remove(path);
+        }
+        if let Ok(mut metadata_cache) = self.metadata.lock() {
+            metadata_cache.remove(path);
+        }
+    }
+}
+
+fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
 
@@ -184,24 +264,15 @@ pub fn get_metadata(path: &str) -> Result<ParquetMetadata, String> {
 }
 
 use arrow::json::LineDelimitedWriter;
-use datafusion::prelude::*;
-
-// ... (existing get_metadata)
 
 pub async fn read_data(
+    cache: &ParquetCache,
     path: &str,
     offset: usize,
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<Value>, String> {
-    // Create DataFusion context
-    let ctx = SessionContext::new();
-
-    // Register the parquet file as a table named "t"
-    let options = ParquetReadOptions::default();
-    ctx.register_parquet("t", path, options)
-        .await
-        .map_err(|e| format!("Failed to register parquet file: {}", e))?;
+    let ctx = cache.get_or_create_session(path).await?;
 
     // Construct query
     let where_clause = if let Some(f) = filter {
@@ -253,15 +324,12 @@ pub async fn read_data(
     rows.map_err(|e| format!("Failed to parse JSON results: {}", e))
 }
 
-pub async fn count_data(path: &str, filter: Option<String>) -> Result<usize, String> {
-    // Create DataFusion context
-    let ctx = SessionContext::new();
-
-    // Register the parquet file as a table named "t"
-    let options = ParquetReadOptions::default();
-    ctx.register_parquet("t", path, options)
-        .await
-        .map_err(|e| format!("Failed to register parquet file: {}", e))?;
+pub async fn count_data(
+    cache: &ParquetCache,
+    path: &str,
+    filter: Option<String>,
+) -> Result<usize, String> {
+    let ctx = cache.get_or_create_session(path).await?;
 
     // Construct query
     let where_clause = if let Some(f) = filter {
@@ -306,4 +374,26 @@ pub async fn count_data(path: &str, filter: Option<String>) -> Result<usize, Str
         .value(0);
 
     Ok(count as usize)
+}
+
+pub async fn execute_sql_with_cache(
+    cache: &ParquetCache,
+    file_path: &str,
+    query: &str,
+) -> Result<(Vec<arrow::record_batch::RecordBatch>, arrow::datatypes::SchemaRef), String> {
+    let ctx = cache.get_or_create_session(file_path).await?;
+
+    let df = ctx
+        .sql(query)
+        .await
+        .map_err(|e| format!("SQL execution failed: {}", e))?;
+
+    let schema = df.schema().inner().clone();
+
+    let batches = df
+        .collect()
+        .await
+        .map_err(|e| format!("Failed to collect results: {}", e))?;
+
+    Ok((batches, schema))
 }

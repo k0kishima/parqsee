@@ -3,6 +3,7 @@ pub mod models;
 pub mod services;
 pub mod utils;
 
+use services::parquet::ParquetCache;
 use tauri::{DragDropEvent, Emitter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -12,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(ParquetCache::new())
         .invoke_handler(tauri::generate_handler![
             commands::file::open_parquet_file,
             commands::file::get_file_info,
@@ -20,6 +22,7 @@ pub fn run() {
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::export_data,
+            commands::data::evict_cache,
             commands::query::execute_sql
         ])
         .on_window_event(|window, event| {

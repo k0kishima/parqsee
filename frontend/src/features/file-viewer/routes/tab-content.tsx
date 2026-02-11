@@ -4,7 +4,6 @@ import { Table, Database } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
-import { ParquetMetadata } from "../api";
 
 interface TabContentProps {
   tab: {
@@ -26,10 +25,6 @@ export interface TabState {
   activeFilter?: string;
   selectedRow?: number | null;
   isSearchOpen?: boolean;
-  // Cache for virtualization
-  metadata?: ParquetMetadata;
-  data?: any[];
-  totalRows?: number;
 }
 
 export const TabContent: React.FC<TabContentProps> = React.memo(({
@@ -84,8 +79,8 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
     }
   };
 
-  // Virtualization: Don't render anything if not active to save memory/CPU
-  if (!isActive) {
+  // Lazy load: only mount content once the tab has been activated
+  if (!hasBeenActive) {
     return null;
   }
 
@@ -99,7 +94,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
         left: 0,
         right: 0,
         bottom: 0,
-        display: 'flex', // Always flex since we handle visibility via unmounting
+        display: isActive ? 'flex' : 'none',
       }}
     >
       {/* View Switcher Toolbar */}
@@ -160,12 +155,9 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // Custom comparison to prevent unnecessary re-renders
   if (prevProps.isActive !== nextProps.isActive) return false;
   if (prevProps.tab.id !== nextProps.tab.id) return false;
-  if (prevProps.tab.path !== nextProps.tab.path) return false;
 
-  // Check if viewMode changed in savedState
-  const prevViewMode = prevProps.savedState?.viewMode;
-  const nextViewMode = nextProps.savedState?.viewMode;
-  if (prevViewMode !== nextViewMode) return false;
+  // Re-render if savedState changes (shallow comparison of objects is usually enough if immutable)
+  if (prevProps.savedState !== nextProps.savedState) return false;
 
   return true; // Props are equal, skip re-render
 });

@@ -1,7 +1,8 @@
 use arrow::json::LineDelimitedWriter;
-use datafusion::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::command;
+
+use crate::services::parquet::ParquetCache;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryColumn {
@@ -17,26 +18,17 @@ pub struct QueryResult {
 }
 
 #[command]
-pub async fn execute_sql(file_path: String, query: String) -> Result<QueryResult, String> {
+pub async fn execute_sql(
+    cache: tauri::State<'_, ParquetCache>,
+    file_path: String,
+    query: String,
+) -> Result<QueryResult, String> {
     let start = std::time::Instant::now();
 
-    // Create DataFusion context
-    let ctx = SessionContext::new();
+    let (batches, schema) =
+        crate::services::parquet::execute_sql_with_cache(&cache, &file_path, &query).await?;
 
-    // Register the parquet file as a table named "t"
-    let options = ParquetReadOptions::default();
-    ctx.register_parquet("t", &file_path, options)
-        .await
-        .map_err(|e| format!("Failed to register parquet file: {}", e))?;
-
-    // Execute the query
-    let df = ctx
-        .sql(&query)
-        .await
-        .map_err(|e| format!("SQL execution failed: {}", e))?;
-
-    // Get schema for column info
-    let schema = df.schema();
+    // Get column info from schema
     let columns: Vec<QueryColumn> = schema
         .fields()
         .iter()
@@ -45,12 +37,6 @@ pub async fn execute_sql(file_path: String, query: String) -> Result<QueryResult
             data_type: f.data_type().to_string(),
         })
         .collect();
-
-    // Collect results
-    let batches = df
-        .collect()
-        .await
-        .map_err(|e| format!("Failed to collect results: {}", e))?;
 
     // Convert to JSON using LineDelimitedWriter
     let mut buf = Vec::new();
