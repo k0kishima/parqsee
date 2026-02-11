@@ -77,7 +77,8 @@
       "showing": "{{total}} 件中 {{start}} から {{end}} 件を表示",
       "previous": "前へ",
       "next": "次へ",
-      "of": "/ {{total}}"
+      "of": "/ {{total}}",
+      "rowsPerPage": "件/ページ"
     },
     "filter": "フィルター",
     "filterPlaceholder": "抽出条件 (例: id > 5)",

@@ -77,7 +77,8 @@
             "showing": "Showing {{start}} to {{end}} of {{total}} entries",
             "previous": "Previous",
             "next": "Next",
-            "of": "of {{total}}"
+            "of": "of {{total}}",
+            "rowsPerPage": "rows/page"
         },
         "filter": "Filter",
         "filterPlaceholder": "WHERE clause (e.g. id > 5)",

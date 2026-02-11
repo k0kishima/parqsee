@@ -15,7 +15,7 @@ interface DataViewerProps {
 }
 
 function DataViewerComponent({ filePath, onClose, initialState, onStateChange }: DataViewerProps) {
-  const { settings, effectiveTheme } = useSettings();
+  const { settings, updateSettings, effectiveTheme } = useSettings();
   const { t } = useTranslation();
 
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
@@ -497,12 +497,32 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
             {/* Footer with Pagination */}
             <div className={`px-6 py-3 flex items-center justify-between border-t ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
-              <div className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
-                {t('viewer.pagination.showing', {
-                  start: totalRows > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0,
-                  end: Math.min(currentPage * rowsPerPage, totalRows),
-                  total: totalRows.toLocaleString()
-                })}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1.5">
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => updateSettings({ rowsPerPage: Number(e.target.value) })}
+                    className={`px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${effectiveTheme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-gray-200'
+                      : 'bg-white border-slate-300 text-slate-700'
+                      }`}
+                  >
+                    {[25, 50, 100, 200, 500].map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                  <span className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
+                    {t('viewer.pagination.rowsPerPage')}
+                  </span>
+                </div>
+                <span className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-600' : 'text-slate-300'}`}>|</span>
+                <div className={`text-sm ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-600'}`}>
+                  {t('viewer.pagination.showing', {
+                    start: totalRows > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0,
+                    end: Math.min(currentPage * rowsPerPage, totalRows),
+                    total: totalRows.toLocaleString()
+                  })}
+                </div>
               </div>
 
               <div className="flex items-center space-x-2">
