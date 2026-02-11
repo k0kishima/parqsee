@@ -43,6 +43,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   // Filter state
   const [activeFilter, setActiveFilter] = useState(initialState?.activeFilter || "");
 
+  // Local state for page input (Enter key / blur to confirm)
+  const [pageInput, setPageInput] = useState(String(currentPage));
+
+  // Sync pageInput when currentPage changes externally (e.g., Previous/Next buttons)
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -548,14 +556,30 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
                 <div className="flex items-center space-x-1">
                   <input
-                    type="number"
-                    min="1"
-                    max={totalPages}
-                    value={currentPage}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={pageInput}
                     onChange={(e) => {
-                      const page = parseInt(e.target.value);
-                      if (page >= 1 && page <= totalPages) {
+                      setPageInput(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const page = parseInt(pageInput, 10);
+                        if (!isNaN(page) && page >= 1 && page <= totalPages) {
+                          setCurrentPage(page);
+                        } else {
+                          setPageInput(String(currentPage));
+                        }
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    onBlur={() => {
+                      const page = parseInt(pageInput, 10);
+                      if (!isNaN(page) && page >= 1 && page <= totalPages) {
                         setCurrentPage(page);
+                      } else {
+                        setPageInput(String(currentPage));
                       }
                     }}
                     className={`w-16 px-2 py-1 text-sm text-center border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${effectiveTheme === 'dark'
