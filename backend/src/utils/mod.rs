@@ -3,6 +3,24 @@ use chrono::{DateTime, NaiveDate};
 use parquet::record::{Field, Row};
 use serde_json::Value;
 
+fn format_date(days: i32) -> String {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let date = epoch + chrono::Duration::days(days as i64);
+    date.format("%Y-%m-%d").to_string()
+}
+
+fn format_timestamp_millis(v: i64) -> Option<String> {
+    let seconds = v / 1000;
+    let nanos = ((v % 1000) * 1_000_000) as u32;
+    DateTime::from_timestamp(seconds, nanos).map(|dt| dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+}
+
+fn format_timestamp_micros(v: i64) -> Option<String> {
+    let seconds = v / 1_000_000;
+    let nanos = ((v % 1_000_000) * 1000) as u32;
+    DateTime::from_timestamp(seconds, nanos).map(|dt| dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+}
+
 pub fn row_to_json(row: &Row) -> Value {
     let mut map = serde_json::Map::new();
 
@@ -34,25 +52,17 @@ pub fn field_to_json(field: &Field) -> Value {
         Field::Decimal(d) => Value::String(format!("{:?}", d)),
         Field::Str(v) => Value::String(v.clone()),
         Field::Bytes(v) => Value::String(general_purpose::STANDARD.encode(v.data())),
-        Field::Date(v) => {
-            let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-            let date = epoch + chrono::Duration::days(*v as i64);
-            Value::String(date.format("%Y-%m-%d").to_string())
-        }
+        Field::Date(v) => Value::String(format_date(*v)),
         Field::TimestampMillis(v) => {
-            let seconds = v / 1000;
-            let nanos = ((v % 1000) * 1_000_000) as u32;
-            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
-                Value::String(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+            if let Some(s) = format_timestamp_millis(*v) {
+                Value::String(s)
             } else {
                 Value::Number((*v).into())
             }
         }
         Field::TimestampMicros(v) => {
-            let seconds = v / 1_000_000;
-            let nanos = ((v % 1_000_000) * 1000) as u32;
-            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
-                Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+            if let Some(s) = format_timestamp_micros(*v) {
+                Value::String(s)
             } else {
                 Value::Number((*v).into())
             }
@@ -93,28 +103,12 @@ pub fn field_to_string(field: &Field) -> String {
         Field::Decimal(d) => format!("{:?}", d),
         Field::Str(v) => v.clone(),
         Field::Bytes(v) => general_purpose::STANDARD.encode(v.data()),
-        Field::Date(v) => {
-            let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-            let date = epoch + chrono::Duration::days(*v as i64);
-            date.format("%Y-%m-%d").to_string()
-        }
+        Field::Date(v) => format_date(*v),
         Field::TimestampMillis(v) => {
-            let seconds = v / 1000;
-            let nanos = ((v % 1000) * 1_000_000) as u32;
-            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
-                dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
-            } else {
-                v.to_string()
-            }
+            format_timestamp_millis(*v).unwrap_or_else(|| v.to_string())
         }
         Field::TimestampMicros(v) => {
-            let seconds = v / 1_000_000;
-            let nanos = ((v % 1_000_000) * 1000) as u32;
-            if let Some(dt) = DateTime::from_timestamp(seconds, nanos) {
-                dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
-            } else {
-                v.to_string()
-            }
+            format_timestamp_micros(*v).unwrap_or_else(|| v.to_string())
         }
         Field::Float16(v) => v.to_f64().to_string(),
 

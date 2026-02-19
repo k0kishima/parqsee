@@ -4,6 +4,7 @@ import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { exportData } from "../api";
+import { getFileName } from "../../../lib/path";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
       };
 
       // Get default filename from parquet file
-      const originalFileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'export';
+      const originalFileName = getFileName(filePath);
       const baseFileName = originalFileName.replace(/\.parquet$/i, '');
       const defaultFileName = `${baseFileName}.${exportFormat}`;
 
@@ -79,7 +80,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
       console.log(result);
 
       // Send notification
-      const fileName = savePath.split('/').pop() || savePath.split('\\').pop() || savePath;
+      const fileName = getFileName(savePath);
       await sendNotification({
         title: t('export.success.title'),
         body: t('export.success.body', { file: fileName }),

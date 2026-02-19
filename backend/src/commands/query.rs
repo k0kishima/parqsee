@@ -1,8 +1,7 @@
-use arrow::json::LineDelimitedWriter;
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
-use crate::services::parquet::ParquetCache;
+use crate::services::parquet::{batches_to_json_bytes, ParquetCache};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryColumn {
@@ -38,26 +37,11 @@ pub async fn execute_sql(
         })
         .collect();
 
-    // Convert to JSON using LineDelimitedWriter
-    let mut buf = Vec::new();
-    {
-        let mut writer = LineDelimitedWriter::new(&mut buf);
-        for batch in &batches {
-            writer
-                .write(batch)
-                .map_err(|e| format!("Failed to write batch: {}", e))?;
-        }
-        writer
-            .finish()
-            .map_err(|e| format!("Failed to finish writing: {}", e))?;
-    }
-
-    // Parse lines back to JSON objects
+    let buf = batches_to_json_bytes(&batches)?;
     let rows: Result<Vec<serde_json::Map<String, serde_json::Value>>, _> =
         serde_json::Deserializer::from_slice(&buf)
             .into_iter::<serde_json::Map<String, serde_json::Value>>()
             .collect();
-
     let rows = rows.map_err(|e| format!("Failed to parse JSON results: {}", e))?;
 
     let duration = start.elapsed().as_millis();

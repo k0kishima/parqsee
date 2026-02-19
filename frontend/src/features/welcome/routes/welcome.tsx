@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../../contexts/SettingsContext';
+import { isTauri } from '../../../lib/tauri';
 import { WelcomeHeader } from '../components/welcome-header';
 import { DropZone } from '../components/drop-zone';
 import { RecentFilesList } from '../components/recent-files-list';
@@ -16,10 +17,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }
 
     const handleBrowse = useCallback(async () => {
         try {
-            // Check if we can use Tauri APIs
-            const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof open === 'function';
-
-            if (isTauri) {
+            if (isTauri()) {
                 const selected = await open({
                     filters: [{
                         name: 'Parquet Files',

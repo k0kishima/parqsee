@@ -6,6 +6,7 @@ import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
+import { getFileName } from "../../../lib/path";
 
 interface DataViewerProps {
   filePath: string;
@@ -152,7 +153,16 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   }, []);
 
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
-  const fileName = filePath.split('/').pop() || filePath;
+  const fileName = getFileName(filePath);
+
+  const commitPageInput = useCallback(() => {
+    const page = parseInt(pageInput, 10);
+    if (!isNaN(page) && page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    } else {
+      setPageInput(String(currentPage));
+    }
+  }, [pageInput, totalPages, currentPage]);
 
   // Optimized search functionality with early returns
   const searchMatches = useMemo(() => {
@@ -565,22 +575,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const page = parseInt(pageInput, 10);
-                        if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                          setCurrentPage(page);
-                        } else {
-                          setPageInput(String(currentPage));
-                        }
+                        commitPageInput();
                         e.currentTarget.blur();
                       }
                     }}
                     onBlur={() => {
-                      const page = parseInt(pageInput, 10);
-                      if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                        setCurrentPage(page);
-                      } else {
-                        setPageInput(String(currentPage));
-                      }
+                      commitPageInput();
                     }}
                     className={`w-16 px-2 py-1 text-sm text-center border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${effectiveTheme === 'dark'
                       ? 'bg-gray-700 border-gray-600 text-gray-200'

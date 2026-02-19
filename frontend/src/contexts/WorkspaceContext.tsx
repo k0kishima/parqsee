@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useTransition, ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useRecentFiles } from './RecentFilesContext';
+import { isTauri } from '../lib/tauri';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
@@ -84,9 +85,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const openParquetFile = useCallback(async (path: string) => {
         try {
-            const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof listen === 'function';
-
-            if (isTauri) {
+            if (isTauri()) {
                 const fileExists = await checkFileExists(path);
                 if (!fileExists) {
                     removeRecentFile(path);
@@ -167,9 +166,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     // File drop listener
     useEffect(() => {
-        const isTauri = (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ || typeof listen === 'function';
-
-        if (isTauri) {
+        if (isTauri()) {
             const unlisten = listen('file-drop', async (event: any) => {
                 const files = event.payload || [];
                 if (files.length > 0) {
