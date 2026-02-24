@@ -98,6 +98,18 @@
             "error": "Error"
         }
     },
+    "fileExplorer": {
+        "searchPlaceholder": "Filter files...",
+        "clearSearch": "Clear search",
+        "contextMenu": {
+            "copyPath": "Copy Path",
+            "revealInFinder": "Reveal in Finder",
+            "openInNewTab": "Open in New Tab"
+        },
+        "breadcrumb": {
+            "root": "/"
+        }
+    },
     "export": {
         "title": "Export Data",
         "format": "Export Format",

@@ -98,6 +98,18 @@
       "error": "エラー"
     }
   },
+  "fileExplorer": {
+    "searchPlaceholder": "ファイルを検索...",
+    "clearSearch": "検索をクリア",
+    "contextMenu": {
+      "copyPath": "パスをコピー",
+      "revealInFinder": "Finderで表示",
+      "openInNewTab": "新しいタブで開く"
+    },
+    "breadcrumb": {
+      "root": "/"
+    }
+  },
   "export": {
     "title": "データのエクスポート",
     "format": "エクスポート形式",

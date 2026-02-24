@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, ChevronDown, Folder, FileText, File } from 'lucide-react';
-import { useSettings } from '../../../contexts/SettingsContext';
+import { ChevronRight, ChevronDown, Folder, FileText, File, Search, X } from 'lucide-react';
 import { listDirectory, FileEntry } from '../api';
-
-
+import { ContextMenu } from '../components/context-menu';
+import { BreadcrumbNav } from '../components/breadcrumb-nav';
 
 interface FileExplorerProps {
   currentPath?: string;
@@ -12,12 +11,20 @@ interface FileExplorerProps {
   className?: string;
 }
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  entry: FileEntry;
+}
+
 export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileSelect, className }) => {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [currentDir, setCurrentDir] = useState<string>('');
-  const { effectiveTheme } = useSettings();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -46,16 +53,19 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
       newExpanded.delete(entry.path);
     } else {
       newExpanded.add(entry.path);
-      loadSubDirectory(entry);
+      loadSubDirectory(entry.path);
     }
     setExpandedDirs(newExpanded);
   };
 
-  const loadSubDirectory = async (parent: FileEntry) => {
+  const loadSubDirectory = async (parentPath: string) => {
     try {
-      const result = await listDirectory(parent.path);
-      parent.children = result;
-      setEntries([...entries]);
+      const result = await listDirectory(parentPath);
+      setEntries(prev => prev.map(entry =>
+        entry.path === parentPath
+          ? { ...entry, children: result }
+          : entry
+      ));
     } catch (error) {
       console.error('Failed to load sub-directory:', error);
     }
@@ -68,8 +78,27 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
       setSelectedFile(entry.path);
       onFileSelect(entry.path);
     }
-    // Non-parquet files do nothing when clicked
   };
+
+  const navigateToDirectory = useCallback((path: string) => {
+    setCurrentDir(path);
+    setExpandedDirs(new Set());
+    setSearchQuery('');
+    loadDirectory(path);
+  }, [loadDirectory]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const x = e.clientX - (containerRect?.left ?? 0);
+    const y = e.clientY - (containerRect?.top ?? 0);
+    setContextMenu({ x, y, entry });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
 
   const formatFileSize = (size?: number) => {
     if (!size) return '';
@@ -82,6 +111,12 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     }
     return `${formattedSize.toFixed(1)} ${units[i]}`;
   };
+
+  const filteredEntries = useMemo(() => {
+    if (!searchQuery.trim()) return entries;
+    const query = searchQuery.toLowerCase();
+    return entries.filter(entry => entry.name.toLowerCase().includes(query));
+  }, [entries, searchQuery]);
 
   const renderEntry = (entry: FileEntry, level: number = 0) => {
     const isExpanded = expandedDirs.has(entry.path);
@@ -98,21 +133,22 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
               : 'cursor-pointer'
             }
             ${isSelected
-              ? effectiveTheme === 'dark' ? 'bg-blue-900' : 'bg-blue-100'
+              ? 'bg-selected'
               : isDisabled
                 ? ''
-                : effectiveTheme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                : 'hover:bg-tertiary'
             }
           `}
           style={{ paddingLeft: `${level * 16 + 8}px` }}
           onClick={() => handleFileClick(entry)}
+          onContextMenu={(e) => handleContextMenu(e, entry)}
         >
           {entry.is_directory ? (
             <>
               {isExpanded ? (
-                <ChevronDown className={`w-4 h-4 mr-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+                <ChevronDown className="w-4 h-4 mr-1 text-tertiary" />
               ) : (
-                <ChevronRight className={`w-4 h-4 mr-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+                <ChevronRight className="w-4 h-4 mr-1 text-tertiary" />
               )}
               <Folder className="w-4 h-4 mr-2 text-blue-500" />
             </>
@@ -122,16 +158,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
               {entry.is_parquet ? (
                 <FileText className="w-4 h-4 mr-2 text-green-500" />
               ) : (
-                <File className="w-4 h-4 mr-2 text-gray-400" />
+                <File className="w-4 h-4 mr-2 text-tertiary" />
               )}
             </>
           )}
-          <span className={`flex-1 text-sm truncate ${isDisabled
-            ? effectiveTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-            : effectiveTheme === 'dark' ? 'text-gray-200' : 'text-gray-800'
-            }`}>{entry.name}</span>
+          <span className={`flex-1 text-sm truncate ${isDisabled ? 'text-tertiary' : 'text-primary'}`}>
+            {entry.name}
+          </span>
           {!entry.is_directory && (
-            <span className={`text-xs ml-2 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+            <span className="text-xs ml-2 text-tertiary">
               {formatFileSize(entry.size)}
             </span>
           )}
@@ -146,18 +181,49 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   };
 
   return (
-    <div className={`${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-r overflow-y-auto ${className}`}>
-      <div className={`p-3 border-b ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-        <h3 className={`text-sm font-semibold ${effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{t('common.fileExplorer')}</h3>
-        {currentDir && (
-          <p className={`text-xs mt-1 truncate ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} title={currentDir}>
-            {currentDir}
-          </p>
-        )}
+    <div
+      ref={containerRef}
+      className={`relative bg-primary border-primary border-r overflow-y-auto ${className}`}
+    >
+      <div className="p-3 border-b border-primary">
+        <h3 className="text-sm font-semibold text-secondary">{t('common.fileExplorer')}</h3>
+        <BreadcrumbNav currentDir={currentDir} onNavigate={navigateToDirectory} />
+      </div>
+      {/* Search box */}
+      <div className="px-2 py-2 border-b border-primary">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-tertiary" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('fileExplorer.searchPlaceholder')}
+            className="w-full pl-7 pr-7 py-1 text-xs rounded border border-secondary bg-primary text-primary placeholder:text-tertiary focus:border-blue-500 outline-none"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-tertiary text-tertiary"
+              title={t('fileExplorer.clearSearch')}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="py-1">
-        {entries.map(entry => renderEntry(entry))}
+        {filteredEntries.map(entry => renderEntry(entry))}
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          entry={contextMenu.entry}
+          onClose={closeContextMenu}
+          onFileSelect={onFileSelect}
+        />
+      )}
     </div>
   );
 };
