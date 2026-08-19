@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, ChevronDown, Folder, FileText, File, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { listDirectory, FileEntry } from '../api';
 import { ContextMenu } from '../components/context-menu';
 import { BreadcrumbNav } from '../components/breadcrumb-nav';
-import { formatFileSize } from '../../../lib/format';
+import { ExplorerEntry } from '../components/explorer-entry';
 
 interface FileExplorerProps {
   currentPath?: string;
@@ -28,13 +28,22 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
+  // The directory currently shown, readable from effects without retriggering
+  // them.
+  const currentDirRef = useRef('');
+  currentDirRef.current = currentDir;
+
   useEffect(() => {
     if (currentPath) {
       const dir = currentPath.substring(0, currentPath.lastIndexOf('/'));
       if (dir) {
-        setCurrentDir(dir);
-        loadDirectory(dir);
         setSelectedFile(currentPath);
+        // Switching tabs within one directory only moves the highlight; skip
+        // the IPC round trip and the full listing re-render.
+        if (dir !== currentDirRef.current) {
+          setCurrentDir(dir);
+          loadDirectory(dir);
+        }
       }
     }
   }, [currentPath]);
@@ -48,18 +57,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     }
   };
 
-  const toggleDirectory = (entry: FileEntry) => {
-    const newExpanded = new Set(expandedDirs);
-    if (newExpanded.has(entry.path)) {
-      newExpanded.delete(entry.path);
-    } else {
-      newExpanded.add(entry.path);
-      loadSubDirectory(entry.path);
-    }
-    setExpandedDirs(newExpanded);
-  };
-
-  const loadSubDirectory = async (parentPath: string) => {
+  const loadSubDirectory = useCallback(async (parentPath: string) => {
     try {
       const result = await listDirectory(parentPath);
       setEntries(prev => prev.map(entry =>
@@ -70,23 +68,36 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     } catch (error) {
       console.error('Failed to load sub-directory:', error);
     }
-  };
+  }, []);
 
-  const handleFileClick = (entry: FileEntry) => {
+  const toggleDirectory = useCallback((entry: FileEntry) => {
+    setExpandedDirs(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(entry.path)) {
+        newExpanded.delete(entry.path);
+      } else {
+        newExpanded.add(entry.path);
+        loadSubDirectory(entry.path);
+      }
+      return newExpanded;
+    });
+  }, [loadSubDirectory]);
+
+  const handleFileClick = useCallback((entry: FileEntry) => {
     if (entry.is_directory) {
       toggleDirectory(entry);
     } else if (entry.is_parquet) {
       setSelectedFile(entry.path);
       onFileSelect(entry.path);
     }
-  };
+  }, [toggleDirectory, onFileSelect]);
 
   const navigateToDirectory = useCallback((path: string) => {
     setCurrentDir(path);
     setExpandedDirs(new Set());
     setSearchQuery('');
     loadDirectory(path);
-  }, [loadDirectory]);
+  }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault();
@@ -106,68 +117,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     const query = searchQuery.toLowerCase();
     return entries.filter(entry => entry.name.toLowerCase().includes(query));
   }, [entries, searchQuery]);
-
-  const renderEntry = (entry: FileEntry, level: number = 0) => {
-    const isExpanded = expandedDirs.has(entry.path);
-    const isSelected = selectedFile === entry.path;
-    const isDisabled = !entry.is_directory && !entry.is_parquet;
-
-    return (
-      <div key={entry.path}>
-        <div
-          className={`
-            flex items-center px-2 py-1
-            ${isDisabled
-              ? 'cursor-not-allowed opacity-50'
-              : 'cursor-pointer'
-            }
-            ${isSelected
-              ? 'bg-selected'
-              : isDisabled
-                ? ''
-                : 'hover:bg-tertiary'
-            }
-          `}
-          style={{ paddingLeft: `${level * 16 + 8}px` }}
-          onClick={() => handleFileClick(entry)}
-          onContextMenu={(e) => handleContextMenu(e, entry)}
-        >
-          {entry.is_directory ? (
-            <>
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 mr-1 text-tertiary" />
-              ) : (
-                <ChevronRight className="w-4 h-4 mr-1 text-tertiary" />
-              )}
-              <Folder className="w-4 h-4 mr-2 text-blue-500" />
-            </>
-          ) : (
-            <>
-              <div className="w-4 h-4 mr-1" />
-              {entry.is_parquet ? (
-                <FileText className="w-4 h-4 mr-2 text-green-500" />
-              ) : (
-                <File className="w-4 h-4 mr-2 text-tertiary" />
-              )}
-            </>
-          )}
-          <span className={`flex-1 text-sm truncate ${isDisabled ? 'text-tertiary' : 'text-primary'}`}>
-            {entry.name}
-          </span>
-          {!entry.is_directory && (
-            <span className="text-xs ml-2 text-tertiary">
-              {formatFileSize(entry.size)}
-            </span>
-          )}
-        </div>
-        {entry.is_directory && isExpanded && entry.children && (
-          <div>
-            {entry.children.map(child => renderEntry(child, level + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div
@@ -201,7 +150,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
         </div>
       </div>
       <div className="py-1">
-        {filteredEntries.map(entry => renderEntry(entry))}
+        {filteredEntries.map(entry => (
+          <ExplorerEntry
+            key={entry.path}
+            entry={entry}
+            level={0}
+            selectedFile={selectedFile}
+            expandedDirs={expandedDirs}
+            onEntryClick={handleFileClick}
+            onEntryContextMenu={handleContextMenu}
+          />
+        ))}
       </div>
 
       {contextMenu && (
