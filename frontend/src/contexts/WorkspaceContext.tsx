@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
 import { isParquetPath } from '../lib/path';
+import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
@@ -129,41 +130,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [tabs, addRecentFile, removeRecentFile]);
 
     // Keyboard shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
-                e.preventDefault();
-                if (activeTabId) {
-                    handleTabClose(activeTabId);
-                }
-            } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
-                e.preventDefault();
-                const currentIndex = tabs.findIndex(t => t.id === activeTabId);
-                if (currentIndex > 0) {
-                    handleTabSelect(tabs[currentIndex - 1].id);
-                } else if (tabs.length > 0) {
-                    handleTabSelect(tabs[tabs.length - 1].id);
-                }
-            } else if ((e.metaKey && e.shiftKey && e.key === ']') || (e.metaKey && e.altKey && e.key === 'ArrowRight')) {
-                e.preventDefault();
-                const currentIndex = tabs.findIndex(t => t.id === activeTabId);
-                if (currentIndex < tabs.length - 1) {
-                    handleTabSelect(tabs[currentIndex + 1].id);
-                } else if (tabs.length > 0) {
-                    handleTabSelect(tabs[0].id);
-                }
-            } else if (e.metaKey && e.key >= '1' && e.key <= '9') {
-                e.preventDefault();
-                const tabIndex = parseInt(e.key) - 1;
-                if (tabIndex < tabs.length) {
-                    handleTabSelect(tabs[tabIndex].id);
-                }
+    useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+        if (isModifierPressed(e) && e.key === 'w') {
+            e.preventDefault();
+            if (activeTabId) {
+                handleTabClose(activeTabId);
             }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeTabId, tabs, handleTabClose, handleTabSelect]);
+        } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
+            e.preventDefault();
+            const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+            if (currentIndex > 0) {
+                handleTabSelect(tabs[currentIndex - 1].id);
+            } else if (tabs.length > 0) {
+                handleTabSelect(tabs[tabs.length - 1].id);
+            }
+        } else if ((e.metaKey && e.shiftKey && e.key === ']') || (e.metaKey && e.altKey && e.key === 'ArrowRight')) {
+            e.preventDefault();
+            const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+            if (currentIndex < tabs.length - 1) {
+                handleTabSelect(tabs[currentIndex + 1].id);
+            } else if (tabs.length > 0) {
+                handleTabSelect(tabs[0].id);
+            }
+        } else if (e.metaKey && e.key >= '1' && e.key <= '9') {
+            e.preventDefault();
+            const tabIndex = parseInt(e.key) - 1;
+            if (tabIndex < tabs.length) {
+                handleTabSelect(tabs[tabIndex].id);
+            }
+        }
+    }, [activeTabId, tabs, handleTabClose, handleTabSelect]));
 
     // File drop listener
     useEffect(() => {

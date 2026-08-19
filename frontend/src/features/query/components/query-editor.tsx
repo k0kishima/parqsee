@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
+import { isModifierPressed } from '../../../hooks/useGlobalKeydown';
 
 interface QueryEditorProps {
     onExecute: (query: string) => void;
@@ -14,7 +15,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading }
     const [query, setQuery] = useState('SELECT * FROM t LIMIT 100;');
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (isModifierPressed(e) && e.key === 'Enter') {
             onExecute(query);
         }
     };

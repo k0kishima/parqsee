@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, FolderOpen, ExternalLink } from 'lucide-react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { FileEntry } from '../api';
+import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 
 interface ContextMenuProps {
   x: number;
@@ -22,18 +23,18 @@ export function ContextMenu({ x, y, entry, onClose, onFileSelect }: ContextMenuP
         onClose();
       }
     };
-    const handleKeyDown = (e: KeyboardEvent) => {
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  useGlobalKeydown(
+    useCallback((e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       }
-    };
-    document.addEventListener('mousedown', handleClick);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClick);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
+    }, [onClose]),
+    'document'
+  );
 
   const handleCopyPath = useCallback(async () => {
     try {

@@ -7,6 +7,7 @@ import { ExportModal } from "./export-modal";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
+import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 
 interface DataViewerProps {
   filePath: string;
@@ -88,20 +89,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   }, [rowsPerPage, activeFilter]);
 
   // Keyboard shortcut for search
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        e.preventDefault();
-        setIsSearchOpen(true);
-        // Trigger focus even if search bar is already open
-        setSearchFocusTrigger(prev => prev + 1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
+    if (isModifierPressed(e) && e.key === 'f') {
+      e.preventDefault();
+      setIsSearchOpen(true);
+      // Trigger focus even if search bar is already open
+      setSearchFocusTrigger(prev => prev + 1);
+    }
+  }, []));
 
   const loadFile = async () => {
     try {

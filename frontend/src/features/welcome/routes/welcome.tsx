@@ -1,8 +1,9 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { isTauri } from '../../../lib/tauri';
 import { PARQUET_EXTENSION } from '../../../lib/path';
+import { useGlobalKeydown, isModifierPressed } from '../../../hooks/useGlobalKeydown';
 import { WelcomeHeader } from '../components/welcome-header';
 import { DropZone } from '../components/drop-zone';
 import { RecentFilesList } from '../components/recent-files-list';
@@ -37,17 +38,12 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }
         }
     }, [onFileSelect]);
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
-                e.preventDefault();
-                handleBrowse();
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleBrowse]);
+    useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+        if (isModifierPressed(e) && e.key === 'o') {
+            e.preventDefault();
+            handleBrowse();
+        }
+    }, [handleBrowse]));
 
     return (
         <div className={`h-screen flex flex-col ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
