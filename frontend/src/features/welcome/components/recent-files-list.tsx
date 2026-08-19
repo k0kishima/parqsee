@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
+import { formatFileSize } from '../../../lib/format';
 
 interface RecentFilesListProps {
     onFileSelect: (path: string) => void;
@@ -15,13 +16,6 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
     if (!settings?.showRecentFiles) {
         return null;
     }
-
-    const formatFileSize = (bytes: number): string => {
-        if (bytes < 1024) return bytes + ' B';
-        else if (bytes < 1048576) return Math.round(bytes / 1024) + ' KB';
-        else if (bytes < 1073741824) return Math.round(bytes / 1048576) + ' MB';
-        else return Math.round(bytes / 1073741824) + ' GB';
-    };
 
     return (
         <div className="mt-12">

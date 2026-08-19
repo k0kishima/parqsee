@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, Folder, FileText, File, Search, X } from 'lu
 import { listDirectory, FileEntry } from '../api';
 import { ContextMenu } from '../components/context-menu';
 import { BreadcrumbNav } from '../components/breadcrumb-nav';
+import { formatFileSize } from '../../../lib/format';
 
 interface FileExplorerProps {
   currentPath?: string;
@@ -99,18 +100,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
-
-  const formatFileSize = (size?: number) => {
-    if (!size) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0;
-    let formattedSize = size;
-    while (formattedSize >= 1024 && i < units.length - 1) {
-      formattedSize /= 1024;
-      i++;
-    }
-    return `${formattedSize.toFixed(1)} ${units[i]}`;
-  };
 
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries;
