@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
-use crate::services::parquet::{batches_to_json_bytes, ParquetCache};
+use crate::services::parquet::{batches_to_rows, ParquetCache};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryColumn {
@@ -37,12 +37,7 @@ pub async fn execute_sql(
         })
         .collect();
 
-    let buf = batches_to_json_bytes(&batches)?;
-    let rows: Result<Vec<serde_json::Map<String, serde_json::Value>>, _> =
-        serde_json::Deserializer::from_slice(&buf)
-            .into_iter::<serde_json::Map<String, serde_json::Value>>()
-            .collect();
-    let rows = rows.map_err(|e| format!("Failed to parse JSON results: {}", e))?;
+    let rows: Vec<serde_json::Map<String, serde_json::Value>> = batches_to_rows(&batches)?;
 
     let duration = start.elapsed().as_millis();
 

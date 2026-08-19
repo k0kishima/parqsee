@@ -194,7 +194,7 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
 use arrow::json::LineDelimitedWriter;
 use arrow::record_batch::RecordBatch;
 
-pub fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
+fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     {
         let mut writer = LineDelimitedWriter::new(&mut buf);
@@ -208,6 +208,17 @@ pub fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String>
             .map_err(|e| format!("Failed to finish writing: {}", e))?;
     }
     Ok(buf)
+}
+
+/// Decode record batches into one deserializable value per row.
+pub fn batches_to_rows<T: serde::de::DeserializeOwned>(
+    batches: &[RecordBatch],
+) -> Result<Vec<T>, String> {
+    let buf = batches_to_json_bytes(batches)?;
+    serde_json::Deserializer::from_slice(&buf)
+        .into_iter::<T>()
+        .collect::<Result<Vec<T>, _>>()
+        .map_err(|e| format!("Failed to parse JSON results: {}", e))
 }
 
 fn build_where_clause(filter: Option<String>) -> String {
@@ -237,11 +248,7 @@ pub async fn read_data(
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
-    let buf = batches_to_json_bytes(&batches)?;
-    let rows: Result<Vec<Value>, _> = serde_json::Deserializer::from_slice(&buf)
-        .into_iter::<Value>()
-        .collect();
-    rows.map_err(|e| format!("Failed to parse JSON results: {}", e))
+    batches_to_rows(&batches)
 }
 
 pub async fn count_data(
