@@ -1,7 +1,6 @@
 pub mod commands;
 pub mod models;
 pub mod services;
-pub mod utils;
 
 use services::parquet::ParquetCache;
 use tauri::{DragDropEvent, Emitter};
