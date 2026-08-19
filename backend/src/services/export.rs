@@ -1,11 +1,14 @@
-use csv::Writer;
-use parquet::file::reader::FileReader;
-use parquet::record::Row;
+use arrow::csv::WriterBuilder as CsvWriterBuilder;
+use arrow::json::ArrayWriter as JsonArrayWriter;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
-use crate::services::parquet::open_file_reader;
-use crate::utils::{field_to_string, row_to_json};
+/// Rows are decoded and written one batch at a time, so exports run in
+/// constant memory regardless of how many rows are exported, and the
+/// offset/limit are pushed into the parquet reader so a deep offset skips
+/// row groups instead of decoding every row before it.
+const EXPORT_BATCH_SIZE: usize = 8192;
 
 /// Export rows to `export_path`, returning how many rows were written.
 pub fn export_data(
@@ -15,93 +18,54 @@ pub fn export_data(
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> Result<usize, String> {
-    // Read parquet file
-    let reader = open_file_reader(&source_path)?;
+    let file = File::open(&source_path).map_err(|e| e.to_string())?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| format!("Failed to open parquet file: {}", e))?;
 
-    let metadata = reader.metadata();
-    let schema = metadata.file_metadata().schema();
-    let total_rows = metadata.file_metadata().num_rows() as usize;
+    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
+    let offset = offset.unwrap_or(0).min(total_rows);
+    let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
 
-    // Get column names
-    let columns: Vec<String> = schema
-        .get_fields()
-        .iter()
-        .map(|field| field.name().to_string())
-        .collect();
+    let reader = builder
+        .with_batch_size(EXPORT_BATCH_SIZE)
+        .with_offset(offset)
+        .with_limit(limit)
+        .build()
+        .map_err(|e| format!("Failed to read parquet file: {}", e))?;
 
-    let mut iter = reader.get_row_iter(None).map_err(|e| e.to_string())?;
+    let out = File::create(&export_path).map_err(|e| e.to_string())?;
+    let mut out = BufWriter::new(out);
 
-    // Skip to offset if provided
-    let offset = offset.unwrap_or(0);
-    for _ in 0..offset {
-        if iter.next().is_none() {
-            break;
-        }
-    }
-
-    // Determine how many rows to export
-    let limit = limit.unwrap_or(total_rows - offset);
-    let rows_to_export = limit.min(total_rows - offset);
-
-    // Collect data
-    let mut rows_data = Vec::new();
-    for _ in 0..rows_to_export {
-        match iter.next() {
-            Some(Ok(row)) => {
-                rows_data.push(row);
-            }
-            Some(Err(e)) => return Err(e.to_string()),
-            None => break,
-        }
-    }
-
-    // Export based on format
+    let mut rows_written = 0usize;
     match format.to_lowercase().as_str() {
-        "csv" => export_to_csv(&export_path, &columns, &rows_data),
-        "json" => export_to_json(&export_path, &rows_data),
-        _ => Err(format!("Unsupported export format: {}", format)),
-    }?;
-
-    Ok(rows_data.len())
-}
-
-fn export_to_csv(path: &str, columns: &[String], rows: &[Row]) -> Result<(), String> {
-    let mut file = File::create(path).map_err(|e| e.to_string())?;
-
-    // Write UTF-8 BOM for Excel compatibility
-    file.write_all(&[0xEF, 0xBB, 0xBF])
-        .map_err(|e| e.to_string())?;
-
-    let mut writer = Writer::from_writer(file);
-
-    // Write header
-    writer.write_record(columns).map_err(|e| e.to_string())?;
-
-    // Write data rows. A Row carries every top-level field in schema order,
-    // which is the order `columns` was built in, so no per-cell lookup by
-    // name is needed (that was quadratic in the column count).
-    for row in rows {
-        let record: Vec<String> = row
-            .get_column_iter()
-            .map(|(_, field)| field_to_string(field))
-            .collect();
-        writer.write_record(&record).map_err(|e| e.to_string())?;
+        "csv" => {
+            // UTF-8 BOM for Excel compatibility.
+            out.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
+            let mut writer = CsvWriterBuilder::new()
+                .with_header(true)
+                .with_timestamp_format("%Y-%m-%d %H:%M:%S%.6f".to_string())
+                .build(out);
+            for batch in reader {
+                let batch = batch.map_err(|e| e.to_string())?;
+                rows_written += batch.num_rows();
+                writer.write(&batch).map_err(|e| e.to_string())?;
+            }
+            writer.into_inner().flush().map_err(|e| e.to_string())?;
+        }
+        "json" => {
+            let mut writer = JsonArrayWriter::new(out);
+            for batch in reader {
+                let batch = batch.map_err(|e| e.to_string())?;
+                rows_written += batch.num_rows();
+                writer.write(&batch).map_err(|e| e.to_string())?;
+            }
+            writer.finish().map_err(|e| e.to_string())?;
+            writer.into_inner().flush().map_err(|e| e.to_string())?;
+        }
+        _ => return Err(format!("Unsupported export format: {}", format)),
     }
 
-    writer.flush().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn export_to_json(path: &str, rows: &[Row]) -> Result<(), String> {
-    let json_rows: Vec<serde_json::Value> = rows.iter().map(|row| row_to_json(row)).collect();
-
-    let json_string = serde_json::to_string_pretty(&json_rows).map_err(|e| e.to_string())?;
-
-    let mut file = File::create(path).map_err(|e| e.to_string())?;
-    file.write_all(json_string.as_bytes())
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    Ok(rows_written)
 }
 
 #[cfg(test)]
