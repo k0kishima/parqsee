@@ -1,9 +1,10 @@
 use csv::Writer;
-use parquet::file::reader::{FileReader, SerializedFileReader};
+use parquet::file::reader::FileReader;
 use parquet::record::Row;
 use std::fs::File;
 use std::io::Write;
 
+use crate::services::parquet::open_file_reader;
 use crate::utils::{field_to_string, row_to_json};
 
 pub fn export_data(
@@ -14,8 +15,7 @@ pub fn export_data(
     limit: Option<usize>,
 ) -> Result<String, String> {
     // Read parquet file
-    let file = File::open(&source_path).map_err(|e| e.to_string())?;
-    let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
+    let reader = open_file_reader(&source_path)?;
 
     let metadata = reader.metadata();
     let schema = metadata.file_metadata().schema();

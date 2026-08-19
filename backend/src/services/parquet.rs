@@ -152,9 +152,14 @@ fn converted_type_to_string(converted_type: parquet::basic::ConvertedType) -> St
     }
 }
 
-fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
+/// Open a parquet file for reading. Shared by metadata inspection and export.
+pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
-    let reader = SerializedFileReader::new(file).map_err(|e| e.to_string())?;
+    SerializedFileReader::new(file).map_err(|e| e.to_string())
+}
+
+fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
+    let reader = open_file_reader(path)?;
 
     let metadata = reader.metadata();
     let schema = metadata.file_metadata().schema();
