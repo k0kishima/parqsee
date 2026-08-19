@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { executeSql } from '../api/execute-sql';
 import { QueryEditor } from '../components/query-editor';
 import { QueryResults } from '../components/query-results';
@@ -10,7 +9,6 @@ interface QueryViewProps {
 }
 
 export const QueryView: React.FC<QueryViewProps> = ({ filePath }) => {
-    const { effectiveTheme } = useSettings();
     const [result, setResult] = useState<QueryResult | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [isLoading, setIsLoading] = useState(false);
@@ -31,7 +29,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath }) => {
     };
 
     return (
-        <div className={`flex flex-col h-full ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
+        <div className={`flex flex-col h-full bg-slate-50 dark:bg-gray-900`}>
             <div className="h-1/3 min-h-[150px] border-b border-gray-200 dark:border-gray-700 shadow-sm relative z-10">
                 <QueryEditor onExecute={handleExecute} isLoading={isLoading} />
             </div>
