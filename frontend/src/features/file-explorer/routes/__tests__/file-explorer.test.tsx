@@ -219,6 +219,43 @@ describe('FileExplorer', () => {
     });
   });
 
+  describe('directory expansion', () => {
+    it('loads and shows children when a directory is clicked, and hides them on the second click', async () => {
+      const user = userEvent.setup();
+      const children: FileEntry[] = [
+        { path: '/test/subdir/nested.parquet', name: 'nested.parquet', is_directory: false, is_parquet: true, size: 512 },
+      ];
+      mockListDirectory.mockImplementation(async (path: unknown) =>
+        path === '/test/subdir' ? children : sampleEntries
+      );
+
+      render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('subdir')).toBeInTheDocument());
+
+      await user.click(screen.getByText('subdir'));
+      await waitFor(() => expect(screen.getByText('nested.parquet')).toBeInTheDocument());
+      expect(mockListDirectory).toHaveBeenCalledWith('/test/subdir');
+
+      await user.click(screen.getByText('subdir'));
+      expect(screen.queryByText('nested.parquet')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('same-directory tab switches', () => {
+    it('does not reload the directory when only the selected file changes', async () => {
+      const { rerender } = render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(mockListDirectory).toHaveBeenCalledWith('/test'));
+      expect(mockListDirectory).toHaveBeenCalledTimes(1);
+
+      rerender(<FileExplorer {...defaultProps} currentPath="/test/other.parquet" />);
+      await waitFor(() => expect(screen.getByText('other.parquet')).toBeInTheDocument());
+      expect(mockListDirectory).toHaveBeenCalledTimes(1);
+
+      rerender(<FileExplorer {...defaultProps} currentPath="/elsewhere/deep.parquet" />);
+      await waitFor(() => expect(mockListDirectory).toHaveBeenCalledWith('/elsewhere'));
+    });
+  });
+
   describe('context menu', () => {
     it('shows context menu on right-click', async () => {
       const user = userEvent.setup();

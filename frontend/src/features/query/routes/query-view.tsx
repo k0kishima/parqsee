@@ -33,7 +33,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath }) => {
             <div className="h-1/3 min-h-[150px] border-b border-gray-200 dark:border-gray-700 shadow-sm relative z-10">
                 <QueryEditor onExecute={handleExecute} isLoading={isLoading} />
             </div>
-            <div className="flex-1 overflow-hidden relative z-0">
+            <div className="flex-1 overflow-hidden relative z-0 flex flex-col">
                 <QueryResults result={result} error={error} isLoading={isLoading} />
             </div>
         </div>

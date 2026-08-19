@@ -1,3 +1,4 @@
+use arrow::record_batch::RecordBatch;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -197,7 +198,6 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
 }
 
 use arrow::json::LineDelimitedWriter;
-use arrow::record_batch::RecordBatch;
 
 fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
@@ -290,20 +290,119 @@ pub async fn execute_sql_with_cache(
     cache: &ParquetCache,
     file_path: &str,
     query: &str,
-) -> Result<(Vec<arrow::record_batch::RecordBatch>, arrow::datatypes::SchemaRef), String> {
+) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef), String> {
+    let (batches, schema, _) = execute_sql_limited(cache, file_path, query, None).await?;
+    Ok((batches, schema))
+}
+
+/// Run `query`, keeping at most `max_rows` rows of the result. The limit is
+/// pushed into the plan, so a `SELECT *` over a large file does not
+/// materialize every row before being cut down. The returned flag tells
+/// whether rows were dropped.
+pub async fn execute_sql_limited(
+    cache: &ParquetCache,
+    file_path: &str,
+    query: &str,
+    max_rows: Option<usize>,
+) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, bool), String> {
     let ctx = cache.get_or_create_session(file_path).await?;
 
-    let df = ctx
+    let mut df = ctx
         .sql(query)
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
     let schema = df.schema().inner().clone();
 
-    let batches = df
+    if let Some(max) = max_rows {
+        // Fetch one extra row so we can tell a full page from a truncated one.
+        df = df
+            .limit(0, Some(max + 1))
+            .map_err(|e| format!("Failed to limit results: {}", e))?;
+    }
+
+    let mut batches = df
         .collect()
         .await
         .map_err(|e| format!("Failed to collect results: {}", e))?;
 
-    Ok((batches, schema))
+    let mut truncated = false;
+    if let Some(max) = max_rows {
+        truncated = truncate_batches(&mut batches, max);
+    }
+
+    Ok((batches, schema, truncated))
+}
+
+/// Drop rows past `max` across `batches`; returns true if anything was dropped.
+fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
+    let total: usize = batches.iter().map(|b| b.num_rows()).sum();
+    if total <= max {
+        return false;
+    }
+    let mut remaining = max;
+    let mut keep = 0;
+    for batch in batches.iter_mut() {
+        if remaining == 0 {
+            break;
+        }
+        if batch.num_rows() > remaining {
+            *batch = batch.slice(0, remaining);
+        }
+        remaining -= batch.num_rows();
+        keep += 1;
+    }
+    batches.truncate(keep);
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_batches;
+    use arrow::array::Int32Array;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::record_batch::RecordBatch;
+    use std::sync::Arc;
+
+    fn batch(n: i32) -> RecordBatch {
+        let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
+        RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from_iter_values(0..n))]).unwrap()
+    }
+
+    fn rows(batches: &[RecordBatch]) -> usize {
+        batches.iter().map(|b| b.num_rows()).sum()
+    }
+
+    #[test]
+    fn keeps_results_within_the_limit() {
+        let mut batches = vec![batch(3), batch(4)];
+        assert!(!truncate_batches(&mut batches, 7));
+        assert_eq!(rows(&batches), 7);
+        assert!(!truncate_batches(&mut batches, 100));
+        assert_eq!(batches.len(), 2);
+    }
+
+    #[test]
+    fn cuts_inside_a_batch_and_drops_the_rest() {
+        let mut batches = vec![batch(3), batch(4), batch(5)];
+        assert!(truncate_batches(&mut batches, 5));
+        assert_eq!(batches.len(), 2);
+        assert_eq!(rows(&batches), 5);
+        assert_eq!(batches[1].num_rows(), 2);
+    }
+
+    #[test]
+    fn cuts_exactly_on_a_batch_boundary() {
+        let mut batches = vec![batch(3), batch(4)];
+        assert!(truncate_batches(&mut batches, 3));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(rows(&batches), 3);
+    }
+
+    #[test]
+    fn zero_limit_drops_everything() {
+        let mut batches = vec![batch(3)];
+        assert!(truncate_batches(&mut batches, 0));
+        assert!(batches.is_empty());
+    }
 }

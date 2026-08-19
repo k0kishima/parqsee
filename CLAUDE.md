@@ -57,7 +57,6 @@ parqsee/
 │   │   ├── commands/             # Tauri command handlers (file, data, query)
 │   │   ├── services/             # parquet (cache, reads, SQL), export
 │   │   ├── models/               # Serde types shared with the frontend
-│   │   ├── utils/                # Parquet Field -> JSON / string conversion
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
 │   ├── Cargo.toml
@@ -123,7 +122,7 @@ Argument names are camelCase on the JS side.
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?)` → `string` | Export to `csv` or `json` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
-| `execute_sql` | `(filePath, query)` → `QueryResult` | Run arbitrary SQL; the file is registered as table `t` |
+| `execute_sql` | `(filePath, query)` → `QueryResult` | Run arbitrary SQL; the file is registered as table `t`. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
 
 The frontend also listens for a `file-drop` event emitted from
 `lib.rs`'s window drag-drop handler.
@@ -145,18 +144,22 @@ The frontend also listens for a `file-drop` event emitted from
    while older components still branch on `effectiveTheme === 'dark'` inline.
    Prefer the CSS variables in new code.
 7. Both grids (`file-viewer/components/data-table.tsx` and
-   `query/components/query-results.tsx`) only render the columns that overlap the
-   scroll viewport via `hooks/useColumnVirtualizer`, with column widths computed up
-   front by `lib/column-widths.ts` (`table-layout: fixed`). Wide files (hundreds of
-   columns) would otherwise put tens of thousands of cells per tab in the DOM, and
-   WebKit's style recalc over them made tab switches take close to a second. Keep
-   new grid features compatible with this (no DOM lookups of off-screen cells).
+   `query/components/query-results.tsx`) only render the columns — and in the query
+   grid, the rows — that overlap the scroll viewport via `hooks/useVirtualRange`,
+   with column widths computed up front by `lib/column-widths.ts`
+   (`table-layout: fixed`). Wide files (hundreds of columns) would otherwise put
+   tens of thousands of cells per tab in the DOM, and WebKit's style recalc over
+   them made tab switches take close to a second. Keep new grid features
+   compatible with this (no DOM lookups of off-screen cells).
+8. Exports stream RecordBatches from the parquet Arrow reader (offset/limit pushed
+   down) straight into arrow's CSV/JSON writers — constant memory; don't buffer
+   whole files.
 
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, `lib/path`,
-`lib/column-widths` and `hooks/useColumnVirtualizer`;
-`cargo test --lib` covers the extension matching in `commands/file.rs`.
+`lib/column-widths` and `hooks/useVirtualRange`; `cargo test --lib` covers the
+extension matching in `commands/file.rs`, SQL result truncation and export.
 Coverage is otherwise thin, so also verify manually:
 
 1. Drag-and-drop with various Parquet files

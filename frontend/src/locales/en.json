@@ -93,6 +93,7 @@
             "running": "Running...",
             "rows": "{{count}} rows",
             "duration": "Duration: {{ms}}ms",
+            "truncated": "Showing the first {{max}} rows — add a LIMIT clause to narrow the result",
             "noResults": "No results to display",
             "executing": "Executing query...",
             "error": "Error"
