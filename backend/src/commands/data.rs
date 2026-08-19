@@ -37,6 +37,6 @@ pub async fn export_data(
     format: String,
     offset: Option<usize>,
     limit: Option<usize>,
-) -> Result<String, String> {
+) -> Result<usize, String> {
     export::export_data(source_path, export_path, format, offset, limit)
 }

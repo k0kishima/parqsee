@@ -51,6 +51,7 @@ export const evictCache = async (path: string): Promise<void> => {
     return await invoke('evict_cache', { path });
 };
 
-export const exportData = async (params: ExportDataParams): Promise<string> => {
+/** Resolves with the number of rows written. */
+export const exportData = async (params: ExportDataParams): Promise<number> => {
     return await invoke('export_data', params as any);
 };

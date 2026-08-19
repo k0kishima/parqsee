@@ -7,13 +7,14 @@ use std::io::Write;
 use crate::services::parquet::open_file_reader;
 use crate::utils::{field_to_string, row_to_json};
 
+/// Export rows to `export_path`, returning how many rows were written.
 pub fn export_data(
     source_path: String,
     export_path: String,
     format: String,
     offset: Option<usize>,
     limit: Option<usize>,
-) -> Result<String, String> {
+) -> Result<usize, String> {
     // Read parquet file
     let reader = open_file_reader(&source_path)?;
 
@@ -61,11 +62,7 @@ pub fn export_data(
         _ => Err(format!("Unsupported export format: {}", format)),
     }?;
 
-    Ok(format!(
-        "Successfully exported {} rows to {}",
-        rows_data.len(),
-        export_path
-    ))
+    Ok(rows_data.len())
 }
 
 fn export_to_csv(path: &str, columns: &[String], rows: &[Row]) -> Result<(), String> {
