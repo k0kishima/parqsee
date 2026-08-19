@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo } from "../api";
-import { useSettings } from "../../../contexts/SettingsContext";
 
 interface FilterBarProps {
     columns: ColumnInfo[];
@@ -19,7 +18,6 @@ interface FilterRow {
 
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
     const { t } = useTranslation();
-    const { effectiveTheme } = useSettings();
 
     // Initialize with one row
     const [filters, setFilters] = useState<FilterRow[]>([
@@ -112,13 +110,13 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
         }
     };
 
-    const inputBg = effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-slate-300 text-slate-800';
-    const iconButtonClass = `p-1 rounded transition-colors ${effectiveTheme === 'dark' ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200'}`;
+    const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
+    const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
     const operators = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"];
 
     return (
-        <div className={`px-6 py-2 border-t flex flex-col gap-2 ${effectiveTheme === 'dark' ? 'border-gray-700 bg-gray-800/50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className="px-6 py-2 border-t flex flex-col gap-2 border-slate-200 bg-slate-50 dark:border-gray-700 dark:bg-gray-800/50">
             <form onSubmit={handleSubmit}>
                 {filters.map((filter, index) => {
                     const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
@@ -127,14 +125,14 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                         <div key={filter.id} className="flex items-center gap-2 mb-2 last:mb-0">
                             {index === 0 ? (
                                 <div className="flex items-center gap-2 min-w-[80px]">
-                                    <Filter size={14} className={effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-400'} />
-                                    <span className={`text-xs font-semibold uppercase tracking-wider ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-500'}`}>
+                                    <Filter size={14} className="text-slate-400 dark:text-gray-400" />
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-gray-500">
                                         {t('viewer.filter')}:
                                     </span>
                                 </div>
                             ) : (
                                 <div className="min-w-[80px] flex justify-end pr-2">
-                                    <span className={`text-xs font-bold uppercase ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-500'}`}>AND</span>
+                                    <span className="text-xs font-bold uppercase text-slate-500 dark:text-gray-500">AND</span>
                                 </div>
                             )}
 
@@ -187,7 +185,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                     <button
                         type="button"
                         onClick={handleAddRow}
-                        className={`flex items-center text-xs font-medium px-2 py-1 rounded transition-colors ${effectiveTheme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                        className="flex items-center text-xs font-medium px-2 py-1 rounded transition-colors text-slate-600 hover:bg-slate-100 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                         <Plus size={14} className="mr-1" />
                         {t('common.addCondition', { defaultValue: 'Add Condition' })}
@@ -206,7 +204,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             <button
                                 type="button"
                                 onClick={handleClear}
-                                className={`p-1 rounded transition-colors ${effectiveTheme === 'dark' ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200'}`}
+                                className="p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700"
                                 title={t('common.clear', { defaultValue: 'Clear' })}
                             >
                                 <X size={16} />

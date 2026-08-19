@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/*
+ * Dark mode is driven by a `dark` class that SettingsContext toggles on
+ * <html>, so register it as a variant. This lets components write
+ * `bg-white dark:bg-gray-800` instead of branching on effectiveTheme in JS.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Manual dark mode implementation for Tailwind v4 */
 @layer base {
   :root {
@@ -45,18 +52,24 @@
   }
 }
 
-/* Utility classes for our custom properties */
-@layer utilities {
-  .bg-primary { background-color: var(--bg-primary); }
-  .bg-secondary { background-color: var(--bg-secondary); }
-  .bg-tertiary { background-color: var(--bg-tertiary); }
-  .bg-selected { background-color: var(--bg-selected); }
-  .text-primary { color: var(--text-primary); }
-  .text-secondary { color: var(--text-secondary); }
-  .text-tertiary { color: var(--text-tertiary); }
-  .border-primary { border-color: var(--border-primary); }
-  .border-secondary { border-color: var(--border-secondary); }
+/*
+ * Utility classes for our custom properties.
+ *
+ * These must be declared with @utility, not as plain rules inside
+ * @layer utilities: only @utility makes Tailwind generate variants, so
+ * `hover:bg-tertiary` and friends emit no CSS at all under @layer.
+ */
+@utility bg-primary { background-color: var(--bg-primary); }
+@utility bg-secondary { background-color: var(--bg-secondary); }
+@utility bg-tertiary { background-color: var(--bg-tertiary); }
+@utility bg-selected { background-color: var(--bg-selected); }
+@utility text-primary { color: var(--text-primary); }
+@utility text-secondary { color: var(--text-secondary); }
+@utility text-tertiary { color: var(--text-tertiary); }
+@utility border-primary { border-color: var(--border-primary); }
+@utility border-secondary { border-color: var(--border-secondary); }
 
+@layer utilities {
   /* Button Components */
   .btn-primary {
     @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors shadow-sm;

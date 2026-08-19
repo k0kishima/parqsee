@@ -1,6 +1,5 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { QueryResult } from '../types';
 
 interface QueryResultsProps {
@@ -11,7 +10,6 @@ interface QueryResultsProps {
 
 export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading }) => {
     const { t } = useTranslation();
-    const { effectiveTheme } = useSettings();
 
     if (isLoading) {
         return (
@@ -26,8 +24,8 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
 
     if (error) {
         return (
-            <div className={`flex-1 p-4 overflow-auto ${effectiveTheme === 'dark' ? 'bg-red-900/10' : 'bg-red-50'}`}>
-                <div className={`font-mono text-sm whitespace-pre-wrap ${effectiveTheme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
+            <div className="flex-1 p-4 overflow-auto bg-red-50 dark:bg-red-900/10">
+                <div className="font-mono text-sm whitespace-pre-wrap text-red-600 dark:text-red-400">
                     {error}
                 </div>
             </div>
@@ -42,13 +40,13 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
         );
     }
 
-    const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-white';
-    const headerBg = effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-800' : 'bg-gray-50 border-gray-200';
-    const headerText = effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-600';
-    const headerBorder = effectiveTheme === 'dark' ? 'border-gray-700' : 'border-gray-200';
-    const rowHover = effectiveTheme === 'dark' ? 'hover:bg-gray-800/50' : 'hover:bg-gray-50';
-    const cellText = effectiveTheme === 'dark' ? 'text-gray-100' : 'text-gray-900';
-    const cellBorder = effectiveTheme === 'dark' ? 'border-gray-800' : 'border-gray-100';
+    const containerBg = 'bg-white dark:bg-gray-900';
+    const headerBg = 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800';
+    const headerText = 'text-gray-600 dark:text-gray-300';
+    const headerBorder = 'border-gray-200 dark:border-gray-700';
+    const rowHover = 'hover:bg-gray-50 dark:hover:bg-gray-800/50';
+    const cellText = 'text-gray-900 dark:text-gray-100';
+    const cellBorder = 'border-gray-100 dark:border-gray-800';
 
     return (
         <div className={`flex-1 flex flex-col overflow-hidden ${containerBg}`}>
@@ -70,7 +68,7 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
                             ))}
                         </tr>
                     </thead>
-                    <tbody className={`divide-y ${effectiveTheme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                         {result.rows.map((row, i) => (
                             <tr key={i} className={rowHover}>
                                 {result.columns.map((col) => (

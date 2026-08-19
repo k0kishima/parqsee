@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Database } from 'lucide-react';
-import { useSettings } from '../../../contexts/SettingsContext';
 import type { Tab } from '../../../contexts/WorkspaceContext';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
@@ -32,7 +31,6 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   onStateChange
 }) => {
   const { t } = useTranslation();
-  const { effectiveTheme } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasBeenActive, setHasBeenActive] = useState(false);
 
@@ -60,20 +58,15 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // Only render DataViewer if tab is active or has been active before
   // This lazy loads tabs when they're first accessed
   // Determine styles based on theme
-  const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-white';
-  const toolbarBg = effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200';
+  const containerBg = 'bg-white dark:bg-gray-900';
+  const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-800';
 
   const getButtonStyle = (mode: 'browse' | 'query') => {
     const isSelected = viewMode === mode;
-    if (effectiveTheme === 'dark') {
-      return isSelected
-        ? 'bg-gray-800 text-gray-200 ring-1 ring-white/10'
-        : 'text-gray-400 hover:bg-gray-800';
-    } else {
-      return isSelected
-        ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5'
-        : 'text-slate-500 hover:bg-gray-100';
-    }
+    // dark:shadow-none because only the light selected state carries a shadow
+    return isSelected
+      ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5 dark:bg-gray-800 dark:text-gray-200 dark:ring-white/10 dark:shadow-none'
+      : 'text-slate-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800';
   };
 
   // Lazy load: only mount content once the tab has been activated
@@ -140,7 +133,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           />
         </div>
         <div
-          className={`absolute inset-0 z-10 ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}
+          className="absolute inset-0 z-10 bg-slate-50 dark:bg-gray-900"
           style={{ display: viewMode === 'query' ? 'block' : 'none' }}
         >
           <QueryView filePath={tab.path} />

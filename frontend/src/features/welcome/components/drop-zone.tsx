@@ -1,7 +1,6 @@
 import React, { useState, useCallback, DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useSettings } from '../../../contexts/SettingsContext';
 import { isParquetPath } from '../../../lib/path';
 
 interface DropZoneProps {
@@ -10,7 +9,6 @@ interface DropZoneProps {
 }
 
 export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) => {
-    const { effectiveTheme } = useSettings();
     const { t } = useTranslation();
     const [isDragging, setIsDragging] = useState(false);
 
@@ -52,9 +50,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
               relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-200
               ${isDragging
                     ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-[1.02]'
-                    : effectiveTheme === 'dark'
-                        ? 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                        : 'border-blue-200 bg-white hover:border-blue-300 hover:shadow-md'
+                    : 'border-blue-200 bg-white hover:border-blue-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:shadow-none'
                 }
             `}
             onDragOver={handleDragOver}
@@ -62,10 +58,10 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
             onDrop={handleDrop}
         >
             <div className="px-12 py-16 text-center">
-                <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 transition-colors ${isDragging ? 'bg-blue-100' : (effectiveTheme === 'dark' ? 'bg-gray-700' : 'bg-blue-50')
+                <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 transition-colors ${isDragging ? 'bg-blue-100' : 'bg-blue-50 dark:bg-gray-700'
                     }`}>
                     <svg
-                        className={`w-10 h-10 transition-colors ${isDragging ? 'text-blue-600' : (effectiveTheme === 'dark' ? 'text-gray-400' : 'text-blue-400')
+                        className={`w-10 h-10 transition-colors ${isDragging ? 'text-blue-600' : 'text-blue-400 dark:text-gray-400'
                             }`}
                         fill="none"
                         viewBox="0 0 24 24"
@@ -80,10 +76,10 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     </svg>
                 </div>
 
-                <h2 className={`text-xl font-semibold mb-2 ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-slate-900'}`}>
+                <h2 className="text-xl font-semibold mb-2 text-slate-900 dark:text-gray-100">
                     {t('welcome.dropZone.title')}
                 </h2>
-                <p className={`text-sm mb-6 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-slate-500'}`}>
+                <p className="text-sm mb-6 text-slate-500 dark:text-gray-400">
                     {t('welcome.dropZone.subtitle')}
                 </p>
 
@@ -94,7 +90,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     {t('welcome.dropZone.browse')}
                 </button>
 
-                <p className={`mt-6 text-xs ${effectiveTheme === 'dark' ? 'text-gray-500' : 'text-slate-400'}`}>
+                <p className="mt-6 text-xs text-slate-400 dark:text-gray-500">
                     {t('welcome.dropZone.hint')}
                 </p>
             </div>

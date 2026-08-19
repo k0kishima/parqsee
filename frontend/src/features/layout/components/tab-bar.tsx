@@ -1,7 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileText } from 'lucide-react';
-import { useSettings } from '../../../contexts/SettingsContext';
 import type { Tab } from '../../../contexts/WorkspaceContext';
 
 interface TabBarProps {
@@ -12,7 +11,6 @@ interface TabBarProps {
 }
 
 const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose }) => {
-  const { effectiveTheme } = useSettings();
   const { t } = useTranslation();
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
@@ -25,8 +23,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
   }
 
   return (
-    <div className={`flex items-end border-b ${effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'
-      }`}>
+    <div className="flex items-end border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700">
       <div className="flex overflow-x-auto scrollbar-thin">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -38,26 +35,22 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
                 group flex items-center gap-2 px-3 py-2 border-t border-l border-r cursor-pointer
                 min-w-[120px] max-w-[200px] transition-all
                 ${isActive
-                  ? effectiveTheme === 'dark'
-                    ? 'bg-gray-800 border-gray-600 border-b-gray-800'
-                    : 'bg-white border-gray-200 border-b-white'
-                  : effectiveTheme === 'dark'
-                    ? 'bg-gray-800/50 border-gray-700 hover:bg-gray-800/70'
-                    : 'bg-gray-100 border-gray-200 hover:bg-gray-50'
+                  ? 'bg-white border-gray-200 border-b-white dark:bg-gray-800 dark:border-gray-600 dark:border-b-gray-800'
+                  : 'bg-gray-100 border-gray-200 hover:bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700 dark:hover:bg-gray-800/70'
                 }
                 ${isActive ? 'relative top-[1px]' : ''}
               `}
             >
               <FileText className={`w-4 h-4 flex-shrink-0 ${isActive
                 ? 'text-green-500'
-                : effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                : 'text-gray-500 dark:text-gray-400'
                 }`} />
 
               <span className={`
                 flex-1 text-sm truncate
                 ${isActive
-                  ? effectiveTheme === 'dark' ? 'text-gray-100 font-medium' : 'text-gray-900 font-medium'
-                  : effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-600'
+                  ? 'text-gray-900 font-medium dark:text-gray-100'
+                  : 'text-gray-600 dark:text-gray-300'
                 }
               `} title={tab.path}>
                 {tab.name}
@@ -65,14 +58,10 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
 
               <button
                 onClick={(e) => handleCloseTab(e, tab.id)}
-                className={`
-                  p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600
-                  transition-colors
-                `}
+                className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 title={t('common.closeTab')}
               >
-                <X className={`w-3 h-3 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                  }`} />
+                <X className="w-3 h-3 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
           );

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { isModifierPressed } from '../../../hooks/useGlobalKeydown';
 
 interface QueryEditorProps {
@@ -11,7 +10,6 @@ interface QueryEditorProps {
 
 export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading }) => {
     const { t } = useTranslation();
-    const { effectiveTheme } = useSettings();
     const [query, setQuery] = useState('SELECT * FROM t LIMIT 100;');
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -20,9 +18,9 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading }
         }
     };
 
-    const containerBg = effectiveTheme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200';
-    const toolbarBg = effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-800' : 'bg-gray-50 border-gray-200';
-    const textareaColor = effectiveTheme === 'dark' ? 'text-gray-100' : 'text-gray-900';
+    const containerBg = 'bg-white border-gray-200 dark:bg-gray-900 dark:border-gray-700';
+    const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800';
+    const textareaColor = 'text-gray-900 dark:text-gray-100';
 
     return (
         <div className={`flex flex-col h-full border-b ${containerBg}`}>
