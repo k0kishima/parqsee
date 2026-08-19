@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Database } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
@@ -33,6 +33,26 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasBeenActive, setHasBeenActive] = useState(false);
+
+  // DataViewer is memoized, so hand it props that do not change identity when
+  // this component re-renders (tab activation, state echoes from the
+  // workspace). Otherwise every tab switch re-rendered the grid of the
+  // outgoing and the incoming tab.
+  const onCloseRef = useRef(onClose);
+  const onStateChangeRef = useRef(onStateChange);
+  const savedStateRef = useRef(savedState);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onStateChangeRef.current = onStateChange;
+    savedStateRef.current = savedState;
+  });
+  // The viewer only reads its initial state on mount.
+  const [viewerInitialState] = useState(() => savedState);
+  const handleClose = useCallback(() => onCloseRef.current(), []);
+  const handleViewerStateChange = useCallback((state: TabState) => {
+    // Merge with existing state to preserve viewMode
+    onStateChangeRef.current?.({ ...savedStateRef.current, ...state });
+  }, []);
 
   // Local state if onStateChange is not provided (though it should be)
   const [localViewMode, setLocalViewMode] = useState<'browse' | 'query'>('browse');
@@ -119,17 +139,9 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
         >
           <DataViewer
             filePath={tab.path}
-            onClose={onClose}
-            initialState={savedState}
-            onStateChange={(state) => {
-              // Merge with existing state to preserve viewMode
-              if (onStateChange) {
-                onStateChange({
-                  ...savedState,
-                  ...state
-                });
-              }
-            }}
+            onClose={handleClose}
+            initialState={viewerInitialState}
+            onStateChange={handleViewerStateChange}
           />
         </div>
         <div
