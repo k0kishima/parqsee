@@ -1,6 +1,5 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../../contexts/SettingsContext';
 
 interface WelcomeHeaderProps {
     onBrowse: () => void;
@@ -8,16 +7,15 @@ interface WelcomeHeaderProps {
 }
 
 export const WelcomeHeader: React.FC<WelcomeHeaderProps> = ({ onBrowse, onOpenSettings }) => {
-    const { effectiveTheme } = useSettings();
     const { t } = useTranslation();
 
     return (
-        <div className={`border-b shadow-sm ${effectiveTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-100'}`}>
+        <div className={`border-b shadow-sm bg-white border-blue-100 dark:bg-gray-800 dark:border-gray-700`}>
             <div className="px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-2">
                         <img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-lg shadow-sm" />
-                        <h1 className={`text-xl font-semibold ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-slate-900'}`}>{t('common.appName')}</h1>
+                        <h1 className={`text-xl font-semibold text-slate-900 dark:text-gray-100`}>{t('common.appName')}</h1>
                     </div>
                 </div>
                 <div className="flex items-center space-x-3">
@@ -32,10 +30,7 @@ export const WelcomeHeader: React.FC<WelcomeHeaderProps> = ({ onBrowse, onOpenSe
                     </button>
                     <button
                         onClick={onOpenSettings}
-                        className={`p-2 rounded-md transition-colors ${effectiveTheme === 'dark'
-                            ? 'text-gray-400 hover:bg-gray-700'
-                            : 'text-gray-500 hover:bg-gray-100'
-                            }`}
+                        className={`p-2 rounded-md transition-colors text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700`}
                         title={t('settings.title')}
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

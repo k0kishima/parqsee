@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/*
+ * Dark mode is driven by a `dark` class that SettingsContext toggles on
+ * <html>, so register it as a variant. This lets components write
+ * `bg-white dark:bg-gray-800` instead of branching on effectiveTheme in JS.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Manual dark mode implementation for Tailwind v4 */
 @layer base {
   :root {

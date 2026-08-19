@@ -1,6 +1,5 @@
 import React, { useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { isTauri } from '../../../lib/tauri';
 import { PARQUET_EXTENSION } from '../../../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../../../hooks/useGlobalKeydown';
@@ -15,7 +14,6 @@ interface WelcomeProps {
 }
 
 export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }) => {
-    const { effectiveTheme } = useSettings();
 
     const handleBrowse = useCallback(async () => {
         try {
@@ -46,7 +44,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }
     }, [handleBrowse]));
 
     return (
-        <div className={`h-screen flex flex-col ${effectiveTheme === 'dark' ? 'bg-gray-900' : 'bg-slate-50'}`}>
+        <div className={`h-screen flex flex-col bg-slate-50 dark:bg-gray-900`}>
             {/* Header */}
             <WelcomeHeader onBrowse={handleBrowse} onOpenSettings={onOpenSettings} />
 

@@ -1,7 +1,6 @@
 
 
 import { useWorkspace } from '../../../contexts/WorkspaceContext';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { FileExplorer } from '../../file-explorer';
 import { TabBar } from '../../layout';
 import { TabContent } from '../../file-viewer';
@@ -23,7 +22,6 @@ export const Workspace = () => {
         setTabState,
 
     } = useWorkspace();
-    const { effectiveTheme } = useSettings();
 
     return (
         <div className="h-screen flex">
@@ -44,7 +42,6 @@ export const Workspace = () => {
                 <Header
                     isSidebarOpen={isSidebarOpen}
                     onToggleSidebar={toggleSidebar}
-                    effectiveTheme={effectiveTheme}
                 />
 
                 {/* Tab Bar */}
