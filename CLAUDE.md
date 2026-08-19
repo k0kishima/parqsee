@@ -45,8 +45,8 @@ parqsee/
 │   │   ├── app/                  # App shell: provider tree and router
 │   │   ├── contexts/             # SettingsContext, RecentFilesContext, WorkspaceContext
 │   │   ├── features/             # Feature-based modules (see below)
-│   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown)
-│   │   ├── lib/                  # Shared helpers (path, format, tauri, i18n, settings-storage)
+│   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown, useColumnVirtualizer)
+│   │   ├── lib/                  # Shared helpers (path, format, tauri, i18n, settings-storage, column-widths)
 │   │   ├── locales/              # en.json, ja.json
 │   │   └── test/setup.ts         # Vitest setup and global mocks
 │   ├── package.json
@@ -75,7 +75,7 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `welcome` — landing screen: drop zone, recent files, feature highlights
 - `workspace` — main layout: sidebar, header, tab hosting
 - `file-explorer` — directory tree, search, breadcrumb, context menu
-- `file-viewer` — data table, pagination, search bar, filter bar, export modal
+- `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
 - `layout` — tab bar
 - `settings` — settings modal
@@ -144,10 +144,18 @@ The frontend also listens for a `file-drop` event emitted from
    (`bg-primary`, `text-secondary`, `border-primary`, …) used by the newer components,
    while older components still branch on `effectiveTheme === 'dark'` inline.
    Prefer the CSS variables in new code.
+7. Both grids (`file-viewer/components/data-table.tsx` and
+   `query/components/query-results.tsx`) only render the columns that overlap the
+   scroll viewport via `hooks/useColumnVirtualizer`, with column widths computed up
+   front by `lib/column-widths.ts` (`table-layout: fixed`). Wide files (hundreds of
+   columns) would otherwise put tens of thousands of cells per tab in the DOM, and
+   WebKit's style recalc over them made tab switches take close to a second. Keep
+   new grid features compatible with this (no DOM lookups of off-screen cells).
 
 ## Testing
 
-Vitest + Testing Library cover the file-explorer feature and `lib/path`;
+Vitest + Testing Library cover the file-explorer feature, `lib/path`,
+`lib/column-widths` and `hooks/useColumnVirtualizer`;
 `cargo test --lib` covers the extension matching in `commands/file.rs`.
 Coverage is otherwise thin, so also verify manually:
 
