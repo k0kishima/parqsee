@@ -229,25 +229,13 @@ pub async fn read_data(
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<Value>, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-
     let where_clause = build_where_clause(filter);
     let query = format!(
         "SELECT * FROM t {} LIMIT {} OFFSET {}",
         where_clause, limit, offset
     );
 
-    // Execute the query
-    let df = ctx
-        .sql(&query)
-        .await
-        .map_err(|e| format!("Query execution failed: {}", e))?;
-
-    // Collect results
-    let batches = df
-        .collect()
-        .await
-        .map_err(|e| format!("Failed to collect results: {}", e))?;
+    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
     let buf = batches_to_json_bytes(&batches)?;
     let rows: Result<Vec<Value>, _> = serde_json::Deserializer::from_slice(&buf)
@@ -261,22 +249,10 @@ pub async fn count_data(
     path: &str,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-
     let where_clause = build_where_clause(filter);
     let query = format!("SELECT COUNT(*) FROM t {}", where_clause);
 
-    // Execute the query
-    let df = ctx
-        .sql(&query)
-        .await
-        .map_err(|e| format!("Query execution failed: {}", e))?;
-
-    // Collect results
-    let batches = df
-        .collect()
-        .await
-        .map_err(|e| format!("Failed to collect results: {}", e))?;
+    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
     if batches.is_empty() {
         return Ok(0);
