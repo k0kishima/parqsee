@@ -93,6 +93,7 @@
       "running": "実行中...",
       "rows": "{{count}} 件",
       "duration": "処理時間: {{ms}}ms",
+      "truncated": "先頭 {{max}} 件のみ表示しています（LIMIT 句で絞り込んでください）",
       "noResults": "表示する結果がありません",
       "executing": "クエリ実行中...",
       "error": "エラー"

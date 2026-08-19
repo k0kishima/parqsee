@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
 import type { ColumnInfo } from '../api';
 import type { TypeDisplay } from '../../../lib/settings-storage';
-import { useColumnVirtualizer } from '../../../hooks/useColumnVirtualizer';
+import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 
 export interface SearchMatch {
@@ -156,10 +156,10 @@ export const DataTable = React.memo(function DataTable({
   );
 
   const virt = useColumnVirtualizer(widths, scrollerRef);
-  const { start, end, padLeft, totalWidth, viewportWidth } = virt;
+  const { start, end, padStart: padLeft, totalSize: totalWidth, viewportSize: viewportWidth } = virt;
   // Let the right spacer absorb any slack so row backgrounds span the viewport
   // when the columns do not fill it.
-  const padRight = virt.padRight + Math.max(0, viewportWidth - totalWidth);
+  const padRight = virt.padEnd + Math.max(0, viewportWidth - totalWidth);
   const tableWidth = Math.max(totalWidth, viewportWidth);
 
   const visibleColumns = useMemo<VisibleColumn[]>(
