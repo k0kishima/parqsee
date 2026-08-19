@@ -69,7 +69,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
       }
 
       // Call the export command
-      const result = await exportData({
+      const exportedRows = await exportData({
         sourcePath: filePath,
         exportPath: savePath,
         format: exportFormat,
@@ -77,13 +77,14 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
         limit
       });
 
-      console.log(result);
-
       // Send notification
       const fileName = getFileName(savePath);
       await sendNotification({
         title: t('export.success.title'),
-        body: t('export.success.body', { file: fileName }),
+        body: t('export.success.body', {
+          rows: exportedRows.toLocaleString(),
+          file: fileName
+        }),
         icon: "done"
       });
 

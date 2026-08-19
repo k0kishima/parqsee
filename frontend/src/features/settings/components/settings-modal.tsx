@@ -19,7 +19,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, [settings]);
 
   const handleSave = () => {
-    console.log('Saving settings:', localSettings);
     updateSettings(localSettings);
     onClose();
   };

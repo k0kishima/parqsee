@@ -120,7 +120,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                     setCurrentFile(path);
                 }
             } else {
-                console.log("Running in browser, simulating file open:", path);
+                // Browser fallback: there is no backend to open the file with.
                 setCurrentFile(path);
             }
         } catch (error) {

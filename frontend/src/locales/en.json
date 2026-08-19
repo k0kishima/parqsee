@@ -127,7 +127,7 @@
         "exporting": "Exporting...",
         "success": {
             "title": "Export Complete",
-            "body": "Successfully exported to {{file}}"
+            "body": "Successfully exported {{rows}} rows to {{file}}"
         }
     }
 }
