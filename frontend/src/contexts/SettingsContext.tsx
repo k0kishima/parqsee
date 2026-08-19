@@ -33,10 +33,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Determine effective theme
     const updateTheme = () => {
-      console.log('Settings theme:', settings.theme);
       if (settings.theme === 'system') {
         const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        console.log('System prefers dark:', isDark);
         setEffectiveTheme(isDark ? 'dark' : 'light');
       } else {
         setEffectiveTheme(settings.theme);
@@ -54,13 +52,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Apply theme to document
-    console.log('Applying theme:', effectiveTheme);
     if (effectiveTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-    console.log('HTML classes:', document.documentElement.className);
   }, [effectiveTheme]);
 
   const updateSettings = (newSettings: Partial<Settings>) => {
