@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useTransit
 import { listen } from '@tauri-apps/api/event';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
+import { isParquetPath } from '../lib/path';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
@@ -170,7 +171,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const unlisten = listen('file-drop', async (event: any) => {
                 const files = event.payload || [];
                 if (files.length > 0) {
-                    const parquetFile = files.find((f: string) => f.endsWith('.parquet'));
+                    const parquetFile = files.find((f: string) => isParquetPath(f));
                     if (parquetFile) {
                         openParquetFile(parquetFile);
                     } else {

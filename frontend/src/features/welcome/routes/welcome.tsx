@@ -2,6 +2,7 @@ import React, { useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { isTauri } from '../../../lib/tauri';
+import { PARQUET_EXTENSION } from '../../../lib/path';
 import { WelcomeHeader } from '../components/welcome-header';
 import { DropZone } from '../components/drop-zone';
 import { RecentFilesList } from '../components/recent-files-list';
@@ -21,7 +22,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }
                 const selected = await open({
                     filters: [{
                         name: 'Parquet Files',
-                        extensions: ['parquet']
+                        extensions: [PARQUET_EXTENSION]
                     }]
                 });
 

@@ -2,6 +2,7 @@ import React, { useState, useCallback, DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSettings } from '../../../contexts/SettingsContext';
+import { isParquetPath } from '../../../lib/path';
 
 interface DropZoneProps {
     onFileSelect: (path: string) => void;
@@ -41,7 +42,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
             // For web drops, we might have file object but path might be restricted
             // In Tauri webview with fileDropEnabled: false (default), this might not trigger with paths
             // However, if we get a file with path (Tauri custom), use it
-            if ((file as any).path && (file as any).name.endsWith('.parquet')) {
+            if ((file as any).path && isParquetPath((file as any).name)) {
                 onFileSelect((file as any).path);
             }
         }
