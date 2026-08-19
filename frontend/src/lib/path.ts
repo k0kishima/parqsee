@@ -4,10 +4,9 @@ export function getFileName(filePath: string): string {
 
 export const PARQUET_EXTENSION = 'parquet';
 
-// Case-sensitive, matching the backend's `is_parquet` check. Extension
-// stripping below stays case-insensitive, as it was at its only call site.
+// Case-insensitive, matching the backend's `is_parquet` check.
 export function isParquetPath(filePath: string): boolean {
-  return filePath.endsWith(`.${PARQUET_EXTENSION}`);
+  return filePath.toLowerCase().endsWith(`.${PARQUET_EXTENSION}`);
 }
 
 export function stripParquetExtension(filePath: string): string {

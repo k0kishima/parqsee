@@ -3,6 +3,13 @@ use crate::services::parquet::ParquetCache;
 use std::fs::{metadata, read_dir};
 use std::path::Path;
 
+/// Match the parquet extension case-insensitively. macOS and Windows preserve
+/// case but treat `data.PARQUET` and `data.parquet` as the same file, and the
+/// reader dispatches on file contents rather than on the extension.
+fn has_parquet_extension(path: &str) -> bool {
+    path.to_lowercase().ends_with(".parquet")
+}
+
 #[tauri::command]
 pub async fn open_parquet_file(
     cache: tauri::State<'_, ParquetCache>,
@@ -59,7 +66,7 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
         let metadata = entry.metadata().map_err(|e| e.to_string())?;
 
         let is_directory = metadata.is_dir();
-        let is_parquet = !is_directory && path_str.ends_with(".parquet");
+        let is_parquet = !is_directory && has_parquet_extension(&path_str);
         let size = if is_directory {
             None
         } else {
@@ -84,4 +91,23 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     });
 
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_parquet_extension;
+
+    #[test]
+    fn matches_regardless_of_case() {
+        assert!(has_parquet_extension("/data/report.parquet"));
+        assert!(has_parquet_extension("/data/Report.PARQUET"));
+        assert!(has_parquet_extension("/data/report.Parquet"));
+    }
+
+    #[test]
+    fn rejects_other_extensions() {
+        assert!(!has_parquet_extension("/data/report.csv"));
+        assert!(!has_parquet_extension("/data/parquet"));
+        assert!(!has_parquet_extension("/data/report.parquet.bak"));
+    }
 }
