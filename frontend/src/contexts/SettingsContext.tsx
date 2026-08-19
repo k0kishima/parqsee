@@ -1,17 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import i18n from '../lib/i18n';
+import { Settings, loadSettings, saveSettings } from '../lib/settings-storage';
 
-type Theme = 'light' | 'dark' | 'system';
-type TypeDisplay = 'logical' | 'physical' | 'both';
-type Language = 'en' | 'ja';
-
-interface Settings {
-  theme: Theme;
-  rowsPerPage: number;
-  showRecentFiles: boolean;
-  typeDisplay: TypeDisplay;
-  language: Language;
-}
+export type { Settings };
 
 interface SettingsContextType {
   settings: Settings;
@@ -19,26 +10,10 @@ interface SettingsContextType {
   effectiveTheme: 'light' | 'dark';
 }
 
-const defaultSettings: Settings = {
-  theme: 'system',
-  rowsPerPage: 50,  // Reduced default for better performance
-  showRecentFiles: true,
-  typeDisplay: 'logical',
-  language: 'en'
-};
-
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(() => {
-    const saved = localStorage.getItem('parqsee-settings');
-    if (saved) {
-      // Merge saved settings with defaults to ensure all properties exist
-      const parsedSettings = JSON.parse(saved);
-      return { ...defaultSettings, ...parsedSettings };
-    }
-    return defaultSettings;
-  });
+  const [settings, setSettings] = useState<Settings>(loadSettings);
 
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
 
@@ -52,7 +27,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Save settings to localStorage when they change
-    localStorage.setItem('parqsee-settings', JSON.stringify(settings));
+    saveSettings(settings);
   }, [settings]);
 
   useEffect(() => {
