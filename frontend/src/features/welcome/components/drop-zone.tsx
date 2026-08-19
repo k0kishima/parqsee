@@ -31,8 +31,6 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
         e.stopPropagation();
         setIsDragging(false);
 
-        console.log('Web drop event:', e.dataTransfer);
-
         // Check if we have files in dataTransfer
         // Note: Tauri's native file-drop event is handled globally in App.tsx
         // This handles browser-style drops if they happen

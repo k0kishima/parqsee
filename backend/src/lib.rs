@@ -28,7 +28,6 @@ pub fn run() {
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
-                    println!("Files dropped: {:?}", paths);
                     // Send event to frontend
                     window.emit("file-drop", paths).unwrap();
                 }
