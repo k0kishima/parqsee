@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, RefObject } from 'react';
 import type { ColumnInfo } from '../api';
 import type { TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useColumnVirtualizer';
-import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../lib/column-widths';
+import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 
 export interface SearchMatch {
   /** -1 for a column header match. */

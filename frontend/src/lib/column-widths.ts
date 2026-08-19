@@ -16,6 +16,7 @@ interface MeasureFonts {
   header: string;
   type: string;
   mono: string;
+  sans: string;
 }
 
 let canvasContext: CanvasRenderingContext2D | null | undefined;
@@ -38,6 +39,7 @@ function resolveFonts(): MeasureFonts {
     header: `600 14px ${sans}`, // text-sm font-semibold
     type: `12px ${sans}`,       // text-xs
     mono: `12px ${mono}`,       // font-mono text-xs
+    sans: `14px ${sans}`,       // text-sm
   };
 }
 
@@ -53,25 +55,40 @@ export interface ColumnWidthInput {
   typeLabel: string;
 }
 
+const defaultFormat = (value: unknown): string | null =>
+  value === null || value === undefined ? null : String(value);
+
+export interface MeasureOptions {
+  /** Must produce the same text the cells render (null for NULL). */
+  format?: (value: unknown) => string | null;
+  /** Font the cell values are rendered in. Values are not measured one by
+   * one; an average glyph width for the font is multiplied by the length. */
+  valueFont?: 'mono' | 'sans';
+}
+
+const SAMPLE = '0123456789.-abcdefghijklmnopqrstuvwxyz_';
+
 /**
  * Width in px for each column: the widest of the header name, the type label
  * and any value on the page, plus cell padding, clamped to a sane range.
  */
 export function measureColumnWidths(
   columns: ColumnWidthInput[],
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  { format = defaultFormat, valueFont = 'mono' }: MeasureOptions = {}
 ): number[] {
   const ctx = getContext();
   const fonts = resolveFonts();
-  const monoCharWidth = textWidth(ctx, fonts.mono, '0') || 7.2;
+  const charWidth = valueFont === 'mono'
+    ? textWidth(ctx, fonts.mono, '0') || 7.2
+    : (textWidth(ctx, fonts.sans, SAMPLE) || SAMPLE.length * 7.5) / SAMPLE.length;
 
   const maxChars = new Array<number>(columns.length).fill(4); // "NULL"
   for (const row of rows) {
     for (let c = 0; c < columns.length; c++) {
-      const value = row[columns[c].name];
-      if (value === null || value === undefined) continue;
-      const len = String(value).length;
-      if (len > maxChars[c]) maxChars[c] = len;
+      const text = format(row[columns[c].name]);
+      if (text === null) continue;
+      if (text.length > maxChars[c]) maxChars[c] = text.length;
     }
   }
 
@@ -79,7 +96,7 @@ export function measureColumnWidths(
     const content = Math.max(
       textWidth(ctx, fonts.header, col.name),
       col.typeLabel ? textWidth(ctx, fonts.type, col.typeLabel) : 0,
-      maxChars[c] * monoCharWidth
+      maxChars[c] * charWidth
     );
     const width = Math.ceil(content) + CELL_HORIZONTAL_PADDING + 1; // +1 for border-r
     return Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, width));
