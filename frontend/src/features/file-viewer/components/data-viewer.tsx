@@ -4,6 +4,7 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
+import { DataTable, SearchMatch } from "./data-table";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
@@ -15,6 +16,8 @@ interface DataViewerProps {
   initialState?: TabState;
   onStateChange?: (state: TabState) => void;
 }
+
+const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
 
 function DataViewerComponent({ filePath, onClose, initialState, onStateChange }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
@@ -164,7 +167,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const searchMatches = useMemo(() => {
     if (!searchTerm || !metadata || !data) return [];
 
-    const matches: Array<{ rowIndex: number; colIndex: number; value: string }> = [];
+    const matches: SearchMatch[] = [];
     const lowerSearchTerm = searchTerm.toLowerCase();
     const maxMatches = 1000; // Limit to prevent performance issues
 
@@ -213,90 +216,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   }, []);
 
 
-  const scrollToMatch = useCallback((matchIndex: number) => {
-    if (!tableContainerRef.current || !searchMatches[matchIndex]) return;
-
-    const match = searchMatches[matchIndex];
-
-    // If it's a column header match
-    if (match.rowIndex === -1) {
-      const headerElement = tableContainerRef.current.querySelector(
-        `thead th:nth-child(${match.colIndex + 1})`
-      );
-      if (headerElement) {
-        headerElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      }
-    } else {
-      // It's a data cell match
-      const cellElement = tableContainerRef.current.querySelector(
-        `tbody tr:nth-child(${match.rowIndex + 1}) td:nth-child(${match.colIndex + 1})`
-      );
-      if (cellElement) {
-        cellElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      }
-    }
-  }, [searchMatches]);
-
   const handleNextMatch = useCallback(() => {
     if (searchMatches.length > 0) {
-      const newIndex = (currentMatchIndex + 1) % searchMatches.length;
-      setCurrentMatchIndex(newIndex);
-      scrollToMatch(newIndex);
+      setCurrentMatchIndex(i => (i + 1) % searchMatches.length);
     }
-  }, [searchMatches, currentMatchIndex, scrollToMatch]);
+  }, [searchMatches]);
 
   const handlePreviousMatch = useCallback(() => {
     if (searchMatches.length > 0) {
-      const newIndex = currentMatchIndex === 0 ? searchMatches.length - 1 : currentMatchIndex - 1;
-      setCurrentMatchIndex(newIndex);
-      scrollToMatch(newIndex);
+      setCurrentMatchIndex(i => (i === 0 ? searchMatches.length - 1 : i - 1));
     }
-  }, [searchMatches, currentMatchIndex, scrollToMatch]);
-
-  // Highlight search term in text
-  const highlightText = useCallback((text: string) => {
-    if (!searchTerm || !text) return text;
-
-    const lowerText = text.toLowerCase();
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    const index = lowerText.indexOf(lowerSearchTerm);
-
-    if (index === -1) return text;
-
-    const beforeMatch = text.slice(0, index);
-    const match = text.slice(index, index + searchTerm.length);
-    const afterMatch = text.slice(index + searchTerm.length);
-
-    return (
-      <>
-        {beforeMatch}
-        <span className="bg-yellow-300 text-slate-900 font-semibold">{match}</span>
-        {afterMatch}
-      </>
-    );
-  }, [searchTerm]);
-
-  // Check if a cell is the current match
-  const isCurrentMatch = useCallback((rowIndex: number, colIndex: number) => {
-    if (!searchMatches.length || currentMatchIndex >= searchMatches.length) return false;
-    const match = searchMatches[currentMatchIndex];
-    return match.rowIndex === rowIndex && match.colIndex === colIndex;
-  }, [searchMatches, currentMatchIndex]);
-
-  // Check if a column header is matched
-  const isColumnMatch = useCallback((colIndex: number) => {
-    return searchMatches.some(match => match.rowIndex === -1 && match.colIndex === colIndex);
   }, [searchMatches]);
-
-  // Scroll to first match when search results change
-  useEffect(() => {
-    if (searchMatches.length > 0 && currentMatchIndex === 0) {
-      // Small delay to ensure DOM is updated
-      setTimeout(() => {
-        scrollToMatch(0);
-      }, 100);
-    }
-  }, [searchMatches, scrollToMatch]);
 
   if (error) {
     return (
@@ -414,89 +344,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
         ) : (
           <>
             {/* Table Container */}
-            <div ref={tableContainerRef} className="flex-1 overflow-auto shadow-inner bg-white dark:bg-gray-800">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 border-b bg-slate-100 border-slate-200 dark:bg-gray-700 dark:border-gray-600">
-                  <tr>
-                    {metadata?.columns.map((col, index) => (
-                      <th
-                        key={index}
-                        className={`px-4 py-3 text-left font-medium border-r last:border-r-0 whitespace-nowrap text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${isColumnMatch(index) ? 'bg-yellow-100' : ''
-                          }`}
-                      >
-                        <div className="font-semibold">
-                          {searchTerm && col.name.toLowerCase().includes(searchTerm.toLowerCase())
-                            ? highlightText(col.name)
-                            : col.name
-                          }
-                        </div>
-                        <div className="font-normal text-xs mt-0.5 text-slate-500 dark:text-gray-400">
-                          {(() => {
-                            const typeDisplay = settings.typeDisplay || 'logical';
-                            if (typeDisplay === 'both' && col.logical_type) {
-                              return `${col.logical_type} / ${col.physical_type.replace("PhysicalType(", "").replace(")", "")}`;
-                            } else if (typeDisplay === 'physical') {
-                              return col.physical_type.replace("PhysicalType(", "").replace(")", "");
-                            } else {
-                              return col.logical_type || col.physical_type.replace("PhysicalType(", "").replace(")", "");
-                            }
-                          })()}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, rowIndex) => {
-                    const rowKey = `row-${currentPage}-${rowIndex}`;
-                    return (
-                      <tr
-                        key={rowKey}
-                        onClick={() => setSelectedRow(rowIndex)}
-                        className={`
-                          border-b cursor-pointer transition-colors
-                          border-slate-100 dark:border-gray-700
-                          ${selectedRow === rowIndex
-                            ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-900 dark:hover:bg-blue-800'
-                            : 'hover:bg-slate-50 dark:hover:bg-gray-700'
-                          }
-                        `}
-                      >
-                        {metadata?.columns.map((col, colIndex) => {
-                          const cellKey = `${rowKey}-${colIndex}`;
-                          const cellValue = row[col.name];
-                          const cellValueStr = cellValue !== null && cellValue !== undefined ? String(cellValue) : null;
-                          const hasSearchMatch = searchTerm && cellValueStr && cellValueStr.toLowerCase().includes(searchTerm.toLowerCase());
-
-                          return (
-                            <td
-                              key={cellKey}
-                              className={`px-4 py-2.5 text-sm border-r last:border-r-0 whitespace-nowrap border-slate-100 dark:border-gray-700 ${isCurrentMatch(rowIndex, colIndex)
-                                  ? 'bg-orange-200'
-                                  : hasSearchMatch
-                                    ? 'bg-yellow-100'
-                                    : ''
-                                }`}
-                            >
-                              {cellValueStr !== null ? (
-                                <span className="font-mono text-xs text-slate-900 dark:text-gray-200">
-                                  {hasSearchMatch
-                                    ? highlightText(cellValueStr)
-                                    : cellValueStr
-                                  }
-                                </span>
-                              ) : (
-                                <span className="italic font-mono text-xs text-slate-400 dark:text-gray-500">NULL</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={metadata?.columns ?? EMPTY_COLUMNS}
+              rows={data}
+              selectedRow={selectedRow}
+              onSelectRow={setSelectedRow}
+              searchTerm={searchTerm}
+              searchMatches={searchMatches}
+              currentMatchIndex={currentMatchIndex}
+              typeDisplay={settings.typeDisplay || 'logical'}
+              scrollerRef={tableContainerRef}
+            />
 
             {/* Footer with Pagination */}
             <div className="px-6 py-3 flex items-center justify-between border-t bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700">
