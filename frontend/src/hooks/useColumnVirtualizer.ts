@@ -102,9 +102,9 @@ export function useColumnVirtualizer(
     const right = left + viewWidth;
 
     // First column whose right edge is past the viewport's left edge.
-    let start = upperBound(offsets, left, 1, count) - 1;
+    let start = searchOffsets(offsets, left, 1, count, true) - 1;
     // One past the last column whose left edge is before the viewport's right edge.
-    let end = upperBound(offsets, right, start, count);
+    let end = searchOffsets(offsets, right, start, count, false);
 
     start = Math.max(0, start - overscan);
     end = Math.min(count, end + overscan);
@@ -122,11 +122,15 @@ export function useColumnVirtualizer(
   }, [widths.length, offsets, viewport, overscan, onScroll]);
 }
 
-/** Smallest i in [lo, hi) with sorted[i] > value, or hi. */
-function upperBound(sorted: number[], value: number, lo: number, hi: number): number {
+/**
+ * Smallest i in [lo, hi) with sorted[i] > value (strict) or sorted[i] >= value
+ * (non-strict), or hi when there is none.
+ */
+function searchOffsets(sorted: number[], value: number, lo: number, hi: number, strict: boolean): number {
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (sorted[mid] > value) hi = mid;
+    const past = strict ? sorted[mid] > value : sorted[mid] >= value;
+    if (past) hi = mid;
     else lo = mid + 1;
   }
   return lo;
