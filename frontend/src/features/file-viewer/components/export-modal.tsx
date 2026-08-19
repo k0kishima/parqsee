@@ -2,7 +2,6 @@ import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useTranslation } from "react-i18next";
-import { useSettings } from "../../../contexts/SettingsContext";
 import { exportData } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
 
@@ -14,7 +13,6 @@ interface ExportModalProps {
 }
 
 export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModalProps) {
-  const { effectiveTheme } = useSettings();
   const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
@@ -98,13 +96,10 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
       <div
-        className={`rounded-lg shadow-xl w-96 ${effectiveTheme === 'dark' ? 'bg-gray-800' : 'bg-white'
-          }`}
+        className="rounded-lg shadow-xl w-96 bg-white dark:bg-gray-800"
       >
-        <div className={`px-6 py-4 border-b ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-gray-200'
-          }`}>
-          <h2 className={`text-lg font-semibold ${effectiveTheme === 'dark' ? 'text-gray-100' : 'text-gray-900'
-            }`}>
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {t('export.title')}
           </h2>
         </div>
@@ -112,8 +107,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
         <div className="px-6 py-4 space-y-4">
           {/* Format Selection */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}>
+            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
               {t('export.format')}
             </label>
             <div className="space-y-2">
@@ -125,7 +119,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   onChange={(e) => setExportFormat(e.target.value as "csv")}
                   className="mr-2"
                 />
-                <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                <span className="text-gray-700 dark:text-gray-300">
                   {t('export.formats.csv')}
                 </span>
               </label>
@@ -137,7 +131,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   onChange={(e) => setExportFormat(e.target.value as "json")}
                   className="mr-2"
                 />
-                <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                <span className="text-gray-700 dark:text-gray-300">
                   {t('export.formats.json')}
                 </span>
               </label>
@@ -146,8 +140,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
 
           {/* Range Selection */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${effectiveTheme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}>
+            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
               {t('export.range')}
             </label>
             <div className="space-y-2">
@@ -159,7 +152,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   onChange={(e) => setExportRange(e.target.value as "all")}
                   className="mr-2"
                 />
-                <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                <span className="text-gray-700 dark:text-gray-300">
                   {t('export.ranges.all', { total: totalRows.toLocaleString() })}
                 </span>
               </label>
@@ -171,7 +164,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   onChange={(e) => setExportRange(e.target.value as "custom")}
                   className="mr-2"
                 />
-                <span className={effectiveTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                <span className="text-gray-700 dark:text-gray-300">
                   {t('export.ranges.custom')}
                 </span>
               </label>
@@ -182,8 +175,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           {exportRange === "custom" && (
             <div className="flex items-center space-x-2">
               <div className="flex-1">
-                <label className={`block text-xs mb-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                  }`}>
+                <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
                   {t('export.startRow')}
                 </label>
                 <input
@@ -192,15 +184,11 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   max={totalRows}
                   value={startRow}
                   onChange={(e) => setStartRow(Math.max(1, parseInt(e.target.value) || 1))}
-                  className={`w-full px-3 py-1 border rounded-md text-sm ${effectiveTheme === 'dark'
-                    ? 'bg-gray-700 border-gray-600 text-gray-200'
-                    : 'bg-white border-gray-300 text-gray-700'
-                    }`}
+                  className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>
               <div className="flex-1">
-                <label className={`block text-xs mb-1 ${effectiveTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                  }`}>
+                <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
                   {t('export.endRow')}
                 </label>
                 <input
@@ -209,10 +197,7 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                   max={totalRows}
                   value={endRow}
                   onChange={(e) => setEndRow(Math.min(totalRows, parseInt(e.target.value) || totalRows))}
-                  className={`w-full px-3 py-1 border rounded-md text-sm ${effectiveTheme === 'dark'
-                    ? 'bg-gray-700 border-gray-600 text-gray-200'
-                    : 'bg-white border-gray-300 text-gray-700'
-                    }`}
+                  className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>
             </div>
@@ -226,12 +211,11 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           )}
         </div>
 
-        <div className={`px-6 py-4 border-t flex justify-end space-x-3 ${effectiveTheme === 'dark' ? 'border-gray-700' : 'border-gray-200'
-          }`}>
+        <div className="px-6 py-4 border-t flex justify-end space-x-3 border-gray-200 dark:border-gray-700">
           <button
             onClick={onClose}
             disabled={isExporting}
-            className={`btn-secondary border ${effectiveTheme === 'dark' ? 'border-gray-600' : 'border-gray-300'} ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`btn-secondary border border-gray-300 dark:border-gray-600 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {t('common.cancel')}
           </button>

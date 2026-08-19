@@ -133,7 +133,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           />
         </div>
         <div
-          className={`absolute inset-0 z-10 bg-slate-50 dark:bg-gray-900`}
+          className="absolute inset-0 z-10 bg-slate-50 dark:bg-gray-900"
           style={{ display: viewMode === 'query' ? 'block' : 'none' }}
         >
           <QueryView filePath={tab.path} />

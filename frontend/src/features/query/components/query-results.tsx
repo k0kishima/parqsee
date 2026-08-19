@@ -24,8 +24,8 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
 
     if (error) {
         return (
-            <div className={`flex-1 p-4 overflow-auto bg-red-50 dark:bg-red-900/10`}>
-                <div className={`font-mono text-sm whitespace-pre-wrap text-red-600 dark:text-red-400`}>
+            <div className="flex-1 p-4 overflow-auto bg-red-50 dark:bg-red-900/10">
+                <div className="font-mono text-sm whitespace-pre-wrap text-red-600 dark:text-red-400">
                     {error}
                 </div>
             </div>
@@ -68,7 +68,7 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
                             ))}
                         </tr>
                     </thead>
-                    <tbody className={`divide-y divide-gray-100 dark:divide-gray-800`}>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                         {result.rows.map((row, i) => (
                             <tr key={i} className={rowHover}>
                                 {result.columns.map((col) => (

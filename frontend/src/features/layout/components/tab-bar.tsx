@@ -23,7 +23,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
   }
 
   return (
-    <div className={`flex items-end border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700`}>
+    <div className="flex items-end border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700">
       <div className="flex overflow-x-auto scrollbar-thin">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -58,13 +58,10 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
 
               <button
                 onClick={(e) => handleCloseTab(e, tab.id)}
-                className={`
-                  p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600
-                  transition-colors
-                `}
+                className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 title={t('common.closeTab')}
               >
-                <X className={`w-3 h-3 text-gray-500 dark:text-gray-400`} />
+                <X className="w-3 h-3 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
           );

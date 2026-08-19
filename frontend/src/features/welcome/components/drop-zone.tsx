@@ -78,10 +78,10 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     </svg>
                 </div>
 
-                <h2 className={`text-xl font-semibold mb-2 text-slate-900 dark:text-gray-100`}>
+                <h2 className="text-xl font-semibold mb-2 text-slate-900 dark:text-gray-100">
                     {t('welcome.dropZone.title')}
                 </h2>
-                <p className={`text-sm mb-6 text-slate-500 dark:text-gray-400`}>
+                <p className="text-sm mb-6 text-slate-500 dark:text-gray-400">
                     {t('welcome.dropZone.subtitle')}
                 </p>
 
@@ -92,7 +92,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     {t('welcome.dropZone.browse')}
                 </button>
 
-                <p className={`mt-6 text-xs text-slate-400 dark:text-gray-500`}>
+                <p className="mt-6 text-xs text-slate-400 dark:text-gray-500">
                     {t('welcome.dropZone.hint')}
                 </p>
             </div>

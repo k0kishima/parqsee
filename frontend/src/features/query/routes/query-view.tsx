@@ -29,7 +29,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath }) => {
     };
 
     return (
-        <div className={`flex flex-col h-full bg-slate-50 dark:bg-gray-900`}>
+        <div className="flex flex-col h-full bg-slate-50 dark:bg-gray-900">
             <div className="h-1/3 min-h-[150px] border-b border-gray-200 dark:border-gray-700 shadow-sm relative z-10">
                 <QueryEditor onExecute={handleExecute} isLoading={isLoading} />
             </div>
