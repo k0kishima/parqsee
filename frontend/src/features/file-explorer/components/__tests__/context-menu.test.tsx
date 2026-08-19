@@ -125,7 +125,6 @@ describe('ContextMenu', () => {
     });
 
     it('does not call onClose when clicking inside the menu', async () => {
-      const user = userEvent.setup();
       const onClose = vi.fn();
 
       // We need to check that the menu itself doesn't trigger close on internal click
