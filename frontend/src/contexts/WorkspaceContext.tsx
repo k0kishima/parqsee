@@ -7,7 +7,7 @@ import { isTauri } from '../lib/tauri';
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
 
-interface Tab {
+export interface Tab {
     id: string;
     path: string;
     name: string;

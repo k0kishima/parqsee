@@ -2,12 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileText } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
-
-interface Tab {
-  id: string;
-  path: string;
-  name: string;
-}
+import type { Tab } from '../../../contexts/WorkspaceContext';
 
 interface TabBarProps {
   tabs: Tab[];

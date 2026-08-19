@@ -2,15 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Database } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
+import type { Tab } from '../../../contexts/WorkspaceContext';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
 
 interface TabContentProps {
-  tab: {
-    id: string;
-    path: string;
-    name: string;
-  };
+  tab: Tab;
   isActive: boolean;
   onClose: () => void;
   savedState?: TabState;
