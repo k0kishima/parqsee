@@ -119,12 +119,13 @@ impl ParquetCache {
 /// Handing DataFusion a `file://` URL skips the glob parsing, and passing the
 /// file's own extension keeps the listing from filtering it out.
 ///
-/// Statistics collection stays off: with it on, DataFusion 40's selectivity
+/// Statistics collection stays off: with it on, DataFusion's selectivity
 /// estimate does interval arithmetic on the row-group min/max, and a 64-bit
 /// column holding a value at its type's limit (a u64 hash, an i64 sentinel)
 /// overflows it — every `=` filter on such a file then fails with
-/// "Selectivity is out of limit", and panics in debug builds. The browse
-/// grid gains nothing from the statistics anyway.
+/// "Selectivity is out of limit", and panics in debug builds. Reproduced on
+/// DataFusion 40 and 54 alike. The browse grid gains nothing from the
+/// statistics anyway.
 async fn register_file_as_t(
     ctx: &datafusion::execution::context::SessionContext,
     path: &str,
@@ -187,6 +188,11 @@ fn logical_type_to_string(logical_type: &parquet::basic::LogicalType) -> String 
         parquet::basic::LogicalType::Bson => "BSON".to_string(),
         parquet::basic::LogicalType::Uuid => "UUID".to_string(),
         parquet::basic::LogicalType::Float16 => "FLOAT16".to_string(),
+        parquet::basic::LogicalType::Variant { .. } => "VARIANT".to_string(),
+        parquet::basic::LogicalType::Geometry { .. } => "GEOMETRY".to_string(),
+        parquet::basic::LogicalType::Geography { .. } => "GEOGRAPHY".to_string(),
+        // The enum is non-exhaustive; show whatever a newer parquet adds.
+        other => format!("{:?}", other).to_uppercase(),
     }
 }
 
@@ -224,7 +230,7 @@ fn converted_type_to_string(converted_type: parquet::basic::ConvertedType) -> St
 fn group_type_to_string(field: &parquet::schema::types::Type) -> String {
     use parquet::basic::{ConvertedType, LogicalType};
 
-    match field.get_basic_info().logical_type() {
+    match field.get_basic_info().logical_type_ref() {
         Some(LogicalType::List) => "LIST".to_string(),
         Some(LogicalType::Map) => "MAP".to_string(),
         _ => match field.get_basic_info().converted_type() {
@@ -244,7 +250,7 @@ fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
         return ColumnKind::Nested;
     }
 
-    if let Some(logical_type) = field.get_basic_info().logical_type() {
+    if let Some(logical_type) = field.get_basic_info().logical_type_ref() {
         return match logical_type {
             LogicalType::String | LogicalType::Enum | LogicalType::Json => ColumnKind::Text,
             LogicalType::Decimal { .. } => ColumnKind::Decimal,
@@ -255,7 +261,10 @@ fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
             LogicalType::Float16 => ColumnKind::Float,
             LogicalType::Uuid | LogicalType::Bson => ColumnKind::Binary,
             LogicalType::Map | LogicalType::List => ColumnKind::Nested,
-            LogicalType::Unknown => ColumnKind::Other,
+            // Variant is semi-structured, geospatial types are encoded bytes.
+            LogicalType::Variant { .. } => ColumnKind::Nested,
+            LogicalType::Geometry { .. } | LogicalType::Geography { .. } => ColumnKind::Binary,
+            _ => ColumnKind::Other,
         };
     }
 
@@ -312,8 +321,8 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
             } else {
                 group_type_to_string(field)
             };
-            let logical_type = if let Some(lt) = field.get_basic_info().logical_type() {
-                Some(logical_type_to_string(&lt))
+            let logical_type = if let Some(lt) = field.get_basic_info().logical_type_ref() {
+                Some(logical_type_to_string(lt))
             } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE
             {
                 Some(converted_type_to_string(field.get_basic_info().converted_type()))
