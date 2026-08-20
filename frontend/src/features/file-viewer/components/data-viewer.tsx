@@ -8,6 +8,7 @@ import { DataTable, SearchMatch } from "./data-table";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
+import { formatCellValue } from "../../../lib/format";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 
 interface DataViewerProps {
@@ -185,9 +186,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       const row = data[rowIndex];
       for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
         const col = metadata.columns[colIndex];
-        const value = row[col.name];
-        if (value !== null && value !== undefined) {
-          const stringValue = String(value);
+        const stringValue = formatCellValue(row[col.name]);
+        if (stringValue !== null) {
           if (stringValue.toLowerCase().includes(lowerSearchTerm)) {
             matches.push({ rowIndex, colIndex, value: stringValue });
             if (matches.length >= maxMatches) break outerLoop;

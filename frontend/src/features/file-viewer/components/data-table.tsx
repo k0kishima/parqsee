@@ -3,6 +3,7 @@ import type { ColumnInfo } from '../api';
 import type { TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
+import { formatCellValue } from '../../../lib/format';
 
 export interface SearchMatch {
   /** -1 for a column header match. */
@@ -100,8 +101,7 @@ const DataRow = React.memo(function DataRow({
     >
       {padLeft > 0 && <td aria-hidden="true" />}
       {visibleColumns.map(({ index, name, mayTruncate }) => {
-        const cellValue = row[name];
-        const cellValueStr = cellValue !== null && cellValue !== undefined ? String(cellValue) : null;
+        const cellValueStr = formatCellValue(row[name]);
         const hasSearchMatch = Boolean(searchTerm && cellValueStr && cellValueStr.toLowerCase().includes(lowerSearchTerm));
 
         return (
@@ -151,7 +151,11 @@ export const DataTable = React.memo(function DataTable({
   );
 
   const widths = useMemo(
-    () => measureColumnWidths(columns.map((col, i) => ({ name: col.name, typeLabel: typeLabels[i] })), rows),
+    () => measureColumnWidths(
+      columns.map((col, i) => ({ name: col.name, typeLabel: typeLabels[i] })),
+      rows,
+      { format: formatCellValue }
+    ),
     [columns, typeLabels, rows]
   );
 

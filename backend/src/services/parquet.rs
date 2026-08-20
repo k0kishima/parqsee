@@ -153,6 +153,23 @@ fn converted_type_to_string(converted_type: parquet::basic::ConvertedType) -> St
     }
 }
 
+/// Label a group field (LIST / MAP / STRUCT) by the structure it represents.
+/// Group fields carry no physical type at all, and asking one for its physical
+/// type panics inside the parquet crate.
+fn group_type_to_string(field: &parquet::schema::types::Type) -> String {
+    use parquet::basic::{ConvertedType, LogicalType};
+
+    match field.get_basic_info().logical_type() {
+        Some(LogicalType::List) => "LIST".to_string(),
+        Some(LogicalType::Map) => "MAP".to_string(),
+        _ => match field.get_basic_info().converted_type() {
+            ConvertedType::LIST => "LIST".to_string(),
+            ConvertedType::MAP | ConvertedType::MAP_KEY_VALUE => "MAP".to_string(),
+            _ => "STRUCT".to_string(),
+        },
+    }
+}
+
 /// Open a parquet file for reading. Shared by metadata inspection and export.
 pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
@@ -169,7 +186,11 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
         .get_fields()
         .iter()
         .map(|field| {
-            let physical_type = format!("{:?}", field.get_physical_type());
+            let physical_type = if field.is_primitive() {
+                format!("{:?}", field.get_physical_type())
+            } else {
+                group_type_to_string(field)
+            };
             let logical_type = if let Some(lt) = field.get_basic_info().logical_type() {
                 Some(logical_type_to_string(&lt))
             } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE
@@ -358,11 +379,85 @@ fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::truncate_batches;
-    use arrow::array::Int32Array;
-    use arrow::datatypes::{DataType, Field, Schema};
+    use super::{truncate_batches, ParquetCache};
+    use arrow::array::{ArrayRef, Int32Array, Int32Builder, ListBuilder, StringArray, StructArray};
+    use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
+    use parquet::arrow::ArrowWriter;
+    use std::fs::File;
+    use std::path::PathBuf;
     use std::sync::Arc;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("parqsee-parquet-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    /// A list column and a struct column next to a plain one, the shape Spark
+    /// and pandas produce all the time.
+    fn write_nested_fixture() -> PathBuf {
+        let mut list = ListBuilder::new(Int32Builder::new());
+        for row in 0..2 {
+            list.values().append_value(row);
+            list.values().append_value(row + 1);
+            list.append(true);
+        }
+        let point_fields: Fields = vec![
+            Field::new("x", DataType::Int32, true),
+            Field::new("y", DataType::Int32, true),
+        ]
+        .into();
+        let point = StructArray::new(
+            point_fields.clone(),
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2])) as ArrayRef,
+                Arc::new(Int32Array::from(vec![3, 4])) as ArrayRef,
+            ],
+            None,
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("name", DataType::Utf8, true),
+            Field::new(
+                "tags",
+                DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+                true,
+            ),
+            Field::new("point", DataType::Struct(point_fields), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec!["a", "b"])) as ArrayRef,
+                Arc::new(list.finish()),
+                Arc::new(point),
+            ],
+        )
+        .unwrap();
+
+        let path = temp_path("nested.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+        path
+    }
+
+    #[test]
+    fn metadata_labels_group_columns_instead_of_panicking() {
+        let path = write_nested_fixture();
+        let cache = ParquetCache::new();
+        let meta = cache
+            .get_or_create_metadata(&path.to_string_lossy())
+            .expect("nested schemas must not fail metadata");
+
+        assert_eq!(meta.num_columns, 3);
+        assert_eq!(meta.columns[0].column_type, "STRING");
+        assert_eq!(meta.columns[1].column_type, "LIST");
+        assert_eq!(meta.columns[1].physical_type, "LIST");
+        assert_eq!(meta.columns[2].column_type, "STRUCT");
+        assert_eq!(meta.columns[2].physical_type, "STRUCT");
+    }
 
     fn batch(n: i32) -> RecordBatch {
         let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
