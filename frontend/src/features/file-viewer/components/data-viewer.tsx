@@ -322,25 +322,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
   return (
     <div className="h-full flex flex-col relative bg-slate-50 dark:bg-gray-900">
-      {/* Search Bar */}
-      <SearchBar
-        isOpen={isSearchOpen}
-        searchTerm={searchTerm}
-        onSearchSubmit={handleSearchSubmit}
-        onClose={() => {
-          setIsSearchOpen(false);
-          setSearchTerm("");
-          setCurrentMatchIndex(0);
-          setIsSearching(false);
-        }}
-        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
-        totalMatches={searchMatches.length}
-        onNext={handleNextMatch}
-        onPrevious={handlePreviousMatch}
-        isSearching={isSearching}
-        focusTrigger={searchFocusTrigger}
-      />
-
       {/* Header */}
       <div className={`shadow-sm border-b ${headerBg}`}>
         <div className="px-6 py-4 flex items-center justify-between">
@@ -357,6 +338,24 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            {/* Inline, so an open search never covers the buttons beside it. */}
+            <SearchBar
+              isOpen={isSearchOpen}
+              searchTerm={searchTerm}
+              onSearchSubmit={handleSearchSubmit}
+              onClose={() => {
+                setIsSearchOpen(false);
+                setSearchTerm("");
+                setCurrentMatchIndex(0);
+                setIsSearching(false);
+              }}
+              currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+              totalMatches={searchMatches.length}
+              onNext={handleNextMatch}
+              onPrevious={handlePreviousMatch}
+              isSearching={isSearching}
+              focusTrigger={searchFocusTrigger}
+            />
             <button
               onClick={() => setIsSearchOpen(true)}
               className="inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
