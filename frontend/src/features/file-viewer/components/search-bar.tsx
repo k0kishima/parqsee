@@ -87,7 +87,7 @@ export function SearchBar({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute top-0 right-0 m-4 z-50 bg-white rounded-lg shadow-lg border border-slate-200 p-3 flex items-center space-x-3">
+    <div className="flex items-center space-x-2 rounded-md border p-1.5 bg-white border-slate-200 dark:bg-gray-700 dark:border-gray-600">
       <div className="flex items-center flex-1 relative">
         <svg
           className="absolute left-3 w-4 h-4 text-slate-400"
@@ -109,7 +109,7 @@ export function SearchBar({
           onChange={(e) => setLocalInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('viewer.searchPlaceholder')}
-          className="pl-10 pr-3 py-2 w-64 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="pl-10 pr-3 py-1.5 w-64 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white border-slate-200 text-slate-800 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"

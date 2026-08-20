@@ -1,8 +1,4 @@
-import React, { useCallback } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { isTauri } from '../../../lib/tauri';
-import { PARQUET_EXTENSION } from '../../../lib/path';
-import { useGlobalKeydown, isModifierPressed } from '../../../hooks/useGlobalKeydown';
+import React from 'react';
 import { WelcomeHeader } from '../components/welcome-header';
 import { DropZone } from '../components/drop-zone';
 import { RecentFilesList } from '../components/recent-files-list';
@@ -10,49 +6,21 @@ import { FeatureHighlights } from '../components/feature-highlights';
 
 interface WelcomeProps {
     onFileSelect: (path: string) => void;
+    onBrowse: () => void;
     onOpenSettings: () => void;
 }
 
-export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onOpenSettings }) => {
-
-    const handleBrowse = useCallback(async () => {
-        try {
-            if (isTauri()) {
-                const selected = await open({
-                    filters: [{
-                        name: 'Parquet Files',
-                        extensions: [PARQUET_EXTENSION]
-                    }]
-                });
-
-                if (selected && typeof selected === 'string') {
-                    onFileSelect(selected);
-                }
-            } else {
-                alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
-            }
-        } catch (error) {
-            console.error("Failed to select file:", error);
-        }
-    }, [onFileSelect]);
-
-    useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-        if (isModifierPressed(e) && e.key === 'o') {
-            e.preventDefault();
-            handleBrowse();
-        }
-    }, [handleBrowse]));
-
+export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpenSettings }) => {
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-gray-900">
             {/* Header */}
-            <WelcomeHeader onBrowse={handleBrowse} onOpenSettings={onOpenSettings} />
+            <WelcomeHeader onBrowse={onBrowse} onOpenSettings={onOpenSettings} />
 
             {/* Main Content */}
             <div className="flex-1 overflow-auto p-8">
                 <div className="max-w-4xl mx-auto">
                     {/* Drop Zone */}
-                    <DropZone onFileSelect={onFileSelect} onBrowse={handleBrowse} />
+                    <DropZone onFileSelect={onFileSelect} onBrowse={onBrowse} />
 
                     {/* Recent Files */}
                     <RecentFilesList onFileSelect={onFileSelect} />

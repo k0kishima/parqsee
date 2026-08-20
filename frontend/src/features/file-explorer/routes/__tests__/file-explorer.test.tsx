@@ -294,4 +294,48 @@ describe('FileExplorer', () => {
       });
     });
   });
+
+  describe('unreadable directories', () => {
+    it('shows why the current directory could not be listed', async () => {
+      mockListDirectory.mockRejectedValueOnce('Permission denied (os error 13)');
+      render(<FileExplorer {...defaultProps} currentPath="/locked/data.parquet" />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('Permission denied (os error 13)');
+      });
+    });
+
+    it('shows the reason under a subfolder that could not be expanded', async () => {
+      mockListDirectory.mockResolvedValueOnce(sampleEntries);
+      mockListDirectory.mockRejectedValueOnce('Permission denied (os error 13)');
+      render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('subdir')).toBeInTheDocument());
+
+      await userEvent.click(screen.getByText('subdir'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('Permission denied (os error 13)');
+      });
+      // The rest of the listing is untouched.
+      expect(screen.getByText('data.parquet')).toBeInTheDocument();
+    });
+  });
+
+  describe('opening a file from an expanded subfolder', () => {
+    it('keeps the tree rooted where it was', async () => {
+      const child: FileEntry = { path: '/test/subdir/inner.parquet', name: 'inner.parquet', is_directory: false, is_parquet: true, size: 1 };
+      mockListDirectory.mockResolvedValueOnce(sampleEntries);
+      mockListDirectory.mockResolvedValueOnce([child]);
+      const { rerender } = render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('subdir')).toBeInTheDocument());
+      await userEvent.click(screen.getByText('subdir'));
+      await waitFor(() => expect(screen.getByText('inner.parquet')).toBeInTheDocument());
+
+      rerender(<FileExplorer {...defaultProps} currentPath="/test/subdir/inner.parquet" />);
+
+      await waitFor(() => expect(screen.getByText('inner.parquet').closest('div')).toHaveClass('bg-selected'));
+      expect(mockListDirectory).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('data.parquet')).toBeInTheDocument();
+    });
+  });
 });

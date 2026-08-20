@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilterExpression, FilterRow } from '../filter-bar';
+import { buildFilterExpression, findInvalidFilterValue, FilterRow } from '../filter-bar';
 import type { ColumnInfo, ColumnKind } from '../../api';
 
 const column = (name: string, column_type: string, kind: ColumnKind): ColumnInfo => ({
@@ -18,6 +18,7 @@ const columns = [
   column('ts', 'TIMESTAMP(MICROS(MicroSeconds), UTC:false)', 'temporal'),
   column('MixedCase', 'INT64', 'integer'),
   column("od'd", 'STRING', 'text'),
+  column('blob', 'BYTE_ARRAY', 'binary'),
 ];
 
 const row = (column: string, operator: string, value: string): FilterRow =>
@@ -74,5 +75,33 @@ describe('buildFilterExpression', () => {
 
   it('is empty when nothing is filled in', () => {
     expect(buildFilterExpression([row('id', '=', '')], columns)).toBe('');
+  });
+
+  it('compares binary columns by the hex the grid shows', () => {
+    expect(buildFilterExpression([row('blob', '=', '0001FF ')], columns))
+      .toBe(`encode(CAST("blob" AS BYTEA), 'hex') = '0001ff'`);
+    expect(buildFilterExpression([row('blob', 'LIKE', '%ff%')], columns))
+      .toBe(`encode(CAST("blob" AS BYTEA), 'hex') LIKE '%ff%'`);
+    expect(buildFilterExpression([row('blob', 'IS NULL', '')], columns))
+      .toBe(`encode(CAST("blob" AS BYTEA), 'hex') IS NULL`);
+  });
+});
+
+describe('findInvalidFilterValue', () => {
+  it('rejects values a numeric or boolean column can never hold', () => {
+    expect(findInvalidFilterValue([row('id', '=', 'abc')], columns))
+      .toEqual({ column: 'id', value: 'abc', expects: 'number' });
+    expect(findInvalidFilterValue([row('flag', '=', 'yes')], columns))
+      .toEqual({ column: 'flag', value: 'yes', expects: 'boolean' });
+  });
+
+  it('accepts parseable values, text, LIKE and null checks', () => {
+    expect(findInvalidFilterValue([row('id', '=', ' 1e3 ')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('price', '>', '-0.5')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('flag', '=', 'TRUE')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('name', '=', 'abc')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('id', 'LIKE', 'abc')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('id', 'IS NULL', 'abc')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('id', '=', '')], columns)).toBeNull();
   });
 });

@@ -55,7 +55,7 @@ describe('ContextMenu', () => {
     it('renders all menu items with role="menuitem"', () => {
       render(<ContextMenu {...defaultProps} />);
       const items = screen.getAllByRole('menuitem');
-      expect(items.length).toBeGreaterThanOrEqual(2); // Copy Path, Reveal in Finder, (optionally Open in New Tab)
+      expect(items.length).toBeGreaterThanOrEqual(2); // Copy Path, Reveal in Finder, (optionally Open)
     });
 
     it('renders Copy Path menu item', () => {
@@ -76,27 +76,27 @@ describe('ContextMenu', () => {
     });
   });
 
-  describe('Open in New Tab option', () => {
-    it('shows Open in New Tab for non-directory entries', () => {
+  describe('Open option', () => {
+    it('shows Open for non-directory entries', () => {
       render(<ContextMenu {...defaultProps} entry={parquetEntry} />);
-      expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
+      expect(screen.getByText('Open')).toBeInTheDocument();
     });
 
-    it('enables Open in New Tab for parquet files', () => {
+    it('enables Open for parquet files', () => {
       render(<ContextMenu {...defaultProps} entry={parquetEntry} />);
-      const openButton = screen.getByText('Open in New Tab').closest('button');
+      const openButton = screen.getByText('Open').closest('button');
       expect(openButton).not.toBeDisabled();
     });
 
-    it('disables Open in New Tab for non-parquet files', () => {
+    it('disables Open for non-parquet files', () => {
       render(<ContextMenu {...defaultProps} entry={nonParquetEntry} />);
-      const openButton = screen.getByText('Open in New Tab').closest('button');
+      const openButton = screen.getByText('Open').closest('button');
       expect(openButton).toBeDisabled();
     });
 
-    it('does not show Open in New Tab for directories', () => {
+    it('does not show Open for directories', () => {
       render(<ContextMenu {...defaultProps} entry={directoryEntry} />);
-      expect(screen.queryByText('Open in New Tab')).not.toBeInTheDocument();
+      expect(screen.queryByText('Open')).not.toBeInTheDocument();
     });
   });
 
@@ -173,7 +173,7 @@ describe('ContextMenu', () => {
     });
   });
 
-  describe('Open in New Tab action', () => {
+  describe('Open action', () => {
     it('calls onFileSelect with entry path for parquet files', async () => {
       const user = userEvent.setup();
       const onFileSelect = vi.fn();
@@ -188,7 +188,7 @@ describe('ContextMenu', () => {
         />
       );
 
-      await user.click(screen.getByText('Open in New Tab'));
+      await user.click(screen.getByText('Open'));
 
       expect(onFileSelect).toHaveBeenCalledWith('/data/test.parquet');
       expect(onClose).toHaveBeenCalled();
@@ -202,7 +202,7 @@ describe('ContextMenu', () => {
         <ContextMenu {...defaultProps} entry={nonParquetEntry} onFileSelect={onFileSelect} />
       );
 
-      const openButton = screen.getByText('Open in New Tab').closest('button')!;
+      const openButton = screen.getByText('Open').closest('button')!;
       await user.click(openButton);
 
       // Button is disabled, so the handler should not fire

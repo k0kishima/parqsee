@@ -1,9 +1,10 @@
 
-import { createContext, useContext, useState, useCallback, useEffect, useTransition, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useTransition, ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
-import { isParquetPath } from '../lib/path';
+import { isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
@@ -24,6 +25,8 @@ interface WorkspaceContextType {
     isPending: boolean;
     tabStates: Record<string, TabState>;
     openParquetFile: (path: string) => Promise<void>;
+    /** Show the native file picker and open what was chosen. */
+    openFileDialog: () => Promise<void>;
     closeTab: (tabId: string) => void;
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
@@ -34,11 +37,18 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
+let nextTabSerial = 0;
+/** Unique per tab; Date.now() alone collided when two files opened in one tick. */
+const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [currentFile, setCurrentFile] = useState<string | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [tabs, setTabs] = useState<Tab[]>([]);
+    // Mirrors `tabs` synchronously, so several files opened in one tick (a
+    // multi-file drop) each see the tabs the previous one just added.
+    const tabsRef = useRef<Tab[]>([]);
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
     const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
     const [isPending, startTransition] = useTransition();
@@ -61,6 +71,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const closedTab = tabs.find(t => t.id === tabId);
         const tabIndex = tabs.findIndex(t => t.id === tabId);
         const newTabs = tabs.filter(t => t.id !== tabId);
+        tabsRef.current = newTabs;
         setTabs(newTabs);
 
         // Clean up state for closed tab
@@ -105,17 +116,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                     size: fileInfo.size
                 });
 
-                const existingTab = tabs.find(tab => tab.path === path);
+                const existingTab = tabsRef.current.find(tab => tab.path === path);
                 if (existingTab) {
                     setActiveTabId(existingTab.id);
                     setCurrentFile(path);
                 } else {
                     const newTab: Tab = {
-                        id: Date.now().toString(),
+                        id: newTabId(),
                         path: fileInfo.path,
                         name: fileInfo.name
                     };
-                    setTabs(prev => [...prev, newTab]);
+                    tabsRef.current = [...tabsRef.current, newTab];
+                    setTabs(tabsRef.current);
                     setActiveTabId(newTab.id);
                     setCurrentFile(path);
                 }
@@ -127,15 +139,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
         }
-    }, [tabs, addRecentFile, removeRecentFile]);
+    }, [addRecentFile, removeRecentFile]);
 
-    // Keyboard shortcuts
+    const openFileDialog = useCallback(async () => {
+        try {
+            if (!isTauri()) {
+                alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
+                return;
+            }
+            const selected = await open({
+                filters: [{
+                    name: 'Parquet Files',
+                    extensions: [PARQUET_EXTENSION]
+                }]
+            });
+            if (selected && typeof selected === 'string') {
+                openParquetFile(selected);
+            }
+        } catch (error) {
+            console.error("Failed to select file:", error);
+        }
+    }, [openParquetFile]);
+
+    // Keyboard shortcuts. On macOS the native menu owns ⌘W / ⌘O / ⌘, and
+    // forwards them as `menu` events (below); these handlers cover the
+    // browser and any platform without that menu.
     useGlobalKeydown(useCallback((e: KeyboardEvent) => {
         if (isModifierPressed(e) && e.key === 'w') {
             e.preventDefault();
             if (activeTabId) {
                 handleTabClose(activeTabId);
             }
+        } else if (isModifierPressed(e) && e.key === 'o') {
+            e.preventDefault();
+            openFileDialog();
+        } else if (isModifierPressed(e) && e.key === ',') {
+            e.preventDefault();
+            setIsSettingsOpen(true);
         } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
             const currentIndex = tabs.findIndex(t => t.id === activeTabId);
@@ -159,19 +199,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 handleTabSelect(tabs[tabIndex].id);
             }
         }
-    }, [activeTabId, tabs, handleTabClose, handleTabSelect]));
+    }, [activeTabId, tabs, handleTabClose, handleTabSelect, openFileDialog]));
+
+    // Native menu items (see build_menu in lib.rs)
+    useEffect(() => {
+        if (!isTauri()) return;
+        const unlisten = listen<string>('menu', (event) => {
+            switch (event.payload) {
+                case 'open-file': openFileDialog(); break;
+                case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
+                case 'settings': setIsSettingsOpen(true); break;
+            }
+        });
+        return () => {
+            unlisten.then(fn => fn());
+        };
+    }, [activeTabId, handleTabClose, openFileDialog]);
 
     // File drop listener
     useEffect(() => {
         if (isTauri()) {
             const unlisten = listen('file-drop', async (event: any) => {
-                const files = event.payload || [];
+                const files: string[] = event.payload || [];
                 if (files.length > 0) {
-                    const parquetFile = files.find((f: string) => isParquetPath(f));
-                    if (parquetFile) {
-                        openParquetFile(parquetFile);
-                    } else {
+                    const parquetFiles = files.filter((f) => isParquetPath(f));
+                    if (parquetFiles.length === 0) {
                         alert('Please drop a .parquet file');
+                        return;
+                    }
+                    // Every dropped file gets a tab; the last one opened is the
+                    // active one.
+                    for (const file of parquetFiles) {
+                        await openParquetFile(file);
                     }
                 }
             });
@@ -193,6 +252,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isPending,
         tabStates,
         openParquetFile,
+        openFileDialog,
         closeTab: handleTabClose,
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),

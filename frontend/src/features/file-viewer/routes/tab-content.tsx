@@ -59,6 +59,12 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
 
   const viewMode = savedState?.viewMode || localViewMode;
 
+  // Whether the browse grid is what the user is looking at. A ref rather
+  // than a prop so the memoized viewer is not re-rendered on every tab
+  // switch; it only consults this from event handlers.
+  const browseIsActiveRef = useRef(false);
+  browseIsActiveRef.current = isActive && viewMode === 'browse';
+
   const handleViewModeChange = (mode: 'browse' | 'query') => {
     setLocalViewMode(mode);
     if (onStateChange) {
@@ -142,6 +148,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
             onClose={handleClose}
             initialState={viewerInitialState}
             onStateChange={handleViewerStateChange}
+            isActiveRef={browseIsActiveRef}
           />
         </div>
         <div

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { exportData } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
@@ -28,10 +29,17 @@ export function ExportModal({
   const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
-  const [startRow, setStartRow] = useState(1);
-  const [endRow, setEndRow] = useState(totalRows);
+  // Kept as the typed text: clamping on every keystroke made a cleared field
+  // snap back to 1 (or to the last row) before the next digit, so a range
+  // could not be typed in.
+  const [startInput, setStartInput] = useState("1");
+  const [endInput, setEndInput] = useState(String(totalRows));
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The finished export, shown in the modal itself — an OS notification may
+   * never be delivered (permission denied, unsigned build), and then a
+   * silently closing modal was the only sign anything had happened. */
+  const [done, setDone] = useState<{ rows: number; path: string } | null>(null);
 
   // The row count moves with the filter, so start from the full range every
   // time the modal is opened rather than from the last export's bounds.
@@ -39,20 +47,38 @@ export function ExportModal({
   // modal is open must not clobber a range the user is editing.
   useEffect(() => {
     if (isOpen) {
-      setStartRow(1);
-      setEndRow(totalRows);
+      setStartInput("1");
+      setEndInput(String(totalRows));
       setError(null);
+      setDone(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Esc closes the modal, unless an export is running.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isExporting) onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, isExporting, onClose]);
 
   if (!isOpen) return null;
 
   const hasRows = totalRows > 0;
   const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
   const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
+  const startRow = parseInt(startInput, 10);
+  const endRow = parseInt(endInput, 10);
   const rangeIsValid =
-    exportRange !== "custom" || (startRow >= 1 && endRow >= startRow && endRow <= totalRows);
+    exportRange !== "custom" ||
+    (Number.isInteger(startRow) &&
+      Number.isInteger(endRow) &&
+      startRow >= 1 &&
+      endRow >= startRow &&
+      endRow <= totalRows);
   const canExport = hasRows && rangeIsValid && !isExporting;
 
   const handleExport = async () => {
@@ -109,7 +135,9 @@ export function ExportModal({
         filter: activeFilter || undefined
       });
 
-      // Send notification
+      setDone({ rows: exportedRows, path: savePath });
+
+      // Also notify, for an export long enough to have left the window.
       const fileName = getFileName(savePath);
       await sendNotification({
         title: t('export.success.title'),
@@ -119,8 +147,6 @@ export function ExportModal({
         }),
         icon: "done"
       });
-
-      onClose();
     } catch (err) {
       setError(String(err));
     } finally {
@@ -128,10 +154,53 @@ export function ExportModal({
     }
   };
 
+  if (done) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
+        onClick={onClose}
+      >
+        <div
+          className="rounded-lg shadow-xl w-96 bg-white dark:bg-gray-800"
+          role="dialog"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {t('export.success.title')}
+            </h2>
+          </div>
+          <div className="px-6 py-4 space-y-2">
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              {t('export.success.body', { rows: done.rows.toLocaleString(), file: getFileName(done.path) })}
+            </p>
+            <p className="text-xs font-mono break-all text-gray-500 dark:text-gray-400">{done.path}</p>
+          </div>
+          <div className="px-6 py-4 border-t flex justify-end space-x-3 border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => revealItemInDir(done.path).catch((err) => console.error('Failed to reveal in Finder:', err))}
+              className="btn-secondary border border-gray-300 dark:border-gray-600"
+            >
+              {t('fileExplorer.contextMenu.revealInFinder')}
+            </button>
+            <button onClick={onClose} className="btn-primary">
+              {t('common.close')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={() => { if (!isExporting) onClose(); }}
+    >
       <div
         className="rounded-lg shadow-xl w-96 bg-white dark:bg-gray-800"
+        role="dialog"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -235,8 +304,8 @@ export function ExportModal({
                   type="number"
                   min="1"
                   max={totalRows}
-                  value={startRow}
-                  onChange={(e) => setStartRow(Math.max(1, parseInt(e.target.value) || 1))}
+                  value={startInput}
+                  onChange={(e) => setStartInput(e.target.value)}
                   className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>
@@ -248,8 +317,8 @@ export function ExportModal({
                   type="number"
                   min="1"
                   max={totalRows}
-                  value={endRow}
-                  onChange={(e) => setEndRow(Math.min(totalRows, parseInt(e.target.value) || totalRows))}
+                  value={endInput}
+                  onChange={(e) => setEndInput(e.target.value)}
                   className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>

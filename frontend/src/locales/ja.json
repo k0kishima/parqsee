@@ -99,7 +99,9 @@
       "noResults": "表示する結果がありません",
       "executing": "クエリ実行中...",
       "error": "エラー"
-    }
+    },
+    "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
+    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。"
   },
   "fileExplorer": {
     "searchPlaceholder": "ファイルを検索...",
@@ -107,11 +109,12 @@
     "contextMenu": {
       "copyPath": "パスをコピー",
       "revealInFinder": "Finderで表示",
-      "openInNewTab": "新しいタブで開く"
+      "openInNewTab": "開く"
     },
     "breadcrumb": {
       "root": "/"
-    }
+    },
+    "loadError": "このフォルダを読めません: {{reason}}"
   },
   "export": {
     "title": "データのエクスポート",

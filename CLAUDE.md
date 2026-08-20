@@ -122,10 +122,13 @@ Argument names are camelCase on the JS side.
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
-| `execute_sql` | `(filePath, query)` → `QueryResult` | Run arbitrary SQL; the file is registered as table `t`. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
+| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
 
 The frontend also listens for a `file-drop` event emitted from
-`lib.rs`'s window drag-drop handler.
+`lib.rs`'s window drag-drop handler, and for a `menu` event carrying the id
+of the native menu item that was chosen (`open-file`, `close-tab`,
+`settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘W / ⌘, because a native
+key equivalent beats the webview's keydown handler.
 
 ## Architecture Notes
 
@@ -133,7 +136,14 @@ The frontend also listens for a `file-drop` event emitted from
 2. All file I/O happens in Rust; the webview never touches the filesystem directly.
 3. `ParquetCache` (Tauri managed state, `services/parquet.rs`) caches a DataFusion
    `SessionContext` and the parsed metadata per file path. Every query path goes
-   through `execute_sql_with_cache`; closing the last tab for a file evicts it.
+   through `execute_sql_limited`; closing the last tab for a file evicts it.
+   The file is registered through `register_file_as_t` as a `file://` URL with
+   its own extension and with statistics collection off — see its rustdoc
+   before touching it: the plain `register_parquet` path mis-handled uppercase
+   extensions and glob characters in names, and statistics overflowed
+   DataFusion 40's selectivity arithmetic on 64-bit columns at their limits.
+   Because the session is shared with the SQL view, `execute_sql_limited`
+   plans first and refuses anything that would mutate it.
    Sessions run with `target_partitions = 1` — a deliberate trade-off: paged
    reads and exports use `LIMIT`/`OFFSET` with no `ORDER BY`, and only
    single-partition scans keep their row order deterministic (see the rustdoc
@@ -162,16 +172,23 @@ The frontend also listens for a `file-drop` event emitted from
    the parquet Arrow reader with offset/limit pushed down; with one they are
    streamed out of DataFusion so the exported range matches what the grid
    shows.
-9. Arrow's JSON writers reject decimals, and the webview parses the IPC payload
-   with JS number semantics. `batches_to_rows` (`services/parquet.rs`) is the one
-   choke point that renders decimals and integers outside ±2^53 as strings —
-   route every row the webview consumes through it.
+9. Arrow's JSON writers reject decimals and write NaN/±Infinity as `null`, and
+   the webview parses the IPC payload with JS number semantics.
+   `batches_to_rows` (`services/parquet.rs`) is the one choke point that renders
+   decimals, non-finite floats and integers outside ±2^53 as strings — route
+   every row the webview consumes through it.
+10. Commands wrap their bodies in `commands::guarded`, which turns a panic into
+    an error; a panic that escapes a Tauri command never resolves the promise
+    and leaves the grid on its spinner.
 
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, `lib/path`,
 `lib/column-widths` and `hooks/useVirtualRange`; `cargo test --lib` covers the
-extension matching in `commands/file.rs`, SQL result truncation and export.
+extension matching in `commands/file.rs`, file registration edge cases
+(uppercase extensions, glob characters, 64-bit limits, duplicate columns),
+webview rendering of decimals / big integers / NaN, the read-only SQL view,
+result truncation and export.
 Coverage is otherwise thin, so also verify manually:
 
 1. Drag-and-drop with various Parquet files

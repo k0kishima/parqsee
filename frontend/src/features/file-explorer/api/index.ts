@@ -7,6 +7,8 @@ export interface FileEntry {
     is_parquet: boolean;
     size?: number;
     children?: FileEntry[];
+    /** Set when listing this directory failed; shown in place of children. */
+    loadError?: string;
 }
 
 export const listDirectory = async (path: string): Promise<FileEntry[]> => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -17,11 +17,17 @@ interface DataViewerProps {
   onClose: () => void;
   initialState?: TabState;
   onStateChange?: (state: TabState) => void;
+  /**
+   * True while this grid is the visible view. Every tab's viewer stays
+   * mounted and listens for shortcuts; without this, ⌘F in a hidden viewer
+   * — or in the SQL view of the same tab — opened its search bar.
+   */
+  isActiveRef?: RefObject<boolean>;
 }
 
 const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
 
-function DataViewerComponent({ filePath, onClose, initialState, onStateChange }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
 
@@ -68,8 +74,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const lastGood = useRef<{ page: number; filter: string; totalRows: number } | null>(null);
   /** Skip the reload triggered by rolling state back after a failed load. */
   const skipReload = useRef(false);
+  /**
+   * Sequence number of the latest load. Loads resolve in arrival order, not
+   * request order — a cleared filter answered before the slow filtered count
+   * it superseded, and the filtered rows then overwrote the unfiltered grid.
+   * Only the newest request may commit.
+   */
+  const loadSeq = useRef(0);
 
-  // Sync state changes to parent
+  // Sync state changes to parent. The view mode is the tab's to decide;
+  // writing 'browse' from here pulled the user out of the SQL view whenever
+  // this state changed.
   useEffect(() => {
     if (onStateChangeRef.current) {
       onStateChangeRef.current({
@@ -78,7 +93,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
         activeFilter,
         selectedRow,
         isSearchOpen,
-        viewMode: 'browse',
       });
     }
   }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
@@ -101,12 +115,20 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
     }
   }, [currentPage, metadata, rowsPerPage, activeFilter]);
 
+  // A new page size from the settings starts over from the first page; the
+  // footer select resets the page itself, in the same event. Skipped on mount
+  // so a restored page survives.
+  const loadedRowsPerPage = useRef(rowsPerPage);
   useEffect(() => {
-    setCurrentPage(1);
+    if (loadedRowsPerPage.current !== rowsPerPage) {
+      loadedRowsPerPage.current = rowsPerPage;
+      setCurrentPage(1);
+    }
   }, [rowsPerPage]);
 
   // Keyboard shortcut for search
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+    if (isActiveRef && !isActiveRef.current) return;
     // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
     if (isModifierPressed(e) && e.key === 'f') {
       e.preventDefault();
@@ -114,19 +136,26 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       // Trigger focus even if search bar is already open
       setSearchFocusTrigger(prev => prev + 1);
     }
-  }, []));
+  }, [isActiveRef]));
 
   const loadFile = async () => {
+    // Page loads still in flight belong to the previous metadata.
+    const seq = ++loadSeq.current;
     try {
       setLoading(true);
       setError(null);
       setDataError(null);
       lastGood.current = null;
       const meta = await openParquetFile(filePath);
+      if (seq !== loadSeq.current) return;
       setMetadata(meta);
       setTotalRows(meta.num_rows);
-      setActiveFilter("");
+      // The filter is kept across a refresh: dropping it here left the filter
+      // bar showing a condition the grid no longer applied. If the file's
+      // columns changed underneath it, the reload reports the error and the
+      // user clears it.
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err as string);
       setLoading(false);
     }
@@ -134,6 +163,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   const loadData = async () => {
     if (!metadata) return;
+    const seq = ++loadSeq.current;
 
     try {
       setLoading(true);
@@ -143,6 +173,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
         ? await countParquetData(filePath, activeFilter)
         : metadata.num_rows;
       const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
+      // A newer load has taken over; its result describes the current state.
+      if (seq !== loadSeq.current) return;
 
       // Commit only once the whole read succeeded, so the header, the export
       // modal and the grid always describe the same result — a count that
@@ -152,6 +184,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       lastGood.current = { page: currentPage, filter: activeFilter, totalRows: total };
       setLoading(false);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       // A rejected filter must not strand the tab on an error screen: keep the
       // previous result on screen and let the user correct the condition.
       setDataError(String(err));
@@ -180,6 +213,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
     await evictCache(filePath);
     await loadFile();
   };
+
+  // A selected row is a row of the page on screen; keeping its index across
+  // a page or filter change highlighted an unrelated row.
+  useEffect(() => {
+    setSelectedRow(null);
+  }, [currentPage, activeFilter, rowsPerPage]);
 
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);
@@ -289,25 +328,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   return (
     <div className="h-full flex flex-col relative bg-slate-50 dark:bg-gray-900">
-      {/* Search Bar */}
-      <SearchBar
-        isOpen={isSearchOpen}
-        searchTerm={searchTerm}
-        onSearchSubmit={handleSearchSubmit}
-        onClose={() => {
-          setIsSearchOpen(false);
-          setSearchTerm("");
-          setCurrentMatchIndex(0);
-          setIsSearching(false);
-        }}
-        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
-        totalMatches={searchMatches.length}
-        onNext={handleNextMatch}
-        onPrevious={handlePreviousMatch}
-        isSearching={isSearching}
-        focusTrigger={searchFocusTrigger}
-      />
-
       {/* Header */}
       <div className={`shadow-sm border-b ${headerBg}`}>
         <div className="px-6 py-4 flex items-center justify-between">
@@ -324,6 +344,24 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            {/* Inline, so an open search never covers the buttons beside it. */}
+            <SearchBar
+              isOpen={isSearchOpen}
+              searchTerm={searchTerm}
+              onSearchSubmit={handleSearchSubmit}
+              onClose={() => {
+                setIsSearchOpen(false);
+                setSearchTerm("");
+                setCurrentMatchIndex(0);
+                setIsSearching(false);
+              }}
+              currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+              totalMatches={searchMatches.length}
+              onNext={handleNextMatch}
+              onPrevious={handlePreviousMatch}
+              isSearching={isSearching}
+              focusTrigger={searchFocusTrigger}
+            />
             <button
               onClick={() => setIsSearchOpen(true)}
               className="inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
@@ -418,7 +456,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
                 <div className="flex items-center space-x-1.5">
                   <select
                     value={rowsPerPage}
-                    onChange={(e) => updateSettings({ rowsPerPage: Number(e.target.value) })}
+                    onChange={(e) => {
+                      // Reset the page in the same event as the size change,
+                      // so the grid loads once instead of the old page at the
+                      // new size followed by the first page.
+                      loadedRowsPerPage.current = Number(e.target.value);
+                      setCurrentPage(1);
+                      updateSettings({ rowsPerPage: Number(e.target.value) });
+                    }}
                     className="px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-slate-300 text-slate-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                   >
                     {[25, 50, 100, 200, 500].map((value) => (

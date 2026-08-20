@@ -59,13 +59,12 @@ impl ParquetCache {
 
         // Create the session and register the parquet file. Single partition,
         // deliberately — see the trade-off note in this function's doc.
-        let config =
-            datafusion::execution::context::SessionConfig::new().with_target_partitions(1);
+        let config = datafusion::execution::context::SessionConfig::new()
+            .with_target_partitions(1)
+            // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
+            .with_information_schema(true);
         let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
-        let options = datafusion::prelude::ParquetReadOptions::default();
-        ctx.register_parquet("t", path, options)
-            .await
-            .map_err(|e| format!("Failed to register parquet file: {}", e))?;
+        register_file_as_t(&ctx, path).await?;
 
         // Store in cache
         {
@@ -107,6 +106,48 @@ impl ParquetCache {
             metadata_cache.remove(path);
         }
     }
+}
+
+/// Register the single file at `path` as table `t`.
+///
+/// `SessionContext::register_parquet` treats its argument as a listing-table
+/// path: glob characters (`[`, `?`, `*`) in the file name are parsed as a
+/// pattern and the directory is walked instead, and only files ending in the
+/// lowercase `.parquet` extension are listed — so `report[1].parquet` failed
+/// to read and `DATA.PARQUET` registered as an empty table while the metadata
+/// (read through the parquet crate, which looks at neither) said otherwise.
+/// Handing DataFusion a `file://` URL skips the glob parsing, and passing the
+/// file's own extension keeps the listing from filtering it out.
+///
+/// Statistics collection stays off: with it on, DataFusion 40's selectivity
+/// estimate does interval arithmetic on the row-group min/max, and a 64-bit
+/// column holding a value at its type's limit (a u64 hash, an i64 sentinel)
+/// overflows it — every `=` filter on such a file then fails with
+/// "Selectivity is out of limit", and panics in debug builds. The browse
+/// grid gains nothing from the statistics anyway.
+async fn register_file_as_t(
+    ctx: &datafusion::execution::context::SessionContext,
+    path: &str,
+) -> Result<(), String> {
+    use datafusion::datasource::file_format::parquet::ParquetFormat;
+    use datafusion::datasource::listing::ListingOptions;
+
+    let file_path = std::path::Path::new(path);
+    let url = url::Url::from_file_path(file_path)
+        .map_err(|_| format!("Failed to register parquet file: not an absolute path: {}", path))?;
+    let extension = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+
+    let options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+        .with_file_extension(extension)
+        .with_collect_stat(false);
+
+    ctx.register_listing_table("t", url.as_str(), options, None, None)
+        .await
+        .map_err(|e| format!("Failed to register parquet file: {}", e))
 }
 
 fn logical_type_to_string(logical_type: &parquet::basic::LogicalType) -> String {
@@ -252,7 +293,7 @@ fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
 
 /// Open a parquet file for reading. Shared by metadata inspection and export.
 pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
-    let file = File::open(path).map_err(|e| e.to_string())?;
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
     SerializedFileReader::new(file).map_err(|e| e.to_string())
 }
 
@@ -292,6 +333,17 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
         })
         .collect();
 
+    // DataFusion cannot register a schema with duplicate field names, so every
+    // read would fail after the tab had already opened. Refuse up front, with
+    // the reason, instead of opening a tab that can only show an error.
+    let mut seen = std::collections::HashSet::new();
+    if let Some(duplicate) = columns.iter().find(|c| !seen.insert(c.name.as_str())) {
+        return Err(format!(
+            "This file has more than one column named \"{}\"; Parqsee cannot open files with duplicate column names.",
+            duplicate.name
+        ));
+    }
+
     Ok(ParquetMetadata {
         num_rows: metadata.file_metadata().num_rows(),
         num_columns: columns.len(),
@@ -303,16 +355,64 @@ use arrow::array::{Array, ArrayRef, FixedSizeListArray, GenericListArray, MapArr
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::json::LineDelimitedWriter;
 
-fn contains_decimal(data_type: &DataType) -> bool {
+/// True for types whose values JSON cannot carry faithfully: decimals (the
+/// arrow JSON writers refuse them outright) and floats (NaN and the infinities
+/// have no JSON spelling, so the writer silently emits `null` for them).
+fn contains_json_unsafe(data_type: &DataType) -> bool {
     match data_type {
-        DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => true,
+        DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _)
+        | DataType::Float16
+        | DataType::Float32
+        | DataType::Float64
+        // Written as a date-time ("2024-02-29T00:00:00") although it is a date.
+        | DataType::Date64 => true,
         DataType::List(field)
         | DataType::LargeList(field)
         | DataType::FixedSizeList(field, _)
-        | DataType::Map(field, _) => contains_decimal(field.data_type()),
-        DataType::Struct(fields) => fields.iter().any(|f| contains_decimal(f.data_type())),
+        | DataType::Map(field, _) => contains_json_unsafe(field.data_type()),
+        DataType::Struct(fields) => fields.iter().any(|f| contains_json_unsafe(f.data_type())),
         _ => false,
     }
+}
+
+/// Floats stay numbers unless the column actually holds a value JSON cannot
+/// represent; then the whole column is rendered as strings, with the
+/// JavaScript spellings so NaN and ±Infinity stay distinguishable from NULL.
+fn non_finite_floats_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    use arrow::array::{AsArray, StringArray};
+    use arrow::datatypes::{Float16Type, Float32Type, Float64Type};
+
+    let has_non_finite = match array.data_type() {
+        DataType::Float16 => array
+            .as_primitive::<Float16Type>()
+            .iter()
+            .flatten()
+            .any(|v| !v.to_f32().is_finite()),
+        DataType::Float32 => array.as_primitive::<Float32Type>().iter().flatten().any(|v| !v.is_finite()),
+        DataType::Float64 => array.as_primitive::<Float64Type>().iter().flatten().any(|v| !v.is_finite()),
+        _ => false,
+    };
+    if !has_non_finite {
+        return Ok(array.clone());
+    }
+    let rendered = arrow::compute::cast(array, &DataType::Utf8)
+        .map_err(|e| format!("Failed to render float column: {}", e))?;
+    let rendered: StringArray = rendered
+        .as_string::<i32>()
+        .iter()
+        .map(|v| {
+            v.map(|text| match text {
+                "NaN" | "nan" => "NaN",
+                "inf" | "Infinity" => "Infinity",
+                "-inf" | "-Infinity" => "-Infinity",
+                // Arrow prints `1.0` where the webview would print `1`;
+                // keep the rendered column looking like its neighbours.
+                other => other.strip_suffix(".0").unwrap_or(other),
+            })
+        })
+        .collect();
+    Ok(Arc::new(rendered) as ArrayRef)
 }
 
 /// The field, re-typed for its converted values. Cloning the original keeps
@@ -332,7 +432,7 @@ fn decimals_in_list<O: arrow::array::OffsetSizeTrait>(
         .as_any()
         .downcast_ref::<GenericListArray<O>>()
         .ok_or_else(|| "Failed to read list column".to_string())?;
-    let values = decimals_as_strings(list.values())?;
+    let values = json_unsafe_as_strings(list.values())?;
     GenericListArray::<O>::try_new(
         retyped_field(field, values.data_type()),
         list.offsets().clone(),
@@ -350,7 +450,7 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
     let mut converted_fields = Vec::with_capacity(fields.len());
     let mut converted_columns = Vec::with_capacity(fields.len());
     for (field, column) in fields.iter().zip(array.columns()) {
-        let column = decimals_as_strings(column)?;
+        let column = json_unsafe_as_strings(column)?;
         converted_fields.push(retyped_field(field, column.data_type()));
         converted_columns.push(column);
     }
@@ -358,8 +458,8 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
         .map_err(|e| e.to_string())
 }
 
-fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
-    if !contains_decimal(array.data_type()) {
+fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    if !contains_json_unsafe(array.data_type()) {
         return Ok(array.clone());
     }
     match array.data_type() {
@@ -367,6 +467,11 @@ fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
             arrow::compute::cast(array, &DataType::Utf8)
                 .map_err(|e| format!("Failed to render decimal column: {}", e))
         }
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => {
+            non_finite_floats_as_strings(array)
+        }
+        DataType::Date64 => arrow::compute::cast(array, &DataType::Date32)
+            .map_err(|e| format!("Failed to render date column: {}", e)),
         DataType::List(field) => decimals_in_list::<i32>(array, field),
         DataType::LargeList(field) => decimals_in_list::<i64>(array, field),
         DataType::FixedSizeList(field, size) => {
@@ -374,7 +479,7 @@ fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .ok_or_else(|| "Failed to read list column".to_string())?;
-            let values = decimals_as_strings(list.values())?;
+            let values = json_unsafe_as_strings(list.values())?;
             FixedSizeListArray::try_new(
                 retyped_field(field, values.data_type()),
                 *size,
@@ -407,24 +512,26 @@ fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 .ok_or_else(|| "Failed to read struct column".to_string())?;
             decimals_in_struct(structs).map(|a| Arc::new(a) as ArrayRef)
         }
-        // contains_decimal only claims the container types handled above.
+        // contains_json_unsafe only claims the container types handled above.
         _ => Ok(array.clone()),
     }
 }
 
 /// Arrow's JSON writers refuse decimals outright, which used to fail the read
-/// of any file carrying a money column. Render them as strings — exact, unlike
-/// a float would be — and leave every other column alone.
-pub fn decimals_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
+/// of any file carrying a money column, and they write NaN and ±Infinity as
+/// `null`, which showed a pandas NaN as a missing value. Render both as
+/// strings — exact, and distinguishable from NULL — print Date64 as the date
+/// it is, and leave every other column alone.
+pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
     let schema = batch.schema();
-    if !schema.fields().iter().any(|f| contains_decimal(f.data_type())) {
+    if !schema.fields().iter().any(|f| contains_json_unsafe(f.data_type())) {
         return Ok(batch.clone());
     }
 
     let mut fields = Vec::with_capacity(schema.fields().len());
     let mut columns = Vec::with_capacity(schema.fields().len());
     for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        let column = decimals_as_strings(column)?;
+        let column = json_unsafe_as_strings(column)?;
         fields.push(Arc::new(Field::new(
             field.name(),
             column.data_type().clone(),
@@ -498,7 +605,7 @@ fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
         let mut writer = LineDelimitedWriter::new(&mut buf);
         for batch in batches {
             writer
-                .write(&decimals_to_strings(batch)?)
+                .write(&json_unsafe_to_strings(batch)?)
                 .map_err(|e| format!("Failed to write batch: {}", e))?;
         }
         writer
@@ -535,7 +642,7 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
         .map_err(|e| format!("Failed to parse JSON results: {}", e))?;
 
     // The walk touches every value, so skip it for schemas that cannot hold
-    // an unsafe integer (mirrors decimals_to_strings' early return).
+    // an unsafe integer (mirrors json_unsafe_to_strings' early return).
     let may_overflow = batches
         .first()
         .is_some_and(|b| b.schema().fields().iter().any(|f| contains_big_integer(f.data_type())));
@@ -664,14 +771,34 @@ pub async fn execute_sql_limited(
 ) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, bool), String> {
     let ctx = cache.get_or_create_session(file_path).await?;
 
+    // Plan first and execute second: `SessionContext::sql` would run DDL and
+    // SET statements while planning, and this session is shared with the
+    // browse grid — a `DROP TABLE t` took paging down with it, and a `SET
+    // target_partitions` silently voided the single-partition ordering
+    // guarantee. The viewer only ever reads, so anything that would change
+    // the session or touch the filesystem is rejected before it runs.
+    let plan = ctx
+        .state()
+        .create_logical_plan(query)
+        .await
+        .map_err(|e| format!("SQL execution failed: {}", e))?;
+    reject_non_query(&plan)?;
+    let is_explain = matches!(
+        plan,
+        datafusion::logical_expr::LogicalPlan::Explain(_)
+            | datafusion::logical_expr::LogicalPlan::Analyze(_)
+    );
+
     let mut df = ctx
-        .sql(query)
+        .execute_logical_plan(plan)
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
     let schema = df.schema().inner().clone();
 
-    if let Some(max) = max_rows {
+    // EXPLAIN must stay the root of its plan; a LIMIT on top of it is an
+    // internal error, and its output is a handful of rows anyway.
+    if let (Some(max), false) = (max_rows, is_explain) {
         // Fetch one extra row so we can tell a full page from a truncated one.
         df = df
             .limit(0, Some(max + 1))
@@ -689,6 +816,24 @@ pub async fn execute_sql_limited(
     }
 
     Ok((batches, schema, truncated))
+}
+
+/// The SQL view is read-only. DDL (`CREATE`/`DROP TABLE`), `SET`, DML and
+/// `COPY ... TO` would mutate the shared session or write files; name the
+/// statement kind so the message explains what was refused.
+fn reject_non_query(plan: &datafusion::logical_expr::LogicalPlan) -> Result<(), String> {
+    use datafusion::logical_expr::LogicalPlan;
+    let kind = match plan {
+        LogicalPlan::Ddl(_) => "DDL statements (CREATE, DROP, ALTER)",
+        LogicalPlan::Dml(_) => "INSERT, UPDATE and DELETE",
+        LogicalPlan::Copy(_) => "COPY",
+        LogicalPlan::Statement(_) => "SET and transaction statements",
+        _ => return Ok(()),
+    };
+    Err(format!(
+        "The SQL view is read-only: {} are not allowed. Use SELECT queries against table t.",
+        kind
+    ))
 }
 
 /// Drop rows past `max` across `batches`; returns true if anything was dropped.
@@ -883,6 +1028,52 @@ mod tests {
         assert_eq!(rows[0]["pair"][1], "2.00");
     }
 
+    /// pandas writes missing floats as NaN; the grid must not show them as NULL.
+    #[tokio::test]
+    async fn non_finite_floats_are_distinguishable_from_null() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Float64, true),
+            Field::new("y", DataType::Float32, true),
+            Field::new("plain", DataType::Float64, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::Float64Array::from(vec![
+                    Some(f64::NAN),
+                    Some(f64::INFINITY),
+                    Some(f64::NEG_INFINITY),
+                    Some(1.5),
+                    None,
+                    Some(2.0),
+                ])) as ArrayRef,
+                Arc::new(arrow::array::Float32Array::from(vec![Some(2.0), None, None, None, None, None])),
+                Arc::new(arrow::array::Float64Array::from(vec![Some(0.1 + 0.2), None, None, None, None, None])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("nan.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 6, None)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["x"], "NaN");
+        assert_eq!(rows[1]["x"], "Infinity");
+        assert_eq!(rows[2]["x"], "-Infinity");
+        // A column that had to be rendered keeps its finite values readable,
+        // printed the way the webview prints numbers.
+        assert_eq!(rows[3]["x"], "1.5");
+        assert_eq!(rows[5]["x"], "2");
+        assert!(rows[4].get("x").is_none());
+        // Columns without a non-finite value stay numbers.
+        assert_eq!(rows[0]["y"], 2.0);
+        assert_eq!(rows[0]["plain"], 0.1 + 0.2);
+    }
+
     #[tokio::test]
     async fn decimal_columns_reach_the_webview_as_exact_strings() {
         let path = write_decimal_fixture();
@@ -895,6 +1086,160 @@ mod tests {
         assert_eq!(rows[1]["amount"], "-0.0001");
         assert_eq!(rows[0]["prices"][0], "1.50");
         assert_eq!(rows[0]["line"]["net"], "0.5000");
+    }
+
+    fn write_small(path: &PathBuf) {
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef],
+        )
+        .unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut writer = ArrowWriter::try_new(File::create(path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+    }
+
+    /// macOS is case-insensitive, so `DATA.PARQUET` is a perfectly ordinary
+    /// file name there; the listing must not drop it for its extension.
+    #[tokio::test]
+    async fn reads_files_with_an_uppercase_extension() {
+        let path = temp_path("UPPER.PARQUET");
+        write_small(&path);
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(super::count_data(&cache, &path.to_string_lossy(), None).await.unwrap(), 3);
+    }
+
+    /// Glob characters are legal in file names; they must not be treated as
+    /// a pattern over the parent directory.
+    #[tokio::test]
+    async fn reads_files_whose_names_contain_glob_characters() {
+        for name in ["glob[1].parquet", "what?.parquet", "star*.parquet", "sp ace.parquet", "pct%20.parquet"] {
+            let path = temp_path("globs").join(name);
+            write_small(&path);
+            let cache = ParquetCache::new();
+            let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+                .await
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(rows.len(), 3, "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn sql_view_refuses_statements_that_would_change_the_session() {
+        let path = temp_path("readonly.parquet");
+        write_small(&path);
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        let run = |q: &'static str| {
+            let cache = &cache;
+            let file = file.clone();
+            async move { super::execute_sql_limited(cache, &file, q, Some(10)).await.map(|(b, _, _)| b) }
+        };
+
+        for q in [
+            "DROP TABLE t",
+            "CREATE TABLE x AS SELECT * FROM t",
+            "SET datafusion.execution.target_partitions = 8",
+            "COPY (SELECT * FROM t) TO '/tmp/parqsee-must-not-exist.csv'",
+            "CREATE EXTERNAL TABLE o STORED AS PARQUET LOCATION '/tmp/x.parquet'",
+            "INSERT INTO t VALUES (1)",
+        ] {
+            let err = run(q).await.expect_err(q);
+            assert!(err.contains("read-only"), "{q}: {err}");
+        }
+        assert!(!std::path::Path::new("/tmp/parqsee-must-not-exist.csv").exists());
+
+        // The table survived the attempts, and plain reads still work.
+        let rows = super::read_data(&cache, &file, 0, 10, None).await.unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(run("SELECT * FROM t LIMIT 100;").await.unwrap().iter().map(|b| b.num_rows()).sum::<usize>(), 3);
+        assert!(run("EXPLAIN SELECT * FROM t").await.is_ok(), "EXPLAIN must not be limited");
+        assert!(run("SHOW TABLES").await.is_ok(), "information_schema is on");
+    }
+
+    /// u64 hash columns and i64 sentinels put row-group statistics at the
+    /// type limits; filtering such a file must not trip DataFusion's
+    /// selectivity arithmetic.
+    #[tokio::test]
+    async fn filters_work_on_files_with_values_at_the_64_bit_limits() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("hash", DataType::UInt64, false),
+            Field::new("id", DataType::Int64, false),
+            Field::new("score", DataType::Float32, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::UInt64Array::from(vec![u64::MAX, 1, 0])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![i64::MIN, i64::MAX, 7])),
+                Arc::new(arrow::array::Float32Array::from(vec![1.5, 2.5, 3.5])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("limits.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        for (filter, expected) in [("\"hash\" = 1", 1), ("\"score\" = 1.5", 1), ("\"id\" = 7", 1), ("\"hash\" = 18446744073709551615", 1)] {
+            let rows = super::read_data(&cache, &file, 0, 10, Some(filter.to_string()))
+                .await
+                .unwrap_or_else(|e| panic!("{filter}: {e}"));
+            assert_eq!(rows.len(), expected, "{filter}");
+            assert_eq!(super::count_data(&cache, &file, Some(filter.to_string())).await.unwrap(), expected, "{filter}");
+        }
+    }
+
+    #[test]
+    fn duplicate_column_names_are_refused_when_opening() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("id", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["x"])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("dup.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let err = ParquetCache::new()
+            .get_or_create_metadata(&path.to_string_lossy())
+            .unwrap_err();
+        assert!(err.contains("more than one column named \"id\""), "{err}");
+    }
+
+    #[tokio::test]
+    async fn date64_renders_as_a_date() {
+        let schema = Arc::new(Schema::new(vec![Field::new("d", DataType::Date64, true)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow::array::Date64Array::from(vec![Some(1_709_164_800_000), None])) as ArrayRef],
+        )
+        .unwrap();
+        let path = temp_path("date64.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 2, None)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["d"], "2024-02-29");
     }
 
     #[test]

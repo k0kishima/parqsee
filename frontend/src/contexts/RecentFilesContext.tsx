@@ -17,17 +17,32 @@ interface RecentFilesContextType {
 
 const RecentFilesContext = createContext<RecentFilesContextType | undefined>(undefined);
 const MAX_RECENT_FILES = 5;
+const RECENT_FILES_STORAGE_KEY = 'parqsee-recent-files';
+
+/**
+ * Read the persisted list, dropping anything unusable. A corrupt entry used
+ * to throw out of the provider and leave the app blank with no way to recover.
+ */
+export function loadRecentFiles(): RecentFile[] {
+  try {
+    const saved = localStorage.getItem(RECENT_FILES_STORAGE_KEY);
+    const parsed: unknown = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (f): f is RecentFile => !!f && typeof f === 'object' && typeof (f as RecentFile).path === 'string'
+    );
+  } catch (e) {
+    console.error('Failed to parse recent files', e);
+    return [];
+  }
+}
 
 export function RecentFilesProvider({ children }: { children: ReactNode }) {
-  // const { settings } = useSettings(); // Not used currently
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(() => {
-    const saved = localStorage.getItem('parqsee-recent-files');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(loadRecentFiles);
 
   useEffect(() => {
     // Save recent files to localStorage when they change
-    localStorage.setItem('parqsee-recent-files', JSON.stringify(recentFiles));
+    localStorage.setItem(RECENT_FILES_STORAGE_KEY, JSON.stringify(recentFiles));
   }, [recentFiles]);
 
   const addRecentFile = (file: RecentFile) => {

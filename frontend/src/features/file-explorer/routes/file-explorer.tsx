@@ -18,6 +18,22 @@ interface ContextMenuState {
   entry: FileEntry;
 }
 
+/** True if `path` is one of `entries` or of their loaded descendants. */
+function treeContains(entries: FileEntry[], path: string): boolean {
+  return entries.some(entry => entry.path === path || (entry.children ? treeContains(entry.children, path) : false));
+}
+
+/** Replace the entry at `path` anywhere in the loaded tree. */
+function updateEntry(entries: FileEntry[], path: string, update: (entry: FileEntry) => FileEntry): FileEntry[] {
+  return entries.map(entry => {
+    if (entry.path === path) return update(entry);
+    if (entry.children && path.startsWith(entry.path + '/')) {
+      return { ...entry, children: updateEntry(entry.children, path, update) };
+    }
+    return entry;
+  });
+}
+
 export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileSelect, className }) => {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -25,13 +41,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
   const [currentDir, setCurrentDir] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  /** Why the current directory could not be listed, if it could not. */
+  const [listError, setListError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
-  // The directory currently shown, readable from effects without retriggering
-  // them.
+  // The directory and listing currently shown, readable from effects without
+  // retriggering them.
   const currentDirRef = useRef('');
   currentDirRef.current = currentDir;
+  const entriesRef = useRef<FileEntry[]>([]);
+  entriesRef.current = entries;
 
   useEffect(() => {
     if (currentPath) {
@@ -39,8 +59,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
       if (dir) {
         setSelectedFile(currentPath);
         // Switching tabs within one directory only moves the highlight; skip
-        // the IPC round trip and the full listing re-render.
-        if (dir !== currentDirRef.current) {
+        // the IPC round trip and the full listing re-render. The same goes
+        // for a file inside an expanded subfolder — re-rooting the tree into
+        // that folder threw away the context the user had opened up.
+        if (dir !== currentDirRef.current && !treeContains(entriesRef.current, currentPath)) {
           setCurrentDir(dir);
           loadDirectory(dir);
         }
@@ -52,21 +74,23 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     try {
       const result = await listDirectory(path);
       setEntries(result);
+      setListError(null);
     } catch (error) {
       console.error('Failed to load directory:', error);
+      setEntries([]);
+      setListError(String(error));
     }
   };
 
   const loadSubDirectory = useCallback(async (parentPath: string) => {
     try {
       const result = await listDirectory(parentPath);
-      setEntries(prev => prev.map(entry =>
-        entry.path === parentPath
-          ? { ...entry, children: result }
-          : entry
-      ));
+      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: result, loadError: undefined })));
     } catch (error) {
       console.error('Failed to load sub-directory:', error);
+      // Leave the folder expanded with the reason where its children would
+      // be, instead of an arrow that opens onto nothing.
+      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: [], loadError: String(error) })));
     }
   }, []);
 
@@ -149,6 +173,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
           )}
         </div>
       </div>
+      {listError && (
+        <p className="px-3 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
+          {t('fileExplorer.loadError', { reason: listError })}
+        </p>
+      )}
       <div className="py-1">
         {filteredEntries.map(entry => (
           <ExplorerEntry
