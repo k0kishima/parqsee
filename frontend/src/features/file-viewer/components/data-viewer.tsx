@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
@@ -8,6 +9,7 @@ import { DataTable, SearchMatch } from "./data-table";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
+import { formatCellValue } from "../../../lib/format";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 
 interface DataViewerProps {
@@ -27,7 +29,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const [data, setData] = useState<any[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
+  /** Fatal: the file itself could not be opened. */
   const [error, setError] = useState<string | null>(null);
+  /** Recoverable: a filter or a page read failed; the tab stays usable. */
+  const [dataError, setDataError] = useState<string | null>(null);
 
   // Use ref to break dependency cycle for onStateChange
   const onStateChangeRef = useRef(onStateChange);
@@ -59,6 +64,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  /** The state the rows on screen were successfully loaded for. */
+  const lastGood = useRef<{ page: number; filter: string; totalRows: number } | null>(null);
+  /** Skip the reload triggered by rolling state back after a failed load. */
+  const skipReload = useRef(false);
+
   // Sync state changes to parent
   useEffect(() => {
     if (onStateChangeRef.current) {
@@ -79,6 +89,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   useEffect(() => {
     if (metadata) {
+      if (skipReload.current) {
+        skipReload.current = false;
+        return;
+      }
       loadData();
       // Scroll to top of table when page changes
       if (tableContainerRef.current) {
@@ -89,7 +103,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [rowsPerPage, activeFilter]);
+  }, [rowsPerPage]);
 
   // Keyboard shortcut for search
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
@@ -105,6 +119,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const loadFile = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setDataError(null);
+      lastGood.current = null;
       const meta = await openParquetFile(filePath);
       setMetadata(meta);
       setTotalRows(meta.num_rows);
@@ -120,20 +137,37 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
     try {
       setLoading(true);
+      setDataError(null);
 
-      // Update total rows based on filter
-      if (activeFilter) {
-        const count = await countParquetData(filePath, activeFilter);
-        setTotalRows(count);
-      } else {
-        setTotalRows(metadata.num_rows);
-      }
-
+      const total = activeFilter
+        ? await countParquetData(filePath, activeFilter)
+        : metadata.num_rows;
       const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
+
+      // Commit only once the whole read succeeded, so the header, the export
+      // modal and the grid always describe the same result — a count that
+      // lands before a failing read must not update the page.
+      setTotalRows(total);
       setData(rows);
+      lastGood.current = { page: currentPage, filter: activeFilter, totalRows: total };
       setLoading(false);
     } catch (err) {
-      setError(err as string);
+      // A rejected filter must not strand the tab on an error screen: keep the
+      // previous result on screen and let the user correct the condition.
+      setDataError(String(err));
+      // Roll the request state back to what the grid is still showing, so
+      // pagination and export never describe the failed filter or page. The
+      // rows on screen are already that state — skip the echo reload the
+      // rollback would trigger, which would also clear the error banner.
+      const good = lastGood.current;
+      if (good) {
+        if (good.filter !== activeFilter || good.page !== currentPage) {
+          skipReload.current = true;
+          setActiveFilter(good.filter);
+          setCurrentPage(good.page);
+        }
+        setTotalRows(good.totalRows);
+      }
       setLoading(false);
     }
   };
@@ -149,6 +183,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);
+    // A new filter changes the row set; start from the first page. Done here
+    // rather than in an effect so rolling activeFilter back after a failed
+    // load does not also reset the page.
+    setCurrentPage(1);
   }, []);
 
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
@@ -185,9 +223,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       const row = data[rowIndex];
       for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
         const col = metadata.columns[colIndex];
-        const value = row[col.name];
-        if (value !== null && value !== undefined) {
-          const stringValue = String(value);
+        const stringValue = formatCellValue(row[col.name]);
+        if (stringValue !== null) {
           if (stringValue.toLowerCase().includes(lowerSearchTerm)) {
             matches.push({ rowIndex, colIndex, value: stringValue });
             if (matches.length >= maxMatches) break outerLoop;
@@ -313,7 +350,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
             </button>
             <button
               onClick={() => setIsExportModalOpen(true)}
-              className="inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
+              disabled={loading}
+              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${loading
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+                } bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600`}
             >
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -334,6 +375,21 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
+        {dataError && (
+          <div className="px-6 py-2 flex items-start gap-3 border-b bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">{t('viewer.dataError')}</p>
+              <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError}</p>
+            </div>
+            <button
+              onClick={() => setDataError(null)}
+              title={t('common.dismiss')}
+              className="p-1 rounded text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center">
@@ -452,7 +508,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
           isOpen={isExportModalOpen}
           onClose={() => setIsExportModalOpen(false)}
           filePath={filePath}
-          totalRows={metadata.num_rows}
+          totalRows={totalRows}
+          activeFilter={activeFilter}
+          currentPage={currentPage}
+          rowsPerPage={rowsPerPage}
         />
       )}
     </div>

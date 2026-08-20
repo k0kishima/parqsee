@@ -14,3 +14,15 @@ export function formatFileSize(size?: number): string {
   }
   return `${formattedSize.toFixed(1)} ${FILE_SIZE_UNITS[i]}`;
 }
+
+/**
+ * Render a cell value the way the grids display it. Nested columns
+ * (LIST / MAP / STRUCT) arrive as arrays and objects, which would otherwise
+ * stringify to "[object Object]". Returns null for an absent value so callers
+ * can render their own NULL marker.
+ */
+export function formatCellValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}

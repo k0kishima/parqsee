@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { ColumnInfo } from "../api";
+import { ColumnInfo, ColumnKind } from "../api";
 
 interface FilterBarProps {
     columns: ColumnInfo[];
@@ -9,11 +9,66 @@ interface FilterBarProps {
     activeFilter: string;
 }
 
-interface FilterRow {
+export interface FilterRow {
     id: number;
     column: string;
     operator: string;
     value: string;
+}
+
+/**
+ * Column kinds that compare against a bare literal. Everything else — text,
+ * dates, timestamps, binary — needs a quoted string literal, which
+ * DataFusion coerces to the column type.
+ */
+const BARE_NUMERIC_KINDS: ReadonlySet<ColumnKind> = new Set(['integer', 'float', 'decimal']);
+
+/** DataFusion lower-cases bare identifiers, so `MixedCase` resolves to nothing. */
+const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
+
+function formatLiteral(kind: ColumnKind, value: string): string {
+    // Text comparisons keep the value verbatim — spaces can be meaningful
+    // there. Everything else is parsed by DataFusion (dates, timestamps,
+    // numbers), whose parsers do not trim, so a stray space from a paste
+    // would fail the whole filter.
+    if (kind === 'text') return quoteLiteral(value);
+    const trimmed = value.trim();
+    // A value that does not parse still goes in quoted, so the backend
+    // reports a cast error instead of "no field named abc".
+    if (kind === 'boolean' && /^(true|false)$/i.test(trimmed)) return trimmed;
+    if (BARE_NUMERIC_KINDS.has(kind) && trimmed !== "" && Number.isFinite(Number(trimmed))) {
+        return trimmed;
+    }
+    return quoteLiteral(trimmed);
+}
+
+/** Build the WHERE fragment the backend appends to `SELECT * FROM t`. */
+export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[]): string {
+    const conditions: string[] = [];
+
+    for (const filter of filters) {
+        if (!filter.column) continue;
+
+        const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
+        if (needsValue && !filter.value.trim()) continue;
+
+        const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
+        const columnRef = quoteIdentifier(filter.column);
+
+        if (!needsValue) {
+            conditions.push(`${columnRef} ${filter.operator}`);
+        } else if (filter.operator === "LIKE") {
+            // LIKE only applies to text, so cast anything else to keep partial
+            // matches working on numbers and dates.
+            const target = kind === 'text' ? columnRef : `CAST(${columnRef} AS TEXT)`;
+            conditions.push(`${target} LIKE ${quoteLiteral(filter.value)}`);
+        } else {
+            conditions.push(`${columnRef} ${filter.operator} ${formatLiteral(kind, filter.value)}`);
+        }
+    }
+
+    return conditions.join(" AND ");
 }
 
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
@@ -68,46 +123,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-
-        const validConditions: string[] = [];
-
-        for (const filter of filters) {
-            if (!filter.column) continue;
-
-            // Skip rows requiring value but having none
-            const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
-            if (needsValue && !filter.value.trim()) continue;
-
-            let filterString = "";
-
-            if (!needsValue) {
-                filterString = `${filter.column} ${filter.operator}`;
-            } else {
-                // Find column type
-                const col = columns.find(c => c.name === filter.column);
-                const isString = col?.column_type === "STRING" || col?.column_type === "UTF8";
-
-                let formattedValue = filter.value;
-                if (isString || filter.operator === "LIKE") {
-                    formattedValue = `'${filter.value.replace(/'/g, "''")}'`;
-                }
-
-                let columnExpr = filter.column;
-                if (filter.operator === "LIKE" && !isString) {
-                    columnExpr = `CAST(${filter.column} AS TEXT)`;
-                }
-
-                filterString = `${columnExpr} ${filter.operator} ${formattedValue}`;
-            }
-
-            validConditions.push(filterString);
-        }
-
-        if (validConditions.length === 0) {
-            onFilterChange("");
-        } else {
-            onFilterChange(validConditions.join(" AND "));
-        }
+        onFilterChange(buildFilterExpression(filters, columns));
     };
 
     const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';

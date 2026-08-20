@@ -17,7 +17,9 @@ pub struct QueryColumn {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
     pub columns: Vec<QueryColumn>,
-    pub rows: Vec<serde_json::Map<String, serde_json::Value>>,
+    /// One JSON object per row, already rendered webview-safe by
+    /// `batches_to_rows` (decimals and big integers as strings).
+    pub rows: Vec<serde_json::Value>,
     pub execution_time_ms: u128,
     /// True when the result was cut at `max_rows`.
     pub truncated: bool,
@@ -45,7 +47,7 @@ pub async fn execute_sql(
         })
         .collect();
 
-    let rows: Vec<serde_json::Map<String, serde_json::Value>> = batches_to_rows(&batches)?;
+    let rows = batches_to_rows(&batches)?;
 
     let duration = start.elapsed().as_millis();
 

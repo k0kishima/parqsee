@@ -120,7 +120,7 @@ Argument names are camelCase on the JS side.
 | `list_directory` | `(path)` → `FileEntry[]` | Directory listing, directories first |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
-| `export_data` | `(sourcePath, exportPath, format, offset?, limit?)` → `string` | Export to `csv` or `json` |
+| `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run arbitrary SQL; the file is registered as table `t`. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
 
@@ -151,9 +151,15 @@ The frontend also listens for a `file-drop` event emitted from
    tens of thousands of cells per tab in the DOM, and WebKit's style recalc over
    them made tab switches take close to a second. Keep new grid features
    compatible with this (no DOM lookups of off-screen cells).
-8. Exports stream RecordBatches from the parquet Arrow reader (offset/limit pushed
-   down) straight into arrow's CSV/JSON writers — constant memory; don't buffer
-   whole files.
+8. Exports stream RecordBatches straight into arrow's CSV/JSON writers —
+   constant memory; don't buffer whole files. Without a filter they come from
+   the parquet Arrow reader with offset/limit pushed down; with one they are
+   streamed out of DataFusion so the exported range matches what the grid
+   shows.
+9. Arrow's JSON writers reject decimals, and the webview parses the IPC payload
+   with JS number semantics. `batches_to_rows` (`services/parquet.rs`) is the one
+   choke point that renders decimals and integers outside ±2^53 as strings —
+   route every row the webview consumes through it.
 
 ## Testing
 

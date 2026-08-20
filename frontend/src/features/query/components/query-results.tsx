@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { QueryResult } from '../types';
 import { useColumnVirtualizer, useRowVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
+import { formatCellValue } from '../../../lib/format';
 
 interface QueryResultsProps {
     result?: QueryResult;
@@ -181,8 +182,4 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
     );
 };
 
-const formatCell = (value: unknown): string => {
-    if (value === null || value === undefined) return 'NULL';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
-};
+const formatCell = (value: unknown): string => formatCellValue(value) ?? 'NULL';

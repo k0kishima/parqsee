@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useTranslation } from "react-i18next";
@@ -9,10 +9,22 @@ interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   filePath: string;
+  /** Rows matching the active filter — what the grid is paginating over. */
   totalRows: number;
+  activeFilter: string;
+  currentPage: number;
+  rowsPerPage: number;
 }
 
-export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModalProps) {
+export function ExportModal({
+  isOpen,
+  onClose,
+  filePath,
+  totalRows,
+  activeFilter,
+  currentPage,
+  rowsPerPage,
+}: ExportModalProps) {
   const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
@@ -21,7 +33,27 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The row count moves with the filter, so start from the full range every
+  // time the modal is opened rather than from the last export's bounds.
+  // totalRows is deliberately not a dependency: a count landing while the
+  // modal is open must not clobber a range the user is editing.
+  useEffect(() => {
+    if (isOpen) {
+      setStartRow(1);
+      setEndRow(totalRows);
+      setError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const hasRows = totalRows > 0;
+  const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
+  const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
+  const rangeIsValid =
+    exportRange !== "custom" || (startRow >= 1 && endRow >= startRow && endRow <= totalRows);
+  const canExport = hasRows && rangeIsValid && !isExporting;
 
   const handleExport = async () => {
     setError(null);
@@ -60,10 +92,9 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
       if (exportRange === "custom") {
         offset = startRow - 1;
         limit = endRow - startRow + 1;
-      } else if (exportRange === "all") {
-        // Export all rows
-        offset = undefined;
-        limit = undefined;
+      } else if (exportRange === "current") {
+        offset = (currentPage - 1) * rowsPerPage;
+        limit = rowsPerPage;
       }
 
       // Call the export command
@@ -72,7 +103,10 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
         exportPath: savePath,
         format: exportFormat,
         offset,
-        limit
+        limit,
+        // Ranges address the filtered result, so the backend has to apply the
+        // same condition the grid is showing.
+        filter: activeFilter || undefined
       });
 
       // Send notification
@@ -144,6 +178,12 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
             <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
               {t('export.range')}
             </label>
+            {activeFilter && (
+              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                {t('export.filterNotice')}
+                <span className="ml-1 font-mono break-all">{activeFilter}</span>
+              </p>
+            )}
             <div className="space-y-2">
               <label className="flex items-center">
                 <input
@@ -155,6 +195,18 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
                 />
                 <span className="text-gray-700 dark:text-gray-300">
                   {t('export.ranges.all', { total: totalRows.toLocaleString() })}
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="current"
+                  checked={exportRange === "current"}
+                  onChange={(e) => setExportRange(e.target.value as "current")}
+                  className="mr-2"
+                />
+                <span className="text-gray-700 dark:text-gray-300">
+                  {t('export.ranges.current', { start: pageStart.toLocaleString(), end: pageEnd.toLocaleString() })}
                 </span>
               </label>
               <label className="flex items-center">
@@ -204,6 +256,13 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
             </div>
           )}
 
+          {!hasRows && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">{t('export.noRows')}</p>
+          )}
+          {hasRows && !rangeIsValid && (
+            <p className="text-sm text-red-600">{t('export.invalidRange', { total: totalRows.toLocaleString() })}</p>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-md">
@@ -222,8 +281,8 @@ export function ExportModal({ isOpen, onClose, filePath, totalRows }: ExportModa
           </button>
           <button
             onClick={handleExport}
-            disabled={isExporting}
-            className={`btn-primary ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!canExport}
+            className={`btn-primary ${!canExport ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isExporting ? t('export.exporting') : t('common.export')}
           </button>

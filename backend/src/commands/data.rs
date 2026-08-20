@@ -32,11 +32,13 @@ pub async fn evict_cache(
 
 #[tauri::command]
 pub async fn export_data(
+    cache: tauri::State<'_, ParquetCache>,
     source_path: String,
     export_path: String,
     format: String,
     offset: Option<usize>,
     limit: Option<usize>,
+    filter: Option<String>,
 ) -> Result<usize, String> {
-    export::export_data(source_path, export_path, format, offset, limit)
+    export::export_data(&cache, source_path, export_path, format, offset, limit, filter).await
 }

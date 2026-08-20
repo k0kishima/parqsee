@@ -1,8 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
 
+/** Structural classification of a column, independent of its display label. */
+export type ColumnKind =
+    | 'boolean'
+    | 'integer'
+    | 'float'
+    | 'decimal'
+    | 'text'
+    | 'temporal'
+    | 'binary'
+    | 'nested'
+    | 'other';
+
 export interface ColumnInfo {
     name: string;
     column_type: string;
+    kind: ColumnKind;
     logical_type?: string;
     physical_type: string;
 }
@@ -23,8 +36,11 @@ export interface ExportDataParams {
     sourcePath: string;
     exportPath: string;
     format: 'csv' | 'json';
+    /** Row range within the filtered result, not within the file. */
     offset?: number;
     limit?: number;
+    /** The WHERE fragment the grid is showing, if any. */
+    filter?: string;
 }
 
 export const checkFileExists = async (path: string): Promise<boolean> => {
