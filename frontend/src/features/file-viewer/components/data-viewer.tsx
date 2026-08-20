@@ -150,7 +150,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       if (seq !== loadSeq.current) return;
       setMetadata(meta);
       setTotalRows(meta.num_rows);
-      setActiveFilter("");
+      // The filter is kept across a refresh: dropping it here left the filter
+      // bar showing a condition the grid no longer applied. If the file's
+      // columns changed underneath it, the reload reports the error and the
+      // user clears it.
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setError(err as string);
