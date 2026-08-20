@@ -7,7 +7,7 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::services::parquet::{decimals_to_strings, nested_to_json_strings, ParquetCache};
+use crate::services::parquet::{json_unsafe_to_strings, nested_to_json_strings, ParquetCache};
 
 /// Rows are decoded and written one batch at a time, so exports run in
 /// constant memory regardless of how many rows are exported, and the
@@ -64,9 +64,10 @@ impl RowWriter {
             RowWriter::Csv(writer) => writer
                 .write(&nested_to_json_strings(batch)?)
                 .map_err(|e| e.to_string())?,
-            // The JSON writer refuses decimals; the CSV writer handles them.
+            // The JSON writer refuses decimals and nulls out NaN; the CSV
+            // writer handles both.
             RowWriter::Json(writer) => writer
-                .write(&decimals_to_strings(batch)?)
+                .write(&json_unsafe_to_strings(batch)?)
                 .map_err(|e| e.to_string())?,
         }
         Ok(batch.num_rows())

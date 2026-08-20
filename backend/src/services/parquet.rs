@@ -335,16 +335,60 @@ use arrow::array::{Array, ArrayRef, FixedSizeListArray, GenericListArray, MapArr
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::json::LineDelimitedWriter;
 
-fn contains_decimal(data_type: &DataType) -> bool {
+/// True for types whose values JSON cannot carry faithfully: decimals (the
+/// arrow JSON writers refuse them outright) and floats (NaN and the infinities
+/// have no JSON spelling, so the writer silently emits `null` for them).
+fn contains_json_unsafe(data_type: &DataType) -> bool {
     match data_type {
-        DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => true,
+        DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _)
+        | DataType::Float16
+        | DataType::Float32
+        | DataType::Float64 => true,
         DataType::List(field)
         | DataType::LargeList(field)
         | DataType::FixedSizeList(field, _)
-        | DataType::Map(field, _) => contains_decimal(field.data_type()),
-        DataType::Struct(fields) => fields.iter().any(|f| contains_decimal(f.data_type())),
+        | DataType::Map(field, _) => contains_json_unsafe(field.data_type()),
+        DataType::Struct(fields) => fields.iter().any(|f| contains_json_unsafe(f.data_type())),
         _ => false,
     }
+}
+
+/// Floats stay numbers unless the column actually holds a value JSON cannot
+/// represent; then the whole column is rendered as strings, with the
+/// JavaScript spellings so NaN and ±Infinity stay distinguishable from NULL.
+fn non_finite_floats_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    use arrow::array::{AsArray, StringArray};
+    use arrow::datatypes::{Float16Type, Float32Type, Float64Type};
+
+    let has_non_finite = match array.data_type() {
+        DataType::Float16 => array
+            .as_primitive::<Float16Type>()
+            .iter()
+            .flatten()
+            .any(|v| !v.to_f32().is_finite()),
+        DataType::Float32 => array.as_primitive::<Float32Type>().iter().flatten().any(|v| !v.is_finite()),
+        DataType::Float64 => array.as_primitive::<Float64Type>().iter().flatten().any(|v| !v.is_finite()),
+        _ => false,
+    };
+    if !has_non_finite {
+        return Ok(array.clone());
+    }
+    let rendered = arrow::compute::cast(array, &DataType::Utf8)
+        .map_err(|e| format!("Failed to render float column: {}", e))?;
+    let rendered: StringArray = rendered
+        .as_string::<i32>()
+        .iter()
+        .map(|v| {
+            v.map(|text| match text {
+                "NaN" | "nan" => "NaN",
+                "inf" | "Infinity" => "Infinity",
+                "-inf" | "-Infinity" => "-Infinity",
+                other => other,
+            })
+        })
+        .collect();
+    Ok(Arc::new(rendered) as ArrayRef)
 }
 
 /// The field, re-typed for its converted values. Cloning the original keeps
@@ -364,7 +408,7 @@ fn decimals_in_list<O: arrow::array::OffsetSizeTrait>(
         .as_any()
         .downcast_ref::<GenericListArray<O>>()
         .ok_or_else(|| "Failed to read list column".to_string())?;
-    let values = decimals_as_strings(list.values())?;
+    let values = json_unsafe_as_strings(list.values())?;
     GenericListArray::<O>::try_new(
         retyped_field(field, values.data_type()),
         list.offsets().clone(),
@@ -382,7 +426,7 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
     let mut converted_fields = Vec::with_capacity(fields.len());
     let mut converted_columns = Vec::with_capacity(fields.len());
     for (field, column) in fields.iter().zip(array.columns()) {
-        let column = decimals_as_strings(column)?;
+        let column = json_unsafe_as_strings(column)?;
         converted_fields.push(retyped_field(field, column.data_type()));
         converted_columns.push(column);
     }
@@ -390,14 +434,17 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
         .map_err(|e| e.to_string())
 }
 
-fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
-    if !contains_decimal(array.data_type()) {
+fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    if !contains_json_unsafe(array.data_type()) {
         return Ok(array.clone());
     }
     match array.data_type() {
         DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
             arrow::compute::cast(array, &DataType::Utf8)
                 .map_err(|e| format!("Failed to render decimal column: {}", e))
+        }
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => {
+            non_finite_floats_as_strings(array)
         }
         DataType::List(field) => decimals_in_list::<i32>(array, field),
         DataType::LargeList(field) => decimals_in_list::<i64>(array, field),
@@ -406,7 +453,7 @@ fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .ok_or_else(|| "Failed to read list column".to_string())?;
-            let values = decimals_as_strings(list.values())?;
+            let values = json_unsafe_as_strings(list.values())?;
             FixedSizeListArray::try_new(
                 retyped_field(field, values.data_type()),
                 *size,
@@ -439,24 +486,26 @@ fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 .ok_or_else(|| "Failed to read struct column".to_string())?;
             decimals_in_struct(structs).map(|a| Arc::new(a) as ArrayRef)
         }
-        // contains_decimal only claims the container types handled above.
+        // contains_json_unsafe only claims the container types handled above.
         _ => Ok(array.clone()),
     }
 }
 
 /// Arrow's JSON writers refuse decimals outright, which used to fail the read
-/// of any file carrying a money column. Render them as strings — exact, unlike
-/// a float would be — and leave every other column alone.
-pub fn decimals_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
+/// of any file carrying a money column, and they write NaN and ±Infinity as
+/// `null`, which showed a pandas NaN as a missing value. Render both as
+/// strings — exact, and distinguishable from NULL — and leave every other
+/// column alone.
+pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
     let schema = batch.schema();
-    if !schema.fields().iter().any(|f| contains_decimal(f.data_type())) {
+    if !schema.fields().iter().any(|f| contains_json_unsafe(f.data_type())) {
         return Ok(batch.clone());
     }
 
     let mut fields = Vec::with_capacity(schema.fields().len());
     let mut columns = Vec::with_capacity(schema.fields().len());
     for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        let column = decimals_as_strings(column)?;
+        let column = json_unsafe_as_strings(column)?;
         fields.push(Arc::new(Field::new(
             field.name(),
             column.data_type().clone(),
@@ -530,7 +579,7 @@ fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
         let mut writer = LineDelimitedWriter::new(&mut buf);
         for batch in batches {
             writer
-                .write(&decimals_to_strings(batch)?)
+                .write(&json_unsafe_to_strings(batch)?)
                 .map_err(|e| format!("Failed to write batch: {}", e))?;
         }
         writer
@@ -567,7 +616,7 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
         .map_err(|e| format!("Failed to parse JSON results: {}", e))?;
 
     // The walk touches every value, so skip it for schemas that cannot hold
-    // an unsafe integer (mirrors decimals_to_strings' early return).
+    // an unsafe integer (mirrors json_unsafe_to_strings' early return).
     let may_overflow = batches
         .first()
         .is_some_and(|b| b.schema().fields().iter().any(|f| contains_big_integer(f.data_type())));
@@ -913,6 +962,49 @@ mod tests {
         assert_eq!(rows[0]["m"]["price"], "1.50");
         assert_eq!(rows[0]["pair"][0], "1.00");
         assert_eq!(rows[0]["pair"][1], "2.00");
+    }
+
+    /// pandas writes missing floats as NaN; the grid must not show them as NULL.
+    #[tokio::test]
+    async fn non_finite_floats_are_distinguishable_from_null() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Float64, true),
+            Field::new("y", DataType::Float32, true),
+            Field::new("plain", DataType::Float64, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::Float64Array::from(vec![
+                    Some(f64::NAN),
+                    Some(f64::INFINITY),
+                    Some(f64::NEG_INFINITY),
+                    Some(1.5),
+                    None,
+                ])) as ArrayRef,
+                Arc::new(arrow::array::Float32Array::from(vec![Some(2.0), None, None, None, None])),
+                Arc::new(arrow::array::Float64Array::from(vec![Some(0.1 + 0.2), None, None, None, None])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("nan.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 5, None)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["x"], "NaN");
+        assert_eq!(rows[1]["x"], "Infinity");
+        assert_eq!(rows[2]["x"], "-Infinity");
+        // A column that had to be rendered keeps its finite values readable.
+        assert_eq!(rows[3]["x"], "1.5");
+        assert!(rows[4].get("x").is_none());
+        // Columns without a non-finite value stay numbers.
+        assert_eq!(rows[0]["y"], 2.0);
+        assert_eq!(rows[0]["plain"], 0.1 + 0.2);
     }
 
     #[tokio::test]
