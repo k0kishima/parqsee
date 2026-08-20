@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -17,11 +17,17 @@ interface DataViewerProps {
   onClose: () => void;
   initialState?: TabState;
   onStateChange?: (state: TabState) => void;
+  /**
+   * True while this grid is the visible view. Every tab's viewer stays
+   * mounted and listens for shortcuts; without this, ⌘F in a hidden viewer
+   * — or in the SQL view of the same tab — opened its search bar.
+   */
+  isActiveRef?: RefObject<boolean>;
 }
 
 const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
 
-function DataViewerComponent({ filePath, onClose, initialState, onStateChange }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
 
@@ -76,7 +82,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
    */
   const loadSeq = useRef(0);
 
-  // Sync state changes to parent
+  // Sync state changes to parent. The view mode is the tab's to decide;
+  // writing 'browse' from here pulled the user out of the SQL view whenever
+  // this state changed.
   useEffect(() => {
     if (onStateChangeRef.current) {
       onStateChangeRef.current({
@@ -85,7 +93,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
         activeFilter,
         selectedRow,
         isSearchOpen,
-        viewMode: 'browse',
       });
     }
   }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
@@ -121,6 +128,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   // Keyboard shortcut for search
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+    if (isActiveRef && !isActiveRef.current) return;
     // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
     if (isModifierPressed(e) && e.key === 'f') {
       e.preventDefault();
@@ -128,7 +136,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       // Trigger focus even if search bar is already open
       setSearchFocusTrigger(prev => prev + 1);
     }
-  }, []));
+  }, [isActiveRef]));
 
   const loadFile = async () => {
     // Page loads still in flight belong to the previous metadata.
