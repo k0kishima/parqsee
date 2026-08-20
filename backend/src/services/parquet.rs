@@ -118,6 +118,13 @@ impl ParquetCache {
 /// (read through the parquet crate, which looks at neither) said otherwise.
 /// Handing DataFusion a `file://` URL skips the glob parsing, and passing the
 /// file's own extension keeps the listing from filtering it out.
+///
+/// Statistics collection stays off: with it on, DataFusion 40's selectivity
+/// estimate does interval arithmetic on the row-group min/max, and a 64-bit
+/// column holding a value at its type's limit (a u64 hash, an i64 sentinel)
+/// overflows it — every `=` filter on such a file then fails with
+/// "Selectivity is out of limit", and panics in debug builds. The browse
+/// grid gains nothing from the statistics anyway.
 async fn register_file_as_t(
     ctx: &datafusion::execution::context::SessionContext,
     path: &str,
@@ -1134,6 +1141,41 @@ mod tests {
         assert_eq!(run("SELECT * FROM t LIMIT 100;").await.unwrap().iter().map(|b| b.num_rows()).sum::<usize>(), 3);
         assert!(run("EXPLAIN SELECT * FROM t").await.is_ok(), "EXPLAIN must not be limited");
         assert!(run("SHOW TABLES").await.is_ok(), "information_schema is on");
+    }
+
+    /// u64 hash columns and i64 sentinels put row-group statistics at the
+    /// type limits; filtering such a file must not trip DataFusion's
+    /// selectivity arithmetic.
+    #[tokio::test]
+    async fn filters_work_on_files_with_values_at_the_64_bit_limits() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("hash", DataType::UInt64, false),
+            Field::new("id", DataType::Int64, false),
+            Field::new("score", DataType::Float32, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::UInt64Array::from(vec![u64::MAX, 1, 0])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![i64::MIN, i64::MAX, 7])),
+                Arc::new(arrow::array::Float32Array::from(vec![1.5, 2.5, 3.5])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("limits.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        for (filter, expected) in [("\"hash\" = 1", 1), ("\"score\" = 1.5", 1), ("\"id\" = 7", 1), ("\"hash\" = 18446744073709551615", 1)] {
+            let rows = super::read_data(&cache, &file, 0, 10, Some(filter.to_string()))
+                .await
+                .unwrap_or_else(|e| panic!("{filter}: {e}"));
+            assert_eq!(rows.len(), expected, "{filter}");
+            assert_eq!(super::count_data(&cache, &file, Some(filter.to_string())).await.unwrap(), expected, "{filter}");
+        }
     }
 
     #[test]
