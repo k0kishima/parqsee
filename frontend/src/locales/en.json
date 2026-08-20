@@ -99,7 +99,9 @@
             "noResults": "No results to display",
             "executing": "Executing query...",
             "error": "Error"
-        }
+        },
+        "filterNeedsNumber": "Column \"{{column}}\" is numeric; \"{{value}}\" is not a number.",
+        "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false."
     },
     "fileExplorer": {
         "searchPlaceholder": "Filter files...",

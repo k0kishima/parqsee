@@ -43,6 +43,34 @@ function formatLiteral(kind: ColumnKind, value: string): string {
     return quoteLiteral(trimmed);
 }
 
+/** A filter whose value can never match its column, found before it is run. */
+export interface InvalidFilterValue {
+    column: string;
+    value: string;
+    /** What the column accepts, for the message. */
+    expects: 'number' | 'boolean';
+}
+
+/**
+ * Catch values that DataFusion would silently cast to NULL — `id = 'abc'`
+ * returned "0 rows" with no hint that the value was the problem.
+ */
+export function findInvalidFilterValue(filters: FilterRow[], columns: ColumnInfo[]): InvalidFilterValue | null {
+    for (const filter of filters) {
+        if (!filter.column || filter.operator === 'LIKE' || filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL') continue;
+        const value = filter.value.trim();
+        if (!value) continue;
+        const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
+        if (BARE_NUMERIC_KINDS.has(kind) && !Number.isFinite(Number(value))) {
+            return { column: filter.column, value, expects: 'number' };
+        }
+        if (kind === 'boolean' && !/^(true|false)$/i.test(value)) {
+            return { column: filter.column, value, expects: 'boolean' };
+        }
+    }
+    return null;
+}
+
 /** Build the WHERE fragment the backend appends to `SELECT * FROM t`. */
 export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[]): string {
     const conditions: string[] = [];
@@ -54,15 +82,23 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
         if (needsValue && !filter.value.trim()) continue;
 
         const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
-        const columnRef = quoteIdentifier(filter.column);
+        // The grid shows binary as lowercase hex, so that is what gets typed
+        // back in; compare the same rendering rather than the raw bytes. The
+        // cast folds fixed-size and large binary into the one type encode()
+        // accepts.
+        const columnRef = kind === 'binary'
+            ? `encode(CAST(${quoteIdentifier(filter.column)} AS BYTEA), 'hex')`
+            : quoteIdentifier(filter.column);
 
         if (!needsValue) {
             conditions.push(`${columnRef} ${filter.operator}`);
         } else if (filter.operator === "LIKE") {
             // LIKE only applies to text, so cast anything else to keep partial
             // matches working on numbers and dates.
-            const target = kind === 'text' ? columnRef : `CAST(${columnRef} AS TEXT)`;
+            const target = kind === 'text' || kind === 'binary' ? columnRef : `CAST(${columnRef} AS TEXT)`;
             conditions.push(`${target} LIKE ${quoteLiteral(filter.value)}`);
+        } else if (kind === 'binary') {
+            conditions.push(`${columnRef} ${filter.operator} ${quoteLiteral(filter.value.trim().toLowerCase())}`);
         } else {
             conditions.push(`${columnRef} ${filter.operator} ${formatLiteral(kind, filter.value)}`);
         }
@@ -78,6 +114,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     const [filters, setFilters] = useState<FilterRow[]>([
         { id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }
     ]);
+    const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
 
     // Update selected column of the first row if columns change and it's invalid
     useEffect(() => {
@@ -118,11 +155,15 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
 
     const handleClear = () => {
         setFilters([{ id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }]);
+        setInvalid(null);
         onFilterChange("");
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const problem = findInvalidFilterValue(filters, columns);
+        setInvalid(problem);
+        if (problem) return;
         onFilterChange(buildFilterExpression(filters, columns));
     };
 
@@ -197,6 +238,14 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                     );
                 })}
 
+                {invalid && (
+                    <p className="mt-1 pl-[80px] text-xs text-red-600 dark:text-red-400" role="alert">
+                        {t(invalid.expects === 'number' ? 'viewer.filterNeedsNumber' : 'viewer.filterNeedsBoolean', {
+                            column: invalid.column,
+                            value: invalid.value,
+                        })}
+                    </p>
+                )}
                 <div className="flex items-center justify-between mt-2 pl-[80px]">
                     <button
                         type="button"
