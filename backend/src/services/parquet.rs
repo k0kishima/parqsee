@@ -322,6 +322,62 @@ pub fn decimals_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
 }
 
+fn is_nested(data_type: &DataType) -> bool {
+    matches!(
+        data_type,
+        DataType::List(_)
+            | DataType::LargeList(_)
+            | DataType::FixedSizeList(_, _)
+            | DataType::Map(_, _)
+            | DataType::Struct(_)
+    )
+}
+
+/// Render one nested column as one JSON document per row, matching what the
+/// grid displays for it.
+fn nested_column_as_json(name: &str, column: &ArrayRef) -> Result<ArrayRef, String> {
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        name,
+        column.data_type().clone(),
+        true,
+    )]));
+    let batch = RecordBatch::try_new(schema, vec![column.clone()]).map_err(|e| e.to_string())?;
+    let bytes = batches_to_json_bytes(&[batch])?;
+
+    let mut values: Vec<Option<String>> = Vec::with_capacity(column.len());
+    for row in serde_json::Deserializer::from_slice(&bytes).into_iter::<serde_json::Map<String, Value>>() {
+        // A null value is written as an object without the field.
+        let mut row = row.map_err(|e| format!("Failed to render nested column: {}", e))?;
+        values.push(row.remove(name).map(|v| v.to_string()));
+    }
+
+    Ok(Arc::new(arrow::array::StringArray::from(values)) as ArrayRef)
+}
+
+/// Arrow's CSV writer refuses nested columns ("Nested type List(...) is not
+/// supported in CSV"). Serialize them as JSON text so a file with an array or
+/// a struct column still exports.
+pub fn nested_to_json_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    let schema = batch.schema();
+    if !schema.fields().iter().any(|f| is_nested(f.data_type())) {
+        return Ok(batch.clone());
+    }
+
+    let mut fields = Vec::with_capacity(schema.fields().len());
+    let mut columns = Vec::with_capacity(schema.fields().len());
+    for (field, column) in schema.fields().iter().zip(batch.columns()) {
+        if is_nested(field.data_type()) {
+            fields.push(Arc::new(Field::new(field.name(), DataType::Utf8, true)));
+            columns.push(nested_column_as_json(field.name(), column)?);
+        } else {
+            fields.push(field.clone());
+            columns.push(column.clone());
+        }
+    }
+
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
+}
+
 fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     {

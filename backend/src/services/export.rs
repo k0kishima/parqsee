@@ -7,7 +7,7 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::services::parquet::{decimals_to_strings, ParquetCache};
+use crate::services::parquet::{decimals_to_strings, nested_to_json_strings, ParquetCache};
 
 /// Rows are decoded and written one batch at a time, so exports run in
 /// constant memory regardless of how many rows are exported, and the
@@ -41,7 +41,10 @@ impl RowWriter {
 
     fn write(&mut self, batch: &RecordBatch) -> Result<usize, String> {
         match self {
-            RowWriter::Csv(writer) => writer.write(batch).map_err(|e| e.to_string())?,
+            // The CSV writer refuses nested columns; JSON text keeps them readable.
+            RowWriter::Csv(writer) => writer
+                .write(&nested_to_json_strings(batch)?)
+                .map_err(|e| e.to_string())?,
             // The JSON writer refuses decimals; the CSV writer handles them.
             RowWriter::Json(writer) => writer
                 .write(&decimals_to_strings(batch)?)
@@ -154,7 +157,9 @@ async fn export_filtered(
 mod tests {
     use super::export_data;
     use crate::services::parquet::ParquetCache;
-    use arrow::array::{Decimal128Array, Float64Array, Int64Array, StringArray};
+    use arrow::array::{
+        ArrayRef, Decimal128Array, Float64Array, Int64Array, ListBuilder, StringArray, StringBuilder,
+    };
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
     use parquet::arrow::ArrowWriter;
@@ -296,6 +301,44 @@ mod tests {
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
         // The second row of the filtered result, not of the file.
         assert_eq!(lines[1], "3,\"c, d\",2.5");
+    }
+
+    #[tokio::test]
+    async fn csv_exports_nested_columns_as_json_text() {
+        let item = Arc::new(Field::new("item", DataType::Utf8, true));
+        let mut tags = ListBuilder::new(StringBuilder::new());
+        tags.values().append_value("a");
+        tags.values().append_value("b");
+        tags.append(true);
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "tags",
+            DataType::List(item),
+            true,
+        )]));
+        let batch =
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(tags.finish()) as ArrayRef]).unwrap();
+        let src = temp_path("nested.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&src).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let out = temp_path("nested.csv");
+        let n = export_data(
+            &ParquetCache::new(),
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+        let text = std::fs::read_to_string(&out).unwrap();
+        let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
+        assert_eq!(lines[0], "tags");
+        assert_eq!(lines[1], r#""[""a"",""b""]""#);
     }
 
     #[tokio::test]
