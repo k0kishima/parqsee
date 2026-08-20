@@ -113,7 +113,8 @@
     },
     "breadcrumb": {
       "root": "/"
-    }
+    },
+    "loadError": "このフォルダを読めません: {{reason}}"
   },
   "export": {
     "title": "データのエクスポート",

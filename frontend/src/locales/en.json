@@ -113,7 +113,8 @@
         },
         "breadcrumb": {
             "root": "/"
-        }
+        },
+        "loadError": "Cannot read this folder: {{reason}}"
     },
     "export": {
         "title": "Export Data",

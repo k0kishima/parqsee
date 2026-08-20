@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight, ChevronDown, Folder, FileText, File } from 'lucide-react';
 import { FileEntry } from '../api';
 import { formatFileSize } from '../../../lib/format';
@@ -28,6 +29,7 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
   onEntryClick,
   onEntryContextMenu,
 }) {
+  const { t } = useTranslation();
   const isExpanded = expandedDirs.has(entry.path);
   const isSelected = selectedFile === entry.path;
   const isDisabled = !entry.is_directory && !entry.is_parquet;
@@ -80,6 +82,15 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
           </span>
         )}
       </div>
+      {entry.is_directory && isExpanded && entry.loadError && (
+        <p
+          className="py-1 text-xs text-red-600 dark:text-red-400"
+          style={{ paddingLeft: `${(level + 1) * 16 + 8}px` }}
+          role="alert"
+        >
+          {t('fileExplorer.loadError', { reason: entry.loadError })}
+        </p>
+      )}
       {entry.is_directory && isExpanded && entry.children && (
         <div>
           {entry.children.map(child => (
