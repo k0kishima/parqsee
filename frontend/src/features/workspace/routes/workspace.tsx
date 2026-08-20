@@ -19,8 +19,9 @@ export const Workspace = () => {
         closeTab,
         selectTab,
         toggleSidebar,
+        toggleSettings,
         setTabState,
-
+        openFileDialog,
     } = useWorkspace();
 
     return (
@@ -42,6 +43,8 @@ export const Workspace = () => {
                 <Header
                     isSidebarOpen={isSidebarOpen}
                     onToggleSidebar={toggleSidebar}
+                    onOpenFile={openFileDialog}
+                    onOpenSettings={() => toggleSettings(true)}
                 />
 
                 {/* Tab Bar */}

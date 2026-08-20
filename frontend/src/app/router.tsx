@@ -6,7 +6,7 @@ import { Welcome } from '../features/welcome';
 import { SettingsModal } from '../features/settings';
 
 export const AppRouter = () => {
-    const { currentFile, tabs, isSettingsOpen, toggleSettings, openParquetFile } = useWorkspace();
+    const { currentFile, tabs, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog } = useWorkspace();
 
     return (
         <>
@@ -15,6 +15,7 @@ export const AppRouter = () => {
             ) : (
                 <Welcome
                     onFileSelect={openParquetFile}
+                    onBrowse={openFileDialog}
                     onOpenSettings={() => toggleSettings(true)}
                 />
             )}

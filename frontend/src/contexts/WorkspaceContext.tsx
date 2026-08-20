@@ -1,9 +1,10 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useTransition, ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
-import { isParquetPath } from '../lib/path';
+import { isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
@@ -24,6 +25,8 @@ interface WorkspaceContextType {
     isPending: boolean;
     tabStates: Record<string, TabState>;
     openParquetFile: (path: string) => Promise<void>;
+    /** Show the native file picker and open what was chosen. */
+    openFileDialog: () => Promise<void>;
     closeTab: (tabId: string) => void;
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
@@ -129,13 +132,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, [tabs, addRecentFile, removeRecentFile]);
 
-    // Keyboard shortcuts
+    const openFileDialog = useCallback(async () => {
+        try {
+            if (!isTauri()) {
+                alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
+                return;
+            }
+            const selected = await open({
+                filters: [{
+                    name: 'Parquet Files',
+                    extensions: [PARQUET_EXTENSION]
+                }]
+            });
+            if (selected && typeof selected === 'string') {
+                openParquetFile(selected);
+            }
+        } catch (error) {
+            console.error("Failed to select file:", error);
+        }
+    }, [openParquetFile]);
+
+    // Keyboard shortcuts. On macOS the native menu owns ⌘W / ⌘O / ⌘, and
+    // forwards them as `menu` events (below); these handlers cover the
+    // browser and any platform without that menu.
     useGlobalKeydown(useCallback((e: KeyboardEvent) => {
         if (isModifierPressed(e) && e.key === 'w') {
             e.preventDefault();
             if (activeTabId) {
                 handleTabClose(activeTabId);
             }
+        } else if (isModifierPressed(e) && e.key === 'o') {
+            e.preventDefault();
+            openFileDialog();
+        } else if (isModifierPressed(e) && e.key === ',') {
+            e.preventDefault();
+            setIsSettingsOpen(true);
         } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
             const currentIndex = tabs.findIndex(t => t.id === activeTabId);
@@ -159,7 +190,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 handleTabSelect(tabs[tabIndex].id);
             }
         }
-    }, [activeTabId, tabs, handleTabClose, handleTabSelect]));
+    }, [activeTabId, tabs, handleTabClose, handleTabSelect, openFileDialog]));
+
+    // Native menu items (see build_menu in lib.rs)
+    useEffect(() => {
+        if (!isTauri()) return;
+        const unlisten = listen<string>('menu', (event) => {
+            switch (event.payload) {
+                case 'open-file': openFileDialog(); break;
+                case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
+                case 'settings': setIsSettingsOpen(true); break;
+            }
+        });
+        return () => {
+            unlisten.then(fn => fn());
+        };
+    }, [activeTabId, handleTabClose, openFileDialog]);
 
     // File drop listener
     useEffect(() => {
@@ -193,6 +239,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isPending,
         tabStates,
         openParquetFile,
+        openFileDialog,
         closeTab: handleTabClose,
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),

@@ -5,14 +5,87 @@ pub mod services;
 use services::parquet::ParquetCache;
 use tauri::{DragDropEvent, Emitter};
 
+/// The application menu.
+///
+/// Tauri's default menu carries "Close Window" on ⌘W, and a native key
+/// equivalent wins over the webview's keydown — so ⌘W closed the only
+/// window instead of the tab. This menu owns ⌘W / ⌘O / ⌘, itself and
+/// forwards them to the frontend as a `menu` event carrying the item id.
+#[cfg(target_os = "macos")]
+fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let app_menu = Submenu::with_items(
+        app,
+        "Parqsee",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    let open = MenuItem::with_id(app, "open-file", "Open…", true, Some("CmdOrCtrl+O"))?;
+    let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    let file = Submenu::with_items(app, "File", true, &[&open, &PredefinedMenuItem::separator(app)?, &close_tab])?;
+
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+
+    let view = Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?;
+
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+        ],
+    )?;
+
+    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .manage(ParquetCache::new())
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                app.set_menu(build_menu(app)?)?;
+                app.on_menu_event(|app, event| {
+                    let _ = app.emit("menu", event.id().0.clone());
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::file::open_parquet_file,
             commands::file::get_file_info,
