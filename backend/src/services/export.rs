@@ -15,6 +15,22 @@ use crate::services::parquet::{decimals_to_strings, nested_to_json_strings, Parq
 /// row groups instead of decoding every row before it.
 const EXPORT_BATCH_SIZE: usize = 8192;
 
+#[derive(Clone, Copy)]
+enum ExportFormat {
+    Csv,
+    Json,
+}
+
+impl ExportFormat {
+    fn parse(format: &str) -> Result<Self, String> {
+        match format.to_lowercase().as_str() {
+            "csv" => Ok(Self::Csv),
+            "json" => Ok(Self::Json),
+            other => Err(format!("Unsupported export format: {}", other)),
+        }
+    }
+}
+
 /// A CSV or JSON destination that batches are streamed into.
 enum RowWriter {
     Csv(CsvWriter<BufWriter<File>>),
@@ -22,9 +38,13 @@ enum RowWriter {
 }
 
 impl RowWriter {
-    fn new(format: &str, mut out: BufWriter<File>) -> Result<Self, String> {
-        match format.to_lowercase().as_str() {
-            "csv" => {
+    /// Create the staging file and wrap it for `format`. Callers validate the
+    /// source and the query *before* this, so a doomed export never gets as
+    /// far as touching the filesystem.
+    fn create(format: ExportFormat, path: &str) -> Result<Self, String> {
+        let mut out = BufWriter::new(File::create(path).map_err(|e| e.to_string())?);
+        match format {
+            ExportFormat::Csv => {
                 // UTF-8 BOM for Excel compatibility.
                 out.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
                 Ok(RowWriter::Csv(
@@ -34,8 +54,7 @@ impl RowWriter {
                         .build(out),
                 ))
             }
-            "json" => Ok(RowWriter::Json(JsonArrayWriter::new(out))),
-            other => Err(format!("Unsupported export format: {}", other)),
+            ExportFormat::Json => Ok(RowWriter::Json(JsonArrayWriter::new(out))),
         }
     }
 
@@ -68,6 +87,11 @@ impl RowWriter {
 ///
 /// `offset` and `limit` address rows of the *filtered* result, so the range
 /// the user picks in the modal is the range they see in the grid.
+///
+/// The rows are written to a staging file next to the destination and only
+/// moved into place once the export has finished, so a failed export — bad
+/// format, missing source, rejected filter, or an error mid-write — never
+/// destroys an existing file at `export_path`.
 pub async fn export_data(
     cache: &ParquetCache,
     source_path: String,
@@ -77,12 +101,27 @@ pub async fn export_data(
     limit: Option<usize>,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    let out = BufWriter::new(File::create(&export_path).map_err(|e| e.to_string())?);
-    let writer = RowWriter::new(&format, out)?;
+    let format = ExportFormat::parse(&format)?;
+    let staging_path = format!("{}.partial", export_path);
 
-    match filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
-        Some(filter) => export_filtered(cache, &source_path, filter, offset, limit, writer).await,
-        None => export_range(&source_path, offset, limit, writer),
+    let result = match filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(filter) => {
+            export_filtered(cache, &source_path, filter, offset, limit, format, &staging_path).await
+        }
+        None => export_range(&source_path, offset, limit, format, &staging_path),
+    };
+
+    match result {
+        Ok(rows_written) => {
+            std::fs::rename(&staging_path, &export_path)
+                .map_err(|e| format!("Failed to move the export into place: {}", e))?;
+            Ok(rows_written)
+        }
+        Err(err) => {
+            // Nothing may have been created yet; ignore a missing staging file.
+            let _ = std::fs::remove_file(&staging_path);
+            Err(err)
+        }
     }
 }
 
@@ -92,7 +131,8 @@ fn export_range(
     source_path: &str,
     offset: Option<usize>,
     limit: Option<usize>,
-    mut writer: RowWriter,
+    format: ExportFormat,
+    staging_path: &str,
 ) -> Result<usize, String> {
     let file = File::open(source_path).map_err(|e| e.to_string())?;
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)
@@ -109,6 +149,7 @@ fn export_range(
         .build()
         .map_err(|e| format!("Failed to read parquet file: {}", e))?;
 
+    let mut writer = RowWriter::create(format, staging_path)?;
     let mut rows_written = 0usize;
     for batch in reader {
         rows_written += writer.write(&batch.map_err(|e| e.to_string())?)?;
@@ -125,7 +166,8 @@ async fn export_filtered(
     filter: &str,
     offset: Option<usize>,
     limit: Option<usize>,
-    mut writer: RowWriter,
+    format: ExportFormat,
+    staging_path: &str,
 ) -> Result<usize, String> {
     let mut query = format!("SELECT * FROM t WHERE {}", filter);
     if let Some(limit) = limit {
@@ -135,11 +177,14 @@ async fn export_filtered(
         query.push_str(&format!(" OFFSET {}", offset));
     }
 
+    // Planning rejects a bad filter here, before any file is created.
     let ctx = cache.get_or_create_session(source_path).await?;
     let df = ctx
         .sql(&query)
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
+
+    let mut writer = RowWriter::create(format, staging_path)?;
     let mut stream = df
         .execute_stream()
         .await
@@ -339,6 +384,59 @@ mod tests {
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
         assert_eq!(lines[0], "tags");
         assert_eq!(lines[1], r#""[""a"",""b""]""#);
+    }
+
+    #[tokio::test]
+    async fn a_failed_export_leaves_an_existing_destination_untouched() {
+        let src = write_fixture();
+        let out = temp_path("precious.csv");
+        std::fs::write(&out, "previous good export").unwrap();
+
+        // A filter the planner rejects.
+        let err = export_data(
+            &ParquetCache::new(),
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            Some("\"no_such_column\" = 1".into()),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("SQL execution failed"), "unexpected error: {err}");
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
+
+        // A source that does not exist.
+        export_data(
+            &ParquetCache::new(),
+            temp_path("missing.parquet").to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
+
+        // An unsupported format.
+        export_data(
+            &ParquetCache::new(),
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "xlsx".into(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
+
+        // No staging leftovers either.
+        assert!(!temp_path("precious.csv.partial").exists());
     }
 
     #[tokio::test]
