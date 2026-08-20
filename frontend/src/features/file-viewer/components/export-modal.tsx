@@ -28,8 +28,11 @@ export function ExportModal({
   const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
-  const [startRow, setStartRow] = useState(1);
-  const [endRow, setEndRow] = useState(totalRows);
+  // Kept as the typed text: clamping on every keystroke made a cleared field
+  // snap back to 1 (or to the last row) before the next digit, so a range
+  // could not be typed in.
+  const [startInput, setStartInput] = useState("1");
+  const [endInput, setEndInput] = useState(String(totalRows));
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,8 +42,8 @@ export function ExportModal({
   // modal is open must not clobber a range the user is editing.
   useEffect(() => {
     if (isOpen) {
-      setStartRow(1);
-      setEndRow(totalRows);
+      setStartInput("1");
+      setEndInput(String(totalRows));
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,8 +54,15 @@ export function ExportModal({
   const hasRows = totalRows > 0;
   const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
   const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
+  const startRow = parseInt(startInput, 10);
+  const endRow = parseInt(endInput, 10);
   const rangeIsValid =
-    exportRange !== "custom" || (startRow >= 1 && endRow >= startRow && endRow <= totalRows);
+    exportRange !== "custom" ||
+    (Number.isInteger(startRow) &&
+      Number.isInteger(endRow) &&
+      startRow >= 1 &&
+      endRow >= startRow &&
+      endRow <= totalRows);
   const canExport = hasRows && rangeIsValid && !isExporting;
 
   const handleExport = async () => {
@@ -235,8 +245,8 @@ export function ExportModal({
                   type="number"
                   min="1"
                   max={totalRows}
-                  value={startRow}
-                  onChange={(e) => setStartRow(Math.max(1, parseInt(e.target.value) || 1))}
+                  value={startInput}
+                  onChange={(e) => setStartInput(e.target.value)}
                   className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>
@@ -248,8 +258,8 @@ export function ExportModal({
                   type="number"
                   min="1"
                   max={totalRows}
-                  value={endRow}
-                  onChange={(e) => setEndRow(Math.min(totalRows, parseInt(e.target.value) || totalRows))}
+                  value={endInput}
+                  onChange={(e) => setEndInput(e.target.value)}
                   className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 />
               </div>
