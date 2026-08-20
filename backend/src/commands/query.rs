@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
-use crate::services::parquet::{
-    batches_to_rows, execute_sql_limited, stringify_unsafe_integers, ParquetCache,
-};
+use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
 /// the JSON round trip both scale with rows x columns; beyond this the UI
@@ -19,7 +17,9 @@ pub struct QueryColumn {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
     pub columns: Vec<QueryColumn>,
-    pub rows: Vec<serde_json::Map<String, serde_json::Value>>,
+    /// One JSON object per row, already rendered webview-safe by
+    /// `batches_to_rows` (decimals and big integers as strings).
+    pub rows: Vec<serde_json::Value>,
     pub execution_time_ms: u128,
     /// True when the result was cut at `max_rows`.
     pub truncated: bool,
@@ -47,10 +47,7 @@ pub async fn execute_sql(
         })
         .collect();
 
-    let mut rows: Vec<serde_json::Map<String, serde_json::Value>> = batches_to_rows(&batches)?;
-    for row in &mut rows {
-        row.values_mut().for_each(stringify_unsafe_integers);
-    }
+    let rows = batches_to_rows(&batches)?;
 
     let duration = start.elapsed().as_millis();
 

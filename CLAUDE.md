@@ -157,9 +157,9 @@ The frontend also listens for a `file-drop` event emitted from
    streamed out of DataFusion so the exported range matches what the grid
    shows.
 9. Arrow's JSON writers reject decimals, and the webview parses the IPC payload
-   with JS number semantics. `services/parquet.rs` therefore renders decimals as
-   strings and hands over integers outside ±2^53 as strings as well — keep new
-   read paths going through `decimals_to_strings` / `stringify_unsafe_integers`.
+   with JS number semantics. `batches_to_rows` (`services/parquet.rs`) is the one
+   choke point that renders decimals and integers outside ±2^53 as strings —
+   route every row the webview consumes through it.
 
 ## Testing
 

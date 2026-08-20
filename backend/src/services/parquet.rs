@@ -439,15 +439,42 @@ fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-/// Decode record batches into one deserializable value per row.
-pub fn batches_to_rows<T: serde::de::DeserializeOwned>(
-    batches: &[RecordBatch],
-) -> Result<Vec<T>, String> {
+/// True for column types whose values can exceed the JS safe-integer range.
+fn contains_big_integer(data_type: &DataType) -> bool {
+    match data_type {
+        DataType::Int64 | DataType::UInt64 => true,
+        DataType::List(field)
+        | DataType::LargeList(field)
+        | DataType::FixedSizeList(field, _)
+        | DataType::Map(field, _) => contains_big_integer(field.data_type()),
+        DataType::Struct(fields) => fields.iter().any(|f| contains_big_integer(f.data_type())),
+        DataType::Dictionary(_, value) => contains_big_integer(value),
+        _ => false,
+    }
+}
+
+/// Decode record batches into one JSON value per row, in the exact shape the
+/// webview receives: decimals and out-of-safe-range integers already rendered
+/// as strings. Every read path the webview consumes MUST come through here —
+/// the conversions live in this choke point precisely so a new path cannot
+/// forget them.
+pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
     let buf = batches_to_json_bytes(batches)?;
-    serde_json::Deserializer::from_slice(&buf)
-        .into_iter::<T>()
-        .collect::<Result<Vec<T>, _>>()
-        .map_err(|e| format!("Failed to parse JSON results: {}", e))
+    let mut rows = serde_json::Deserializer::from_slice(&buf)
+        .into_iter::<Value>()
+        .collect::<Result<Vec<Value>, _>>()
+        .map_err(|e| format!("Failed to parse JSON results: {}", e))?;
+
+    // The walk touches every value, so skip it for schemas that cannot hold
+    // an unsafe integer (mirrors decimals_to_strings' early return).
+    let may_overflow = batches
+        .first()
+        .is_some_and(|b| b.schema().fields().iter().any(|f| contains_big_integer(f.data_type())));
+    if may_overflow {
+        rows.iter_mut().for_each(stringify_unsafe_integers);
+    }
+
+    Ok(rows)
 }
 
 /// The largest integer a JS number represents exactly.
@@ -458,7 +485,7 @@ const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 /// would display a value the file does not contain. Hand those over as
 /// strings instead; the grid prints values verbatim, and filters and queries
 /// run in Rust against the real column type.
-pub fn stringify_unsafe_integers(value: &mut Value) {
+fn stringify_unsafe_integers(value: &mut Value) {
     match value {
         Value::Number(number) => {
             let unsafe_integer = match (number.as_i64(), number.as_u64()) {
@@ -512,11 +539,7 @@ pub async fn read_data(
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
-    let mut rows: Vec<Value> = batches_to_rows(&batches)?;
-    for row in &mut rows {
-        stringify_unsafe_integers(row);
-    }
-    Ok(rows)
+    batches_to_rows(&batches)
 }
 
 pub async fn count_data(
@@ -824,9 +847,16 @@ mod tests {
 
     #[tokio::test]
     async fn integers_past_the_js_safe_range_arrive_as_strings() {
+        let inner_fields: Fields = vec![Field::new("big", DataType::Int64, true)].into();
+        let nested = StructArray::new(
+            inner_fields.clone(),
+            vec![Arc::new(Int64Array::from(vec![9007199254740993i64, 0])) as ArrayRef],
+            None,
+        );
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
             Field::new("small", DataType::Int64, false),
+            Field::new("nested", DataType::Struct(inner_fields), true),
         ]));
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -834,6 +864,7 @@ mod tests {
                 Arc::new(Int64Array::from(vec![9007199254740993i64, -9007199254740993i64]))
                     as ArrayRef,
                 Arc::new(Int64Array::from(vec![42i64, 9007199254740991i64])),
+                Arc::new(nested),
             ],
         )
         .unwrap();
@@ -849,6 +880,8 @@ mod tests {
 
         assert_eq!(rows[0]["id"], "9007199254740993");
         assert_eq!(rows[1]["id"], "-9007199254740993");
+        // The schema gate must see through containers.
+        assert_eq!(rows[0]["nested"]["big"], "9007199254740993");
         // Values JS represents exactly stay numbers.
         assert_eq!(rows[0]["small"], 42);
         assert_eq!(rows[1]["small"], 9007199254740991i64);
