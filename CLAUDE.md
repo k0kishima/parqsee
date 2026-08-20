@@ -134,6 +134,12 @@ The frontend also listens for a `file-drop` event emitted from
 3. `ParquetCache` (Tauri managed state, `services/parquet.rs`) caches a DataFusion
    `SessionContext` and the parsed metadata per file path. Every query path goes
    through `execute_sql_with_cache`; closing the last tab for a file evicts it.
+   Sessions run with `target_partitions = 1` — a deliberate trade-off: paged
+   reads and exports use `LIMIT`/`OFFSET` with no `ORDER BY`, and only
+   single-partition scans keep their row order deterministic (see the rustdoc
+   on `get_or_create_session`). The SQL view runs single-threaded as a result;
+   don't revert this for speed without splitting paging and querying into
+   separate sessions.
 4. In the SQL view and in filters, the open file is always registered as table `t`.
 5. Settings and recent files are persisted in `localStorage`. `lib/settings-storage.ts`
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`

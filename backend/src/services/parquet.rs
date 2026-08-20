@@ -24,6 +24,27 @@ impl ParquetCache {
 
     /// Get or create a SessionContext for the given file path.
     /// Returns a cloned SessionContext (SessionContext uses Arc internally, so cloning is cheap).
+    ///
+    /// # Single-partition execution — a deliberate trade-off
+    ///
+    /// Sessions are created with `target_partitions = 1`, so **everything that
+    /// runs through this context — paged reads, filtered exports, and the SQL
+    /// view — executes single-threaded.**
+    ///
+    /// Why: the browse grid and the filtered export page with `LIMIT`/`OFFSET`
+    /// and no `ORDER BY` (the file has no sort key to order by). With parallel
+    /// partitions DataFusion merges results in arrival order, so the same
+    /// offset could return different rows on different executions — pages
+    /// could tear, and an exported "current page" could differ from the page
+    /// on screen. One partition keeps every scan in file order and makes
+    /// paging deterministic.
+    ///
+    /// Cost: the SQL view gives up multi-core execution, so heavy aggregations
+    /// over large files run slower than DataFusion's default. A fair trade for
+    /// a viewer whose queries are dominated by scan-and-page; if it ever
+    /// hurts, split the cache into a paging session (1 partition) and a query
+    /// session (default parallelism) rather than reverting this, or the
+    /// paging guarantees above silently break.
     pub async fn get_or_create_session(
         &self,
         path: &str,
@@ -36,17 +57,8 @@ impl ParquetCache {
             }
         }
 
-        // Create new session and register the parquet file.
-        //
-        // Single-partition scans, deliberately: the browse grid and the
-        // filtered export page with LIMIT/OFFSET and no ORDER BY (the file has
-        // no sort key to order by), and with parallel partitions DataFusion
-        // merges them in arrival order, so the same offset could return
-        // different rows on different executions — pages could tear, and an
-        // exported "current page" could differ from the page on screen. One
-        // partition keeps every scan in file order. It costs the SQL view
-        // multi-core execution, a fair trade for a viewer whose queries are
-        // dominated by scan-and-page.
+        // Create the session and register the parquet file. Single partition,
+        // deliberately — see the trade-off note in this function's doc.
         let config =
             datafusion::execution::context::SessionConfig::new().with_target_partitions(1);
         let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
