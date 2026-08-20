@@ -169,13 +169,7 @@ async fn export_filtered(
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let mut query = format!("SELECT * FROM t WHERE {}", filter);
-    if let Some(limit) = limit {
-        query.push_str(&format!(" LIMIT {}", limit));
-    }
-    if let Some(offset) = offset.filter(|o| *o > 0) {
-        query.push_str(&format!(" OFFSET {}", offset));
-    }
+    let query = crate::services::parquet::build_page_query(Some(filter), offset, limit);
 
     // Planning rejects a bad filter here, before any file is created.
     let ctx = cache.get_or_create_session(source_path).await?;

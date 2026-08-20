@@ -36,8 +36,20 @@ impl ParquetCache {
             }
         }
 
-        // Create new session and register the parquet file
-        let ctx = datafusion::execution::context::SessionContext::new();
+        // Create new session and register the parquet file.
+        //
+        // Single-partition scans, deliberately: the browse grid and the
+        // filtered export page with LIMIT/OFFSET and no ORDER BY (the file has
+        // no sort key to order by), and with parallel partitions DataFusion
+        // merges them in arrival order, so the same offset could return
+        // different rows on different executions — pages could tear, and an
+        // exported "current page" could differ from the page on screen. One
+        // partition keeps every scan in file order. It costs the SQL view
+        // multi-core execution, a fair trade for a viewer whose queries are
+        // dominated by scan-and-page.
+        let config =
+            datafusion::execution::context::SessionConfig::new().with_target_partitions(1);
+        let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
         let options = datafusion::prelude::ParquetReadOptions::default();
         ctx.register_parquet("t", path, options)
             .await
@@ -464,16 +476,29 @@ pub fn stringify_unsafe_integers(value: &mut Value) {
     }
 }
 
-fn build_where_clause(filter: Option<String>) -> String {
-    if let Some(f) = filter {
-        if !f.trim().is_empty() {
-            format!("WHERE {}", f)
-        } else {
-            String::new()
-        }
-    } else {
-        String::new()
+fn where_clause(filter: Option<&str>) -> Option<&str> {
+    filter.map(str::trim).filter(|f| !f.is_empty())
+}
+
+/// The one `SELECT * FROM t ...` shape the browse grid and the filtered
+/// export share. Building it in one place keeps the exported rows the same
+/// rows the grid paginates over.
+pub fn build_page_query(
+    filter: Option<&str>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> String {
+    let mut query = String::from("SELECT * FROM t");
+    if let Some(f) = where_clause(filter) {
+        query.push_str(&format!(" WHERE {}", f));
     }
+    if let Some(limit) = limit {
+        query.push_str(&format!(" LIMIT {}", limit));
+    }
+    if let Some(offset) = offset.filter(|o| *o > 0) {
+        query.push_str(&format!(" OFFSET {}", offset));
+    }
+    query
 }
 
 pub async fn read_data(
@@ -483,11 +508,7 @@ pub async fn read_data(
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<Value>, String> {
-    let where_clause = build_where_clause(filter);
-    let query = format!(
-        "SELECT * FROM t {} LIMIT {} OFFSET {}",
-        where_clause, limit, offset
-    );
+    let query = build_page_query(filter.as_deref(), Some(offset), Some(limit));
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
@@ -503,8 +524,10 @@ pub async fn count_data(
     path: &str,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    let where_clause = build_where_clause(filter);
-    let query = format!("SELECT COUNT(*) FROM t {}", where_clause);
+    let query = match where_clause(filter.as_deref()) {
+        Some(f) => format!("SELECT COUNT(*) FROM t WHERE {}", f),
+        None => "SELECT COUNT(*) FROM t".to_string(),
+    };
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
@@ -779,6 +802,24 @@ mod tests {
         assert_eq!(rows[1]["amount"], "-0.0001");
         assert_eq!(rows[0]["prices"][0], "1.50");
         assert_eq!(rows[0]["line"]["net"], "0.5000");
+    }
+
+    #[test]
+    fn page_query_covers_every_clause_combination() {
+        use super::build_page_query;
+        assert_eq!(build_page_query(None, Some(0), Some(50)), "SELECT * FROM t LIMIT 50");
+        assert_eq!(
+            build_page_query(Some("  "), Some(100), Some(50)),
+            "SELECT * FROM t LIMIT 50 OFFSET 100"
+        );
+        assert_eq!(
+            build_page_query(Some("\"id\" > 1"), None, None),
+            "SELECT * FROM t WHERE \"id\" > 1"
+        );
+        assert_eq!(
+            build_page_query(Some("\"id\" > 1"), Some(25), Some(25)),
+            "SELECT * FROM t WHERE \"id\" > 1 LIMIT 25 OFFSET 25"
+        );
     }
 
     #[tokio::test]
