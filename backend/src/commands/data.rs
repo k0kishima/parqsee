@@ -1,5 +1,6 @@
-use crate::services::{export, parquet};
+use crate::commands::guarded;
 use crate::services::parquet::ParquetCache;
+use crate::services::{export, parquet};
 
 #[tauri::command]
 pub async fn read_parquet_data(
@@ -9,7 +10,7 @@ pub async fn read_parquet_data(
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    parquet::read_data(&cache, &path, offset, limit, filter).await
+    guarded("Reading the page", parquet::read_data(&cache, &path, offset, limit, filter)).await
 }
 
 #[tauri::command]
@@ -18,7 +19,7 @@ pub async fn count_parquet_data(
     path: String,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    parquet::count_data(&cache, &path, filter).await
+    guarded("Counting rows", parquet::count_data(&cache, &path, filter)).await
 }
 
 #[tauri::command]
@@ -40,5 +41,9 @@ pub async fn export_data(
     limit: Option<usize>,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    export::export_data(&cache, source_path, export_path, format, offset, limit, filter).await
+    guarded(
+        "The export",
+        export::export_data(&cache, source_path, export_path, format, offset, limit, filter),
+    )
+    .await
 }

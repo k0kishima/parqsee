@@ -1,3 +1,4 @@
+use crate::commands::guarded;
 use crate::models::{FileEntry, FileInfo, ParquetMetadata};
 use crate::services::parquet::ParquetCache;
 use std::fs::{metadata, read_dir};
@@ -15,7 +16,7 @@ pub async fn open_parquet_file(
     cache: tauri::State<'_, ParquetCache>,
     path: String,
 ) -> Result<ParquetMetadata, String> {
-    cache.get_or_create_metadata(&path)
+    guarded("Opening the file", async { cache.get_or_create_metadata(&path) }).await
 }
 
 #[tauri::command]

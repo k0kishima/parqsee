@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
+use crate::commands::guarded;
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
@@ -32,30 +33,33 @@ pub async fn execute_sql(
     file_path: String,
     query: String,
 ) -> Result<QueryResult, String> {
-    let start = std::time::Instant::now();
+    guarded("The query", async {
+        let start = std::time::Instant::now();
 
-    let (batches, schema, truncated) =
-        execute_sql_limited(&cache, &file_path, &query, Some(MAX_QUERY_ROWS)).await?;
+        let (batches, schema, truncated) =
+            execute_sql_limited(&cache, &file_path, &query, Some(MAX_QUERY_ROWS)).await?;
 
-    // Get column info from schema
-    let columns: Vec<QueryColumn> = schema
-        .fields()
-        .iter()
-        .map(|f| QueryColumn {
-            name: f.name().clone(),
-            data_type: f.data_type().to_string(),
+        // Get column info from schema
+        let columns: Vec<QueryColumn> = schema
+            .fields()
+            .iter()
+            .map(|f| QueryColumn {
+                name: f.name().clone(),
+                data_type: f.data_type().to_string(),
+            })
+            .collect();
+
+        let rows = batches_to_rows(&batches)?;
+
+        let duration = start.elapsed().as_millis();
+
+        Ok(QueryResult {
+            columns,
+            rows,
+            execution_time_ms: duration,
+            truncated,
+            max_rows: MAX_QUERY_ROWS,
         })
-        .collect();
-
-    let rows = batches_to_rows(&batches)?;
-
-    let duration = start.elapsed().as_millis();
-
-    Ok(QueryResult {
-        columns,
-        rows,
-        execution_time_ms: duration,
-        truncated,
-        max_rows: MAX_QUERY_ROWS,
     })
+    .await
 }
