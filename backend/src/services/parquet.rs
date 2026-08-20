@@ -404,7 +404,9 @@ fn non_finite_floats_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 "NaN" | "nan" => "NaN",
                 "inf" | "Infinity" => "Infinity",
                 "-inf" | "-Infinity" => "-Infinity",
-                other => other,
+                // Arrow prints `1.0` where the webview would print `1`;
+                // keep the rendered column looking like its neighbours.
+                other => other.strip_suffix(".0").unwrap_or(other),
             })
         })
         .collect();
@@ -1039,9 +1041,10 @@ mod tests {
                     Some(f64::NEG_INFINITY),
                     Some(1.5),
                     None,
+                    Some(2.0),
                 ])) as ArrayRef,
-                Arc::new(arrow::array::Float32Array::from(vec![Some(2.0), None, None, None, None])),
-                Arc::new(arrow::array::Float64Array::from(vec![Some(0.1 + 0.2), None, None, None, None])),
+                Arc::new(arrow::array::Float32Array::from(vec![Some(2.0), None, None, None, None, None])),
+                Arc::new(arrow::array::Float64Array::from(vec![Some(0.1 + 0.2), None, None, None, None, None])),
             ],
         )
         .unwrap();
@@ -1051,14 +1054,16 @@ mod tests {
         writer.close().unwrap();
 
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 5, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 6, None)
             .await
             .unwrap();
         assert_eq!(rows[0]["x"], "NaN");
         assert_eq!(rows[1]["x"], "Infinity");
         assert_eq!(rows[2]["x"], "-Infinity");
-        // A column that had to be rendered keeps its finite values readable.
+        // A column that had to be rendered keeps its finite values readable,
+        // printed the way the webview prints numbers.
         assert_eq!(rows[3]["x"], "1.5");
+        assert_eq!(rows[5]["x"], "2");
         assert!(rows[4].get("x").is_none());
         // Columns without a non-finite value stay numbers.
         assert_eq!(rows[0]["y"], 2.0);
