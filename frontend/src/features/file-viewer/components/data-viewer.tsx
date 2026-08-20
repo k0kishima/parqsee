@@ -214,6 +214,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     await loadFile();
   };
 
+  // A selected row is a row of the page on screen; keeping its index across
+  // a page or filter change highlighted an unrelated row.
+  useEffect(() => {
+    setSelectedRow(null);
+  }, [currentPage, activeFilter, rowsPerPage]);
+
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);
     // A new filter changes the row set; start from the first page. Done here
