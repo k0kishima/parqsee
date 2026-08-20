@@ -23,8 +23,11 @@ export interface ExportDataParams {
     sourcePath: string;
     exportPath: string;
     format: 'csv' | 'json';
+    /** Row range within the filtered result, not within the file. */
     offset?: number;
     limit?: number;
+    /** The WHERE fragment the grid is showing, if any. */
+    filter?: string;
 }
 
 export const checkFileExists = async (path: string): Promise<boolean> => {

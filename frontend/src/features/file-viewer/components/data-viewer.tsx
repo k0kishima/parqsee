@@ -476,7 +476,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
           isOpen={isExportModalOpen}
           onClose={() => setIsExportModalOpen(false)}
           filePath={filePath}
-          totalRows={metadata.num_rows}
+          totalRows={totalRows}
+          activeFilter={activeFilter}
+          currentPage={currentPage}
+          rowsPerPage={rowsPerPage}
         />
       )}
     </div>

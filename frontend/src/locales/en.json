@@ -123,10 +123,13 @@
         "range": "Export Range",
         "ranges": {
             "all": "All rows ({{total}} rows)",
+            "current": "Current page (rows {{start}}-{{end}})",
             "custom": "Custom range"
         },
         "startRow": "Start Row",
         "endRow": "End Row",
+        "filterNotice": "The active filter is applied:",
+        "invalidRange": "Enter a range between 1 and {{total}}, with the start row first.",
         "exporting": "Exporting...",
         "success": {
             "title": "Export Complete",

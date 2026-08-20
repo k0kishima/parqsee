@@ -123,10 +123,13 @@
     "range": "エクスポート範囲",
     "ranges": {
       "all": "すべての行 ({{total}} 行)",
+      "current": "現在のページ ({{start}}〜{{end}} 行目)",
       "custom": "カスタム範囲"
     },
     "startRow": "開始行",
     "endRow": "終了行",
+    "filterNotice": "適用中のフィルタが反映されます:",
+    "invalidRange": "1 〜 {{total}} の範囲で、開始行が終了行以下になるように入力してください。",
     "exporting": "エクスポート中...",
     "success": {
       "title": "エクスポート完了",
