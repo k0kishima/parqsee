@@ -349,6 +349,32 @@ pub fn batches_to_rows<T: serde::de::DeserializeOwned>(
         .map_err(|e| format!("Failed to parse JSON results: {}", e))
 }
 
+/// The largest integer a JS number represents exactly.
+const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+/// Every value crosses the IPC boundary as JSON, and the webview parses it
+/// into doubles, so an i64 past 2^53 arrives silently rounded — an id column
+/// would display a value the file does not contain. Hand those over as
+/// strings instead; the grid prints values verbatim, and filters and queries
+/// run in Rust against the real column type.
+pub fn stringify_unsafe_integers(value: &mut Value) {
+    match value {
+        Value::Number(number) => {
+            let unsafe_integer = match (number.as_i64(), number.as_u64()) {
+                (Some(v), _) => !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&v),
+                (None, Some(v)) => v > MAX_SAFE_INTEGER as u64,
+                _ => false,
+            };
+            if unsafe_integer {
+                *value = Value::String(number.to_string());
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(stringify_unsafe_integers),
+        Value::Object(fields) => fields.values_mut().for_each(stringify_unsafe_integers),
+        _ => {}
+    }
+}
+
 fn build_where_clause(filter: Option<String>) -> String {
     if let Some(f) = filter {
         if !f.trim().is_empty() {
@@ -376,7 +402,11 @@ pub async fn read_data(
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
 
-    batches_to_rows(&batches)
+    let mut rows: Vec<Value> = batches_to_rows(&batches)?;
+    for row in &mut rows {
+        stringify_unsafe_integers(row);
+    }
+    Ok(rows)
 }
 
 pub async fn count_data(
@@ -483,8 +513,8 @@ fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
 mod tests {
     use super::{truncate_batches, ParquetCache};
     use arrow::array::{
-        Array, ArrayRef, Decimal128Array, Decimal128Builder, Int32Array, Int32Builder, ListBuilder,
-        StringArray, StructArray,
+        Array, ArrayRef, Decimal128Array, Decimal128Builder, Int32Array, Int32Builder, Int64Array,
+        ListBuilder, StringArray, StructArray,
     };
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
@@ -610,6 +640,38 @@ mod tests {
         assert_eq!(rows[1]["amount"], "-0.0001");
         assert_eq!(rows[0]["prices"][0], "1.50");
         assert_eq!(rows[0]["line"]["net"], "0.5000");
+    }
+
+    #[tokio::test]
+    async fn integers_past_the_js_safe_range_arrive_as_strings() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("small", DataType::Int64, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![9007199254740993i64, -9007199254740993i64]))
+                    as ArrayRef,
+                Arc::new(Int64Array::from(vec![42i64, 9007199254740991i64])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("big_ints.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+            .await
+            .unwrap();
+
+        assert_eq!(rows[0]["id"], "9007199254740993");
+        assert_eq!(rows[1]["id"], "-9007199254740993");
+        // Values JS represents exactly stay numbers.
+        assert_eq!(rows[0]["small"], 42);
+        assert_eq!(rows[1]["small"], 9007199254740991i64);
     }
 
     #[test]
