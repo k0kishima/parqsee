@@ -109,7 +109,7 @@
         "contextMenu": {
             "copyPath": "Copy Path",
             "revealInFinder": "Reveal in Finder",
-            "openInNewTab": "Open in New Tab"
+            "openInNewTab": "Open"
         },
         "breadcrumb": {
             "root": "/"

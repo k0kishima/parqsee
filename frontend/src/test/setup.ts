@@ -11,7 +11,7 @@ vi.mock('react-i18next', () => ({
         'fileExplorer.clearSearch': 'Clear search',
         'fileExplorer.contextMenu.copyPath': 'Copy Path',
         'fileExplorer.contextMenu.revealInFinder': 'Reveal in Finder',
-        'fileExplorer.contextMenu.openInNewTab': 'Open in New Tab',
+        'fileExplorer.contextMenu.openInNewTab': 'Open',
         'fileExplorer.breadcrumb.root': '/',
         'fileExplorer.loadError': 'Cannot read this folder: {{reason}}',
       };

@@ -109,7 +109,7 @@
     "contextMenu": {
       "copyPath": "パスをコピー",
       "revealInFinder": "Finderで表示",
-      "openInNewTab": "新しいタブで開く"
+      "openInNewTab": "開く"
     },
     "breadcrumb": {
       "root": "/"
