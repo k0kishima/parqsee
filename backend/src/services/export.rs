@@ -108,7 +108,17 @@ pub async fn export_data(
         Some(filter) => {
             export_filtered(cache, &source_path, filter, offset, limit, format, &staging_path).await
         }
-        None => export_range(&source_path, offset, limit, format, &staging_path),
+        None => {
+            // Decode and write on the blocking pool: a multi-GB export must
+            // not hold an async worker, or concurrent page reads would stall
+            // behind it.
+            let staging = staging_path.clone();
+            tokio::task::spawn_blocking(move || {
+                export_range(&source_path, offset, limit, format, &staging)
+            })
+            .await
+            .map_err(|e| format!("Export task failed: {}", e))?
+        }
     };
 
     match result {
@@ -178,18 +188,52 @@ async fn export_filtered(
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
-    let mut writer = RowWriter::create(format, staging_path)?;
     let mut stream = df
         .execute_stream()
         .await
         .map_err(|e| format!("Failed to read filtered rows: {}", e))?;
 
-    let mut rows_written = 0usize;
+    // The file writes are synchronous, so they run on the blocking pool and
+    // batches cross over a small bounded channel — memory stays constant and
+    // the async workers stay free for concurrent page reads. The writer task
+    // is always joined, so the staging file is never touched after this
+    // function returns.
+    let staging = staging_path.to_string();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<RecordBatch>(4);
+    let writer_task = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        let mut writer = RowWriter::create(format, &staging)?;
+        let mut rows_written = 0usize;
+        for batch in rx {
+            rows_written += writer.write(&batch)?;
+        }
+        writer.finish()?;
+        Ok(rows_written)
+    });
+
+    let mut stream_error: Option<String> = None;
     while let Some(batch) = stream.next().await {
-        rows_written += writer.write(&batch.map_err(|e| e.to_string())?)?;
+        match batch {
+            // A send fails only when the writer died; its error surfaces below.
+            Ok(batch) => {
+                if tx.send(batch).is_err() {
+                    break;
+                }
+            }
+            Err(e) => {
+                stream_error = Some(e.to_string());
+                break;
+            }
+        }
     }
-    writer.finish()?;
-    Ok(rows_written)
+    drop(tx);
+
+    let written = writer_task
+        .await
+        .map_err(|e| format!("Export task failed: {}", e))?;
+    match stream_error {
+        Some(e) => Err(e),
+        None => written,
+    }
 }
 
 #[cfg(test)]
