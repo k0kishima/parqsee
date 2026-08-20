@@ -1,142 +1,142 @@
 {
-    "common": {
-        "fileExplorer": "ファイルエクスプローラー",
-        "openFile": "ファイルを開く",
-        "recentFiles": "最近開いたファイル",
-        "cancel": "キャンセル",
-        "saveChanges": "変更を保存",
-        "close": "閉じる",
-        "closeTab": "タブを閉じる",
-        "showSidebar": "サイドバーを表示",
-        "hideSidebar": "サイドバーを隠す",
-        "export": "エクスポート",
-        "appName": "Parqsee",
-        "apply": "適用",
-        "clear": "クリア",
-        "addCondition": "条件を追加",
-        "dismiss": "閉じる"
+  "common": {
+    "fileExplorer": "ファイルエクスプローラー",
+    "openFile": "ファイルを開く",
+    "recentFiles": "最近開いたファイル",
+    "cancel": "キャンセル",
+    "saveChanges": "変更を保存",
+    "close": "閉じる",
+    "closeTab": "タブを閉じる",
+    "showSidebar": "サイドバーを表示",
+    "hideSidebar": "サイドバーを隠す",
+    "export": "エクスポート",
+    "appName": "Parqsee",
+    "apply": "適用",
+    "clear": "クリア",
+    "addCondition": "条件を追加",
+    "dismiss": "閉じる"
+  },
+  "welcome": {
+    "dropZone": {
+      "title": "Parquet ファイルをここにドロップ",
+      "subtitle": "または下のボタンをクリックして参照",
+      "browse": "ファイルを参照",
+      "hint": ".parquet ファイルに対応 • ⌘+O で開く"
     },
-    "welcome": {
-        "dropZone": {
-            "title": "Parquet ファイルをここにドロップ",
-            "subtitle": "または下のボタンをクリックして参照",
-            "browse": "ファイルを参照",
-            "hint": ".parquet ファイルに対応 • ⌘+O で開く"
-        },
-        "recentFiles": {
-            "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
-            "remove": "履歴から削除"
-        },
-        "features": {
-            "performance": {
-                "title": "高速なパフォーマンス",
-                "desc": "Rust 製バックエンドによる爆速ファイル処理"
-            },
-            "usability": {
-                "title": "使いやすい UI",
-                "desc": "ドラッグ＆ドロップとキーボードショートカットに対応"
-            },
-            "largeFiles": {
-                "title": "巨大ファイル対応",
-                "desc": "効率的なページネーションで大規模データセットも快適"
-            }
-        }
+    "recentFiles": {
+      "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
+      "remove": "履歴から削除"
     },
-    "settings": {
-        "title": "設定",
-        "language": "言語",
-        "languageDesc": "インターフェースの言語を選択してください",
-        "theme": "テーマ",
-        "themeOptions": {
-            "light": "ライト",
-            "dark": "ダーク",
-            "system": "システム"
-        },
-        "rowsPerPage": "1ページあたりの行数",
-        "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
-        "typeDisplay": "列の型表示",
-        "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
-        "typeDisplayOptions": {
-            "logical": "論理型 (DATEなど)",
-            "physical": "物理型 (INT32など)",
-            "both": "両方"
-        },
-        "showRecentFiles": "最近開いたファイルを表示",
-        "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
-        "clearRecentFiles": "履歴を削除",
-        "confirmClearRecent": "本当にすべての履歴を削除しますか？"
-    },
-    "viewer": {
-        "search": "検索",
-        "searchPlaceholder": "検索ワードを入力してEnter...",
-        "closeTooltip": "閉じる (Esc)",
-        "refresh": "更新",
-        "export": "エクスポート",
-        "loading": "読み込み中...",
-        "error": "ファイルの読み込みエラー",
-        "dataError": "この条件は実行できませんでした。直前の結果を表示しています。",
-        "pagination": {
-            "showing": "{{total}} 件中 {{start}} から {{end}} 件を表示",
-            "previous": "前へ",
-            "next": "次へ",
-            "of": "/ {{total}}",
-            "rowsPerPage": "件/ページ"
-        },
-        "filter": "フィルター",
-        "filterPlaceholder": "抽出条件 (例: id > 5)",
-        "filterValuePlaceholder": "値...",
-        "summary": "{{rows}} 行 × {{columns}} 列",
-        "tabs": {
-            "content": "内容",
-            "query": "クエリ"
-        },
-        "query": {
-            "run": "実行",
-            "running": "実行中...",
-            "rows": "{{count}} 件",
-            "duration": "処理時間: {{ms}}ms",
-            "truncated": "先頭 {{max}} 件のみ表示しています（LIMIT 句で絞り込んでください）",
-            "noResults": "表示する結果がありません",
-            "executing": "クエリ実行中...",
-            "error": "エラー"
-        },
-        "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
-        "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。"
-    },
-    "fileExplorer": {
-        "searchPlaceholder": "ファイルを検索...",
-        "clearSearch": "検索をクリア",
-        "contextMenu": {
-            "copyPath": "パスをコピー",
-            "revealInFinder": "Finderで表示",
-            "openInNewTab": "新しいタブで開く"
-        },
-        "breadcrumb": {
-            "root": "/"
-        }
-    },
-    "export": {
-        "title": "データのエクスポート",
-        "format": "エクスポート形式",
-        "formats": {
-            "csv": "CSV (カンマ区切り)",
-            "json": "JSON (JavaScript Object Notation)"
-        },
-        "range": "エクスポート範囲",
-        "ranges": {
-            "all": "すべての行 ({{total}} 行)",
-            "current": "現在のページ ({{start}}〜{{end}} 行目)",
-            "custom": "カスタム範囲"
-        },
-        "startRow": "開始行",
-        "endRow": "終了行",
-        "filterNotice": "適用中のフィルタが反映されます:",
-        "invalidRange": "1 〜 {{total}} の範囲で、開始行が終了行以下になるように入力してください。",
-        "noRows": "現在のフィルタに一致する行がありません。",
-        "exporting": "エクスポート中...",
-        "success": {
-            "title": "エクスポート完了",
-            "body": "{{rows}} 行を {{file}} へエクスポートしました"
-        }
+    "features": {
+      "performance": {
+        "title": "高速なパフォーマンス",
+        "desc": "Rust 製バックエンドによる爆速ファイル処理"
+      },
+      "usability": {
+        "title": "使いやすい UI",
+        "desc": "ドラッグ＆ドロップとキーボードショートカットに対応"
+      },
+      "largeFiles": {
+        "title": "巨大ファイル対応",
+        "desc": "効率的なページネーションで大規模データセットも快適"
+      }
     }
+  },
+  "settings": {
+    "title": "設定",
+    "language": "言語",
+    "languageDesc": "インターフェースの言語を選択してください",
+    "theme": "テーマ",
+    "themeOptions": {
+      "light": "ライト",
+      "dark": "ダーク",
+      "system": "システム"
+    },
+    "rowsPerPage": "1ページあたりの行数",
+    "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
+    "typeDisplay": "列の型表示",
+    "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
+    "typeDisplayOptions": {
+      "logical": "論理型 (DATEなど)",
+      "physical": "物理型 (INT32など)",
+      "both": "両方"
+    },
+    "showRecentFiles": "最近開いたファイルを表示",
+    "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
+    "clearRecentFiles": "履歴を削除",
+    "confirmClearRecent": "本当にすべての履歴を削除しますか？"
+  },
+  "viewer": {
+    "search": "検索",
+    "searchPlaceholder": "検索ワードを入力してEnter...",
+    "closeTooltip": "閉じる (Esc)",
+    "refresh": "更新",
+    "export": "エクスポート",
+    "loading": "読み込み中...",
+    "error": "ファイルの読み込みエラー",
+    "dataError": "この条件は実行できませんでした。直前の結果を表示しています。",
+    "pagination": {
+      "showing": "{{total}} 件中 {{start}} から {{end}} 件を表示",
+      "previous": "前へ",
+      "next": "次へ",
+      "of": "/ {{total}}",
+      "rowsPerPage": "件/ページ"
+    },
+    "filter": "フィルター",
+    "filterPlaceholder": "抽出条件 (例: id > 5)",
+    "filterValuePlaceholder": "値...",
+    "summary": "{{rows}} 行 × {{columns}} 列",
+    "tabs": {
+      "content": "内容",
+      "query": "クエリ"
+    },
+    "query": {
+      "run": "実行",
+      "running": "実行中...",
+      "rows": "{{count}} 件",
+      "duration": "処理時間: {{ms}}ms",
+      "truncated": "先頭 {{max}} 件のみ表示しています（LIMIT 句で絞り込んでください）",
+      "noResults": "表示する結果がありません",
+      "executing": "クエリ実行中...",
+      "error": "エラー"
+    },
+    "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
+    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。"
+  },
+  "fileExplorer": {
+    "searchPlaceholder": "ファイルを検索...",
+    "clearSearch": "検索をクリア",
+    "contextMenu": {
+      "copyPath": "パスをコピー",
+      "revealInFinder": "Finderで表示",
+      "openInNewTab": "新しいタブで開く"
+    },
+    "breadcrumb": {
+      "root": "/"
+    }
+  },
+  "export": {
+    "title": "データのエクスポート",
+    "format": "エクスポート形式",
+    "formats": {
+      "csv": "CSV (カンマ区切り)",
+      "json": "JSON (JavaScript Object Notation)"
+    },
+    "range": "エクスポート範囲",
+    "ranges": {
+      "all": "すべての行 ({{total}} 行)",
+      "current": "現在のページ ({{start}}〜{{end}} 行目)",
+      "custom": "カスタム範囲"
+    },
+    "startRow": "開始行",
+    "endRow": "終了行",
+    "filterNotice": "適用中のフィルタが反映されます:",
+    "invalidRange": "1 〜 {{total}} の範囲で、開始行が終了行以下になるように入力してください。",
+    "noRows": "現在のフィルタに一致する行がありません。",
+    "exporting": "エクスポート中...",
+    "success": {
+      "title": "エクスポート完了",
+      "body": "{{rows}} 行を {{file}} へエクスポートしました"
+    }
+  }
 }
