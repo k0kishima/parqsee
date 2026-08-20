@@ -1,6 +1,8 @@
 use arrow::csv::WriterBuilder as CsvWriterBuilder;
 use arrow::json::ArrayWriter as JsonArrayWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+use crate::services::parquet::decimals_to_strings;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -57,7 +59,10 @@ pub fn export_data(
             for batch in reader {
                 let batch = batch.map_err(|e| e.to_string())?;
                 rows_written += batch.num_rows();
-                writer.write(&batch).map_err(|e| e.to_string())?;
+                // The JSON writer refuses decimals; the CSV writer handles them.
+                writer
+                    .write(&decimals_to_strings(&batch)?)
+                    .map_err(|e| e.to_string())?;
             }
             writer.finish().map_err(|e| e.to_string())?;
             writer.into_inner().flush().map_err(|e| e.to_string())?;
@@ -71,7 +76,7 @@ pub fn export_data(
 #[cfg(test)]
 mod tests {
     use super::export_data;
-    use arrow::array::{Float64Array, Int64Array, StringArray};
+    use arrow::array::{Decimal128Array, Float64Array, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
     use parquet::arrow::ArrowWriter;
@@ -128,6 +133,42 @@ mod tests {
         assert_eq!(lines[1], "2,,1.5");
         assert_eq!(lines[2], "3,\"c, d\",2.5");
         assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn json_exports_decimal_columns_as_exact_strings() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "amount",
+            DataType::Decimal128(20, 4),
+            false,
+        )]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(
+                Decimal128Array::from(vec![123456789i128])
+                    .with_precision_and_scale(20, 4)
+                    .unwrap(),
+            )],
+        )
+        .unwrap();
+        let src = temp_path("decimal.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&src).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let out = temp_path("decimal.json");
+        let n = export_data(
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "json".into(),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(parsed[0]["amount"], "12345.6789");
     }
 
     #[test]

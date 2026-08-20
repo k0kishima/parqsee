@@ -3,7 +3,7 @@ use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::models::{ColumnInfo, ParquetMetadata};
 
@@ -218,7 +218,109 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     })
 }
 
+use arrow::array::{Array, ArrayRef, LargeListArray, ListArray, StructArray};
+use arrow::datatypes::{DataType, Field, Schema};
 use arrow::json::LineDelimitedWriter;
+
+fn contains_decimal(data_type: &DataType) -> bool {
+    match data_type {
+        DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => true,
+        DataType::List(field)
+        | DataType::LargeList(field)
+        | DataType::FixedSizeList(field, _)
+        | DataType::Map(field, _) => contains_decimal(field.data_type()),
+        DataType::Struct(fields) => fields.iter().any(|f| contains_decimal(f.data_type())),
+        _ => false,
+    }
+}
+
+fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    match array.data_type() {
+        DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
+            arrow::compute::cast(array, &DataType::Utf8)
+                .map_err(|e| format!("Failed to render decimal column: {}", e))
+        }
+        DataType::List(field) if contains_decimal(field.data_type()) => {
+            let list = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| "Failed to read list column".to_string())?;
+            let values = decimals_as_strings(list.values())?;
+            let item = Arc::new(Field::new(
+                field.name(),
+                values.data_type().clone(),
+                field.is_nullable(),
+            ));
+            ListArray::try_new(item, list.offsets().clone(), values, list.nulls().cloned())
+                .map(|a| Arc::new(a) as ArrayRef)
+                .map_err(|e| e.to_string())
+        }
+        DataType::LargeList(field) if contains_decimal(field.data_type()) => {
+            let list = array
+                .as_any()
+                .downcast_ref::<LargeListArray>()
+                .ok_or_else(|| "Failed to read list column".to_string())?;
+            let values = decimals_as_strings(list.values())?;
+            let item = Arc::new(Field::new(
+                field.name(),
+                values.data_type().clone(),
+                field.is_nullable(),
+            ));
+            LargeListArray::try_new(item, list.offsets().clone(), values, list.nulls().cloned())
+                .map(|a| Arc::new(a) as ArrayRef)
+                .map_err(|e| e.to_string())
+        }
+        DataType::Struct(fields) if contains_decimal(array.data_type()) => {
+            let structs = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| "Failed to read struct column".to_string())?;
+            let mut converted_fields = Vec::with_capacity(fields.len());
+            let mut converted_columns = Vec::with_capacity(fields.len());
+            for (field, column) in fields.iter().zip(structs.columns()) {
+                let column = decimals_as_strings(column)?;
+                converted_fields.push(Arc::new(Field::new(
+                    field.name(),
+                    column.data_type().clone(),
+                    field.is_nullable(),
+                )));
+                converted_columns.push(column);
+            }
+            StructArray::try_new(
+                converted_fields.into(),
+                converted_columns,
+                structs.nulls().cloned(),
+            )
+            .map(|a| Arc::new(a) as ArrayRef)
+            .map_err(|e| e.to_string())
+        }
+        _ => Ok(array.clone()),
+    }
+}
+
+/// Arrow's JSON writers refuse decimals outright, which used to fail the read
+/// of any file carrying a money column. Render them as strings — exact, unlike
+/// a float would be — and leave every other column alone.
+pub fn decimals_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    let schema = batch.schema();
+    if !schema.fields().iter().any(|f| contains_decimal(f.data_type())) {
+        return Ok(batch.clone());
+    }
+
+    let mut fields = Vec::with_capacity(schema.fields().len());
+    let mut columns = Vec::with_capacity(schema.fields().len());
+    for (field, column) in schema.fields().iter().zip(batch.columns()) {
+        let column = decimals_as_strings(column)?;
+        fields.push(Arc::new(Field::new(
+            field.name(),
+            column.data_type().clone(),
+            field.is_nullable(),
+        )));
+        columns.push(column);
+    }
+
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
+}
 
 fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
@@ -226,7 +328,7 @@ fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
         let mut writer = LineDelimitedWriter::new(&mut buf);
         for batch in batches {
             writer
-                .write(batch)
+                .write(&decimals_to_strings(batch)?)
                 .map_err(|e| format!("Failed to write batch: {}", e))?;
         }
         writer
@@ -380,7 +482,10 @@ fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{truncate_batches, ParquetCache};
-    use arrow::array::{ArrayRef, Int32Array, Int32Builder, ListBuilder, StringArray, StructArray};
+    use arrow::array::{
+        Array, ArrayRef, Decimal128Array, Decimal128Builder, Int32Array, Int32Builder, ListBuilder,
+        StringArray, StructArray,
+    };
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
     use parquet::arrow::ArrowWriter;
@@ -441,6 +546,70 @@ mod tests {
         writer.write(&batch).unwrap();
         writer.close().unwrap();
         path
+    }
+
+    /// A money column, plus a decimal nested inside a struct and a list.
+    fn write_decimal_fixture() -> PathBuf {
+        let amount = Decimal128Array::from(vec![123456789i128, -1i128])
+            .with_precision_and_scale(20, 4)
+            .unwrap();
+
+        let mut prices = ListBuilder::new(
+            Decimal128Builder::new()
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+        );
+        for _ in 0..2 {
+            prices.values().append_value(150);
+            prices.append(true);
+        }
+        let prices = prices.finish();
+
+        let line_fields: Fields = vec![Field::new("net", DataType::Decimal128(20, 4), true)].into();
+        let line = StructArray::new(
+            line_fields.clone(),
+            vec![Arc::new(
+                Decimal128Array::from(vec![5000i128, 6000i128])
+                    .with_precision_and_scale(20, 4)
+                    .unwrap(),
+            ) as ArrayRef],
+            None,
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("amount", DataType::Decimal128(20, 4), true),
+            Field::new("prices", prices.data_type().clone(), true),
+            Field::new("line", DataType::Struct(line_fields), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(amount) as ArrayRef,
+                Arc::new(prices),
+                Arc::new(line),
+            ],
+        )
+        .unwrap();
+
+        let path = temp_path("decimal.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn decimal_columns_reach_the_webview_as_exact_strings() {
+        let path = write_decimal_fixture();
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+            .await
+            .expect("decimal columns must not fail the read");
+
+        assert_eq!(rows[0]["amount"], "12345.6789");
+        assert_eq!(rows[1]["amount"], "-0.0001");
+        assert_eq!(rows[0]["prices"][0], "1.50");
+        assert_eq!(rows[0]["line"]["net"], "0.5000");
     }
 
     #[test]
