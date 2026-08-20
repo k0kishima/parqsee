@@ -62,10 +62,7 @@ impl ParquetCache {
         let config =
             datafusion::execution::context::SessionConfig::new().with_target_partitions(1);
         let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
-        let options = datafusion::prelude::ParquetReadOptions::default();
-        ctx.register_parquet("t", path, options)
-            .await
-            .map_err(|e| format!("Failed to register parquet file: {}", e))?;
+        register_file_as_t(&ctx, path).await?;
 
         // Store in cache
         {
@@ -107,6 +104,41 @@ impl ParquetCache {
             metadata_cache.remove(path);
         }
     }
+}
+
+/// Register the single file at `path` as table `t`.
+///
+/// `SessionContext::register_parquet` treats its argument as a listing-table
+/// path: glob characters (`[`, `?`, `*`) in the file name are parsed as a
+/// pattern and the directory is walked instead, and only files ending in the
+/// lowercase `.parquet` extension are listed — so `report[1].parquet` failed
+/// to read and `DATA.PARQUET` registered as an empty table while the metadata
+/// (read through the parquet crate, which looks at neither) said otherwise.
+/// Handing DataFusion a `file://` URL skips the glob parsing, and passing the
+/// file's own extension keeps the listing from filtering it out.
+async fn register_file_as_t(
+    ctx: &datafusion::execution::context::SessionContext,
+    path: &str,
+) -> Result<(), String> {
+    use datafusion::datasource::file_format::parquet::ParquetFormat;
+    use datafusion::datasource::listing::ListingOptions;
+
+    let file_path = std::path::Path::new(path);
+    let url = url::Url::from_file_path(file_path)
+        .map_err(|_| format!("Failed to register parquet file: not an absolute path: {}", path))?;
+    let extension = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+
+    let options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+        .with_file_extension(extension)
+        .with_collect_stat(false);
+
+    ctx.register_listing_table("t", url.as_str(), options, None, None)
+        .await
+        .map_err(|e| format!("Failed to register parquet file: {}", e))
 }
 
 fn logical_type_to_string(logical_type: &parquet::basic::LogicalType) -> String {
@@ -895,6 +927,48 @@ mod tests {
         assert_eq!(rows[1]["amount"], "-0.0001");
         assert_eq!(rows[0]["prices"][0], "1.50");
         assert_eq!(rows[0]["line"]["net"], "0.5000");
+    }
+
+    fn write_small(path: &PathBuf) {
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef],
+        )
+        .unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut writer = ArrowWriter::try_new(File::create(path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+    }
+
+    /// macOS is case-insensitive, so `DATA.PARQUET` is a perfectly ordinary
+    /// file name there; the listing must not drop it for its extension.
+    #[tokio::test]
+    async fn reads_files_with_an_uppercase_extension() {
+        let path = temp_path("UPPER.PARQUET");
+        write_small(&path);
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(super::count_data(&cache, &path.to_string_lossy(), None).await.unwrap(), 3);
+    }
+
+    /// Glob characters are legal in file names; they must not be treated as
+    /// a pattern over the parent directory.
+    #[tokio::test]
+    async fn reads_files_whose_names_contain_glob_characters() {
+        for name in ["glob[1].parquet", "what?.parquet", "star*.parquet", "sp ace.parquet", "pct%20.parquet"] {
+            let path = temp_path("globs").join(name);
+            write_small(&path);
+            let cache = ParquetCache::new();
+            let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+                .await
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(rows.len(), 3, "{name}");
+        }
     }
 
     #[test]
