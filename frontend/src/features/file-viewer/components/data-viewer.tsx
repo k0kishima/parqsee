@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
@@ -28,7 +29,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const [data, setData] = useState<any[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
+  /** Fatal: the file itself could not be opened. */
   const [error, setError] = useState<string | null>(null);
+  /** Recoverable: a filter or a page read failed; the tab stays usable. */
+  const [dataError, setDataError] = useState<string | null>(null);
 
   // Use ref to break dependency cycle for onStateChange
   const onStateChangeRef = useRef(onStateChange);
@@ -106,6 +110,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const loadFile = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setDataError(null);
       const meta = await openParquetFile(filePath);
       setMetadata(meta);
       setTotalRows(meta.num_rows);
@@ -121,6 +127,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
     try {
       setLoading(true);
+      setDataError(null);
 
       // Update total rows based on filter
       if (activeFilter) {
@@ -134,7 +141,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       setData(rows);
       setLoading(false);
     } catch (err) {
-      setError(err as string);
+      // A rejected filter must not strand the tab on an error screen: keep the
+      // previous result on screen and let the user correct the condition.
+      setDataError(String(err));
       setLoading(false);
     }
   };
@@ -334,6 +343,21 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
+        {dataError && (
+          <div className="px-6 py-2 flex items-start gap-3 border-b bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">{t('viewer.dataError')}</p>
+              <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError}</p>
+            </div>
+            <button
+              onClick={() => setDataError(null)}
+              title={t('common.dismiss')}
+              className="p-1 rounded text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center">

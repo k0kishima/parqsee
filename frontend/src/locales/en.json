@@ -13,7 +13,8 @@
         "appName": "Parqsee",
         "apply": "Apply",
         "clear": "Clear",
-        "addCondition": "Add Condition"
+        "addCondition": "Add Condition",
+        "dismiss": "Dismiss"
     },
     "welcome": {
         "dropZone": {
@@ -73,6 +74,7 @@
         "export": "Export",
         "loading": "Loading data...",
         "error": "Error Loading File",
+        "dataError": "The condition could not be run. The previous result is still shown.",
         "pagination": {
             "showing": "Showing {{start}} to {{end}} of {{total}} entries",
             "previous": "Previous",

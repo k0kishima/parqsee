@@ -13,7 +13,8 @@
     "appName": "Parqsee",
     "apply": "適用",
     "clear": "クリア",
-    "addCondition": "条件を追加"
+    "addCondition": "条件を追加",
+    "dismiss": "閉じる"
   },
   "welcome": {
     "dropZone": {
@@ -73,6 +74,7 @@
     "export": "エクスポート",
     "loading": "読み込み中...",
     "error": "ファイルの読み込みエラー",
+    "dataError": "この条件は実行できませんでした。直前の結果を表示しています。",
     "pagination": {
       "showing": "{{total}} 件中 {{start}} から {{end}} 件を表示",
       "previous": "前へ",
