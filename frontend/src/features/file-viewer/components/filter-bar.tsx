@@ -29,6 +29,11 @@ const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 function formatLiteral(columnType: string, value: string): string {
+    // Text comparisons keep the value verbatim — spaces can be meaningful
+    // there. Everything else is parsed by DataFusion (dates, timestamps,
+    // numbers), whose parsers do not trim, so a stray space from a paste
+    // would fail the whole filter.
+    if (TEXT_TYPE.test(columnType)) return quoteLiteral(value);
     const trimmed = value.trim();
     if (BARE_LITERAL_TYPE.test(columnType)) {
         const isBare = /^BOOLEAN/.test(columnType)
@@ -38,7 +43,7 @@ function formatLiteral(columnType: string, value: string): string {
         // reports a cast error instead of "no field named abc".
         if (isBare) return trimmed;
     }
-    return quoteLiteral(value);
+    return quoteLiteral(trimmed);
 }
 
 /** Build the WHERE fragment the backend appends to `SELECT * FROM t`. */

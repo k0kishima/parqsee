@@ -35,6 +35,13 @@ describe('buildFilterExpression', () => {
       .toBe("\"ts\" >= '2023-11-14 22:13:20'");
   });
 
+  it('trims non-text values but keeps text values verbatim', () => {
+    expect(buildFilterExpression([row('d', '=', '2022-01-08 ')], columns)).toBe("\"d\" = '2022-01-08'");
+    expect(buildFilterExpression([row('ts', '<', ' 2023-11-14 22:13:20 ')], columns))
+      .toBe("\"ts\" < '2023-11-14 22:13:20'");
+    expect(buildFilterExpression([row('name', '=', 'x ')], columns)).toBe("\"name\" = 'x '");
+  });
+
   it('quotes a value that does not parse as its numeric column type', () => {
     expect(buildFilterExpression([row('id', '=', 'abc')], columns)).toBe("\"id\" = 'abc'");
   });
