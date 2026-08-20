@@ -218,7 +218,7 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     })
 }
 
-use arrow::array::{Array, ArrayRef, LargeListArray, ListArray, StructArray};
+use arrow::array::{Array, ArrayRef, FixedSizeListArray, GenericListArray, MapArray, StructArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::json::LineDelimitedWriter;
 
@@ -234,66 +234,99 @@ fn contains_decimal(data_type: &DataType) -> bool {
     }
 }
 
+/// The field, re-typed for its converted values. Cloning the original keeps
+/// its name, nullability and metadata.
+fn retyped_field(field: &Field, data_type: &DataType) -> Arc<Field> {
+    Arc::new(field.clone().with_data_type(data_type.clone()))
+}
+
+/// One body for List and LargeList: they differ only in the offset width, and
+/// a fix applied to one hand-copied arm but not the other is exactly how
+/// FixedSizeList was missed the first time round.
+fn decimals_in_list<O: arrow::array::OffsetSizeTrait>(
+    array: &ArrayRef,
+    field: &Field,
+) -> Result<ArrayRef, String> {
+    let list = array
+        .as_any()
+        .downcast_ref::<GenericListArray<O>>()
+        .ok_or_else(|| "Failed to read list column".to_string())?;
+    let values = decimals_as_strings(list.values())?;
+    GenericListArray::<O>::try_new(
+        retyped_field(field, values.data_type()),
+        list.offsets().clone(),
+        values,
+        list.nulls().cloned(),
+    )
+    .map(|a| Arc::new(a) as ArrayRef)
+    .map_err(|e| e.to_string())
+}
+
+fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
+    let DataType::Struct(fields) = array.data_type() else {
+        return Err("Failed to read struct column".to_string());
+    };
+    let mut converted_fields = Vec::with_capacity(fields.len());
+    let mut converted_columns = Vec::with_capacity(fields.len());
+    for (field, column) in fields.iter().zip(array.columns()) {
+        let column = decimals_as_strings(column)?;
+        converted_fields.push(retyped_field(field, column.data_type()));
+        converted_columns.push(column);
+    }
+    StructArray::try_new(converted_fields.into(), converted_columns, array.nulls().cloned())
+        .map_err(|e| e.to_string())
+}
+
 fn decimals_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
+    if !contains_decimal(array.data_type()) {
+        return Ok(array.clone());
+    }
     match array.data_type() {
         DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
             arrow::compute::cast(array, &DataType::Utf8)
                 .map_err(|e| format!("Failed to render decimal column: {}", e))
         }
-        DataType::List(field) if contains_decimal(field.data_type()) => {
+        DataType::List(field) => decimals_in_list::<i32>(array, field),
+        DataType::LargeList(field) => decimals_in_list::<i64>(array, field),
+        DataType::FixedSizeList(field, size) => {
             let list = array
                 .as_any()
-                .downcast_ref::<ListArray>()
+                .downcast_ref::<FixedSizeListArray>()
                 .ok_or_else(|| "Failed to read list column".to_string())?;
             let values = decimals_as_strings(list.values())?;
-            let item = Arc::new(Field::new(
-                field.name(),
-                values.data_type().clone(),
-                field.is_nullable(),
-            ));
-            ListArray::try_new(item, list.offsets().clone(), values, list.nulls().cloned())
-                .map(|a| Arc::new(a) as ArrayRef)
-                .map_err(|e| e.to_string())
-        }
-        DataType::LargeList(field) if contains_decimal(field.data_type()) => {
-            let list = array
-                .as_any()
-                .downcast_ref::<LargeListArray>()
-                .ok_or_else(|| "Failed to read list column".to_string())?;
-            let values = decimals_as_strings(list.values())?;
-            let item = Arc::new(Field::new(
-                field.name(),
-                values.data_type().clone(),
-                field.is_nullable(),
-            ));
-            LargeListArray::try_new(item, list.offsets().clone(), values, list.nulls().cloned())
-                .map(|a| Arc::new(a) as ArrayRef)
-                .map_err(|e| e.to_string())
-        }
-        DataType::Struct(fields) if contains_decimal(array.data_type()) => {
-            let structs = array
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or_else(|| "Failed to read struct column".to_string())?;
-            let mut converted_fields = Vec::with_capacity(fields.len());
-            let mut converted_columns = Vec::with_capacity(fields.len());
-            for (field, column) in fields.iter().zip(structs.columns()) {
-                let column = decimals_as_strings(column)?;
-                converted_fields.push(Arc::new(Field::new(
-                    field.name(),
-                    column.data_type().clone(),
-                    field.is_nullable(),
-                )));
-                converted_columns.push(column);
-            }
-            StructArray::try_new(
-                converted_fields.into(),
-                converted_columns,
-                structs.nulls().cloned(),
+            FixedSizeListArray::try_new(
+                retyped_field(field, values.data_type()),
+                *size,
+                values,
+                list.nulls().cloned(),
             )
             .map(|a| Arc::new(a) as ArrayRef)
             .map_err(|e| e.to_string())
         }
+        DataType::Map(field, ordered) => {
+            let map = array
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .ok_or_else(|| "Failed to read map column".to_string())?;
+            let entries = decimals_in_struct(map.entries())?;
+            MapArray::try_new(
+                retyped_field(field, entries.data_type()),
+                map.offsets().clone(),
+                entries,
+                map.nulls().cloned(),
+                *ordered,
+            )
+            .map(|a| Arc::new(a) as ArrayRef)
+            .map_err(|e| e.to_string())
+        }
+        DataType::Struct(_) => {
+            let structs = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| "Failed to read struct column".to_string())?;
+            decimals_in_struct(structs).map(|a| Arc::new(a) as ArrayRef)
+        }
+        // contains_decimal only claims the container types handled above.
         _ => Ok(array.clone()),
     }
 }
@@ -569,8 +602,8 @@ fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
 mod tests {
     use super::{truncate_batches, ParquetCache};
     use arrow::array::{
-        Array, ArrayRef, Decimal128Array, Decimal128Builder, Int32Array, Int32Builder, Int64Array,
-        ListBuilder, StringArray, StructArray,
+        Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
+        Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder, StructArray,
     };
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
@@ -682,6 +715,56 @@ mod tests {
         writer.write(&batch).unwrap();
         writer.close().unwrap();
         path
+    }
+
+    #[tokio::test]
+    async fn decimals_inside_maps_and_fixed_size_lists_convert_too() {
+        // map<string, decimal> is what Spark produces for a decimal-valued map.
+        let mut map = MapBuilder::new(
+            None,
+            StringBuilder::new(),
+            Decimal128Builder::new()
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+        );
+        map.keys().append_value("price");
+        map.values().append_value(150);
+        map.append(true).unwrap();
+        let map = map.finish();
+
+        let mut pair = FixedSizeListBuilder::new(
+            Decimal128Builder::new()
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+            2,
+        );
+        pair.values().append_value(100);
+        pair.values().append_value(200);
+        pair.append(true);
+        let pair = pair.finish();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("m", map.data_type().clone(), true),
+            Field::new("pair", pair.data_type().clone(), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(map) as ArrayRef, Arc::new(pair)],
+        )
+        .unwrap();
+        let path = temp_path("decimal_containers.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 1, None)
+            .await
+            .expect("decimals inside maps and fixed-size lists must not fail the read");
+
+        assert_eq!(rows[0]["m"]["price"], "1.50");
+        assert_eq!(rows[0]["pair"][0], "1.00");
+        assert_eq!(rows[0]["pair"][1], "2.00");
     }
 
     #[tokio::test]
