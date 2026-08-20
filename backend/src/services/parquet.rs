@@ -59,8 +59,10 @@ impl ParquetCache {
 
         // Create the session and register the parquet file. Single partition,
         // deliberately — see the trade-off note in this function's doc.
-        let config =
-            datafusion::execution::context::SessionConfig::new().with_target_partitions(1);
+        let config = datafusion::execution::context::SessionConfig::new()
+            .with_target_partitions(1)
+            // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
+            .with_information_schema(true);
         let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
         register_file_as_t(&ctx, path).await?;
 
@@ -745,14 +747,34 @@ pub async fn execute_sql_limited(
 ) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, bool), String> {
     let ctx = cache.get_or_create_session(file_path).await?;
 
+    // Plan first and execute second: `SessionContext::sql` would run DDL and
+    // SET statements while planning, and this session is shared with the
+    // browse grid — a `DROP TABLE t` took paging down with it, and a `SET
+    // target_partitions` silently voided the single-partition ordering
+    // guarantee. The viewer only ever reads, so anything that would change
+    // the session or touch the filesystem is rejected before it runs.
+    let plan = ctx
+        .state()
+        .create_logical_plan(query)
+        .await
+        .map_err(|e| format!("SQL execution failed: {}", e))?;
+    reject_non_query(&plan)?;
+    let is_explain = matches!(
+        plan,
+        datafusion::logical_expr::LogicalPlan::Explain(_)
+            | datafusion::logical_expr::LogicalPlan::Analyze(_)
+    );
+
     let mut df = ctx
-        .sql(query)
+        .execute_logical_plan(plan)
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
     let schema = df.schema().inner().clone();
 
-    if let Some(max) = max_rows {
+    // EXPLAIN must stay the root of its plan; a LIMIT on top of it is an
+    // internal error, and its output is a handful of rows anyway.
+    if let (Some(max), false) = (max_rows, is_explain) {
         // Fetch one extra row so we can tell a full page from a truncated one.
         df = df
             .limit(0, Some(max + 1))
@@ -770,6 +792,24 @@ pub async fn execute_sql_limited(
     }
 
     Ok((batches, schema, truncated))
+}
+
+/// The SQL view is read-only. DDL (`CREATE`/`DROP TABLE`), `SET`, DML and
+/// `COPY ... TO` would mutate the shared session or write files; name the
+/// statement kind so the message explains what was refused.
+fn reject_non_query(plan: &datafusion::logical_expr::LogicalPlan) -> Result<(), String> {
+    use datafusion::logical_expr::LogicalPlan;
+    let kind = match plan {
+        LogicalPlan::Ddl(_) => "DDL statements (CREATE, DROP, ALTER)",
+        LogicalPlan::Dml(_) => "INSERT, UPDATE and DELETE",
+        LogicalPlan::Copy(_) => "COPY",
+        LogicalPlan::Statement(_) => "SET and transaction statements",
+        _ => return Ok(()),
+    };
+    Err(format!(
+        "The SQL view is read-only: {} are not allowed. Use SELECT queries against table t.",
+        kind
+    ))
 }
 
 /// Drop rows past `max` across `batches`; returns true if anything was dropped.
@@ -1061,6 +1101,39 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(rows.len(), 3, "{name}");
         }
+    }
+
+    #[tokio::test]
+    async fn sql_view_refuses_statements_that_would_change_the_session() {
+        let path = temp_path("readonly.parquet");
+        write_small(&path);
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        let run = |q: &'static str| {
+            let cache = &cache;
+            let file = file.clone();
+            async move { super::execute_sql_limited(cache, &file, q, Some(10)).await.map(|(b, _, _)| b) }
+        };
+
+        for q in [
+            "DROP TABLE t",
+            "CREATE TABLE x AS SELECT * FROM t",
+            "SET datafusion.execution.target_partitions = 8",
+            "COPY (SELECT * FROM t) TO '/tmp/parqsee-must-not-exist.csv'",
+            "CREATE EXTERNAL TABLE o STORED AS PARQUET LOCATION '/tmp/x.parquet'",
+            "INSERT INTO t VALUES (1)",
+        ] {
+            let err = run(q).await.expect_err(q);
+            assert!(err.contains("read-only"), "{q}: {err}");
+        }
+        assert!(!std::path::Path::new("/tmp/parqsee-must-not-exist.csv").exists());
+
+        // The table survived the attempts, and plain reads still work.
+        let rows = super::read_data(&cache, &file, 0, 10, None).await.unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(run("SELECT * FROM t LIMIT 100;").await.unwrap().iter().map(|b| b.num_rows()).sum::<usize>(), 3);
+        assert!(run("EXPLAIN SELECT * FROM t").await.is_ok(), "EXPLAIN must not be limited");
+        assert!(run("SHOW TABLES").await.is_ok(), "information_schema is on");
     }
 
     #[test]
