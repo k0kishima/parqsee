@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 
-use crate::models::{ColumnInfo, ParquetMetadata};
+use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata};
 
 /// Cache for DataFusion SessionContext and Parquet metadata.
 /// Stored as Tauri managed state to avoid re-creating sessions on every request.
@@ -182,6 +182,62 @@ fn group_type_to_string(field: &parquet::schema::types::Type) -> String {
     }
 }
 
+/// Classify a schema field structurally, following the same precedence the
+/// display label uses: logical type, then converted type, then physical type.
+fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
+    use parquet::basic::{ConvertedType, LogicalType, Type as PhysicalType};
+
+    if !field.is_primitive() {
+        return ColumnKind::Nested;
+    }
+
+    if let Some(logical_type) = field.get_basic_info().logical_type() {
+        return match logical_type {
+            LogicalType::String | LogicalType::Enum | LogicalType::Json => ColumnKind::Text,
+            LogicalType::Decimal { .. } => ColumnKind::Decimal,
+            LogicalType::Date | LogicalType::Time { .. } | LogicalType::Timestamp { .. } => {
+                ColumnKind::Temporal
+            }
+            LogicalType::Integer { .. } => ColumnKind::Integer,
+            LogicalType::Float16 => ColumnKind::Float,
+            LogicalType::Uuid | LogicalType::Bson => ColumnKind::Binary,
+            LogicalType::Map | LogicalType::List => ColumnKind::Nested,
+            LogicalType::Unknown => ColumnKind::Other,
+        };
+    }
+
+    match field.get_basic_info().converted_type() {
+        ConvertedType::UTF8 | ConvertedType::ENUM | ConvertedType::JSON => ColumnKind::Text,
+        ConvertedType::DECIMAL => ColumnKind::Decimal,
+        ConvertedType::DATE
+        | ConvertedType::TIME_MILLIS
+        | ConvertedType::TIME_MICROS
+        | ConvertedType::TIMESTAMP_MILLIS
+        | ConvertedType::TIMESTAMP_MICROS => ColumnKind::Temporal,
+        ConvertedType::UINT_8
+        | ConvertedType::UINT_16
+        | ConvertedType::UINT_32
+        | ConvertedType::UINT_64
+        | ConvertedType::INT_8
+        | ConvertedType::INT_16
+        | ConvertedType::INT_32
+        | ConvertedType::INT_64 => ColumnKind::Integer,
+        ConvertedType::BSON => ColumnKind::Binary,
+        ConvertedType::MAP | ConvertedType::LIST | ConvertedType::MAP_KEY_VALUE => {
+            ColumnKind::Nested
+        }
+        ConvertedType::INTERVAL => ColumnKind::Other,
+        ConvertedType::NONE => match field.get_physical_type() {
+            PhysicalType::BOOLEAN => ColumnKind::Boolean,
+            PhysicalType::INT32 | PhysicalType::INT64 => ColumnKind::Integer,
+            // Legacy nanosecond timestamps; read back as Timestamp.
+            PhysicalType::INT96 => ColumnKind::Temporal,
+            PhysicalType::FLOAT | PhysicalType::DOUBLE => ColumnKind::Float,
+            PhysicalType::BYTE_ARRAY | PhysicalType::FIXED_LEN_BYTE_ARRAY => ColumnKind::Binary,
+        },
+    }
+}
+
 /// Open a parquet file for reading. Shared by metadata inspection and export.
 pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
@@ -217,6 +273,7 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
                 column_type: logical_type
                     .clone()
                     .unwrap_or_else(|| physical_type.clone()),
+                kind: column_kind(field),
                 logical_type,
                 physical_type,
             }
@@ -647,6 +704,7 @@ fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{truncate_batches, ParquetCache};
+    use crate::models::ColumnKind;
     use arrow::array::{
         Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
         Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder, StructArray,
@@ -888,6 +946,64 @@ mod tests {
     }
 
     #[test]
+    fn metadata_classifies_primitive_columns_structurally() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("flag", DataType::Boolean, false),
+            Field::new("n", DataType::Int64, false),
+            Field::new("x", DataType::Float64, false),
+            Field::new("amount", DataType::Decimal128(20, 4), false),
+            Field::new("d", DataType::Date32, false),
+            Field::new(
+                "ts",
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None),
+                false,
+            ),
+            Field::new("name", DataType::Utf8, false),
+            Field::new("blob", DataType::Binary, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::BooleanArray::from(vec![true])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![1])),
+                Arc::new(arrow::array::Float64Array::from(vec![1.5])),
+                Arc::new(
+                    Decimal128Array::from(vec![1i128])
+                        .with_precision_and_scale(20, 4)
+                        .unwrap(),
+                ),
+                Arc::new(arrow::array::Date32Array::from(vec![19000])),
+                Arc::new(arrow::array::TimestampMicrosecondArray::from(vec![0i64])),
+                Arc::new(StringArray::from(vec!["a"])),
+                Arc::new(arrow::array::BinaryArray::from(vec![&[0u8][..]])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("kinds.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let meta = ParquetCache::new()
+            .get_or_create_metadata(&path.to_string_lossy())
+            .unwrap();
+        let kinds: Vec<ColumnKind> = meta.columns.iter().map(|c| c.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ColumnKind::Boolean,
+                ColumnKind::Integer,
+                ColumnKind::Float,
+                ColumnKind::Decimal,
+                ColumnKind::Temporal,
+                ColumnKind::Temporal,
+                ColumnKind::Text,
+                ColumnKind::Binary,
+            ]
+        );
+    }
+
+    #[test]
     fn metadata_labels_group_columns_instead_of_panicking() {
         let path = write_nested_fixture();
         let cache = ParquetCache::new();
@@ -897,10 +1013,13 @@ mod tests {
 
         assert_eq!(meta.num_columns, 3);
         assert_eq!(meta.columns[0].column_type, "STRING");
+        assert_eq!(meta.columns[0].kind, ColumnKind::Text);
         assert_eq!(meta.columns[1].column_type, "LIST");
         assert_eq!(meta.columns[1].physical_type, "LIST");
+        assert_eq!(meta.columns[1].kind, ColumnKind::Nested);
         assert_eq!(meta.columns[2].column_type, "STRUCT");
         assert_eq!(meta.columns[2].physical_type, "STRUCT");
+        assert_eq!(meta.columns[2].kind, ColumnKind::Nested);
     }
 
     fn batch(n: i32) -> RecordBatch {

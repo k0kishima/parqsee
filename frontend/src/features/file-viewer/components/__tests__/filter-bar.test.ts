@@ -1,22 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { buildFilterExpression, FilterRow } from '../filter-bar';
-import type { ColumnInfo } from '../../api';
+import type { ColumnInfo, ColumnKind } from '../../api';
 
-const column = (name: string, column_type: string): ColumnInfo => ({
+const column = (name: string, column_type: string, kind: ColumnKind): ColumnInfo => ({
   name,
   column_type,
+  kind,
   physical_type: column_type,
 });
 
 const columns = [
-  column('id', 'INT64'),
-  column('price', 'DECIMAL(20,4)'),
-  column('flag', 'BOOLEAN'),
-  column('name', 'STRING'),
-  column('d', 'DATE'),
-  column('ts', 'TIMESTAMP(MICROS(MicroSeconds), UTC:false)'),
-  column('MixedCase', 'INT64'),
-  column("od'd", 'STRING'),
+  column('id', 'INT64', 'integer'),
+  column('price', 'DECIMAL(20,4)', 'decimal'),
+  column('flag', 'BOOLEAN', 'boolean'),
+  column('name', 'STRING', 'text'),
+  column('d', 'DATE', 'temporal'),
+  column('ts', 'TIMESTAMP(MICROS(MicroSeconds), UTC:false)', 'temporal'),
+  column('MixedCase', 'INT64', 'integer'),
+  column("od'd", 'STRING', 'text'),
 ];
 
 const row = (column: string, operator: string, value: string): FilterRow =>

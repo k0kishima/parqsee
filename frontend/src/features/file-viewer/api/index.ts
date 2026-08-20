@@ -1,8 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
 
+/** Structural classification of a column, independent of its display label. */
+export type ColumnKind =
+    | 'boolean'
+    | 'integer'
+    | 'float'
+    | 'decimal'
+    | 'text'
+    | 'temporal'
+    | 'binary'
+    | 'nested'
+    | 'other';
+
 export interface ColumnInfo {
     name: string;
     column_type: string;
+    kind: ColumnKind;
     logical_type?: string;
     physical_type: string;
 }

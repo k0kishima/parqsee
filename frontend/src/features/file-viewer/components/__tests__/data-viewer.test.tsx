@@ -23,7 +23,7 @@ vi.mock('../../../../contexts/SettingsContext', () => ({
 const metadata = {
   num_rows: 100,
   num_columns: 1,
-  columns: [{ name: 'id', column_type: 'INT64', physical_type: 'INT64' }],
+  columns: [{ name: 'id', column_type: 'INT64', kind: 'integer' as const, physical_type: 'INT64' }],
 };
 
 /** The page number input (the filter value input is found by placeholder). */

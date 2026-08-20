@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { ColumnInfo } from "../api";
+import { ColumnInfo, ColumnKind } from "../api";
 
 interface FilterBarProps {
     columns: ColumnInfo[];
@@ -17,31 +17,28 @@ export interface FilterRow {
 }
 
 /**
- * Column types that compare against a bare literal. Everything else — text,
- * dates, timestamps, UUIDs, INT96 legacy timestamps — needs a quoted string
- * literal, which DataFusion coerces to the column type.
+ * Column kinds that compare against a bare literal. Everything else — text,
+ * dates, timestamps, binary — needs a quoted string literal, which
+ * DataFusion coerces to the column type.
  */
-const BARE_LITERAL_TYPE = /^(BOOLEAN|FLOAT|DOUBLE|DECIMAL|INT(8|16|32|64))/;
-const TEXT_TYPE = /^(STRING|UTF8)/;
+const BARE_NUMERIC_KINDS: ReadonlySet<ColumnKind> = new Set(['integer', 'float', 'decimal']);
 
 /** DataFusion lower-cases bare identifiers, so `MixedCase` resolves to nothing. */
 const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
-function formatLiteral(columnType: string, value: string): string {
+function formatLiteral(kind: ColumnKind, value: string): string {
     // Text comparisons keep the value verbatim — spaces can be meaningful
     // there. Everything else is parsed by DataFusion (dates, timestamps,
     // numbers), whose parsers do not trim, so a stray space from a paste
     // would fail the whole filter.
-    if (TEXT_TYPE.test(columnType)) return quoteLiteral(value);
+    if (kind === 'text') return quoteLiteral(value);
     const trimmed = value.trim();
-    if (BARE_LITERAL_TYPE.test(columnType)) {
-        const isBare = /^BOOLEAN/.test(columnType)
-            ? /^(true|false)$/i.test(trimmed)
-            : trimmed !== "" && Number.isFinite(Number(trimmed));
-        // A value that does not parse still goes in quoted, so the backend
-        // reports a cast error instead of "no field named abc".
-        if (isBare) return trimmed;
+    // A value that does not parse still goes in quoted, so the backend
+    // reports a cast error instead of "no field named abc".
+    if (kind === 'boolean' && /^(true|false)$/i.test(trimmed)) return trimmed;
+    if (BARE_NUMERIC_KINDS.has(kind) && trimmed !== "" && Number.isFinite(Number(trimmed))) {
+        return trimmed;
     }
     return quoteLiteral(trimmed);
 }
@@ -56,7 +53,7 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
         const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
         if (needsValue && !filter.value.trim()) continue;
 
-        const columnType = columns.find(c => c.name === filter.column)?.column_type ?? "";
+        const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
         const columnRef = quoteIdentifier(filter.column);
 
         if (!needsValue) {
@@ -64,10 +61,10 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
         } else if (filter.operator === "LIKE") {
             // LIKE only applies to text, so cast anything else to keep partial
             // matches working on numbers and dates.
-            const target = TEXT_TYPE.test(columnType) ? columnRef : `CAST(${columnRef} AS TEXT)`;
+            const target = kind === 'text' ? columnRef : `CAST(${columnRef} AS TEXT)`;
             conditions.push(`${target} LIKE ${quoteLiteral(filter.value)}`);
         } else {
-            conditions.push(`${columnRef} ${filter.operator} ${formatLiteral(columnType, filter.value)}`);
+            conditions.push(`${columnRef} ${filter.operator} ${formatLiteral(kind, filter.value)}`);
         }
     }
 
