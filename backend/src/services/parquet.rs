@@ -333,6 +333,17 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
         })
         .collect();
 
+    // DataFusion cannot register a schema with duplicate field names, so every
+    // read would fail after the tab had already opened. Refuse up front, with
+    // the reason, instead of opening a tab that can only show an error.
+    let mut seen = std::collections::HashSet::new();
+    if let Some(duplicate) = columns.iter().find(|c| !seen.insert(c.name.as_str())) {
+        return Err(format!(
+            "This file has more than one column named \"{}\"; Parqsee cannot open files with duplicate column names.",
+            duplicate.name
+        ));
+    }
+
     Ok(ParquetMetadata {
         num_rows: metadata.file_metadata().num_rows(),
         num_columns: columns.len(),
@@ -1176,6 +1187,31 @@ mod tests {
             assert_eq!(rows.len(), expected, "{filter}");
             assert_eq!(super::count_data(&cache, &file, Some(filter.to_string())).await.unwrap(), expected, "{filter}");
         }
+    }
+
+    #[test]
+    fn duplicate_column_names_are_refused_when_opening() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("id", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["x"])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("dup.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let err = ParquetCache::new()
+            .get_or_create_metadata(&path.to_string_lossy())
+            .unwrap_err();
+        assert!(err.contains("more than one column named \"id\""), "{err}");
     }
 
     #[test]
