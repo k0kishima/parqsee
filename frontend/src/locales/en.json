@@ -130,6 +130,7 @@
         "endRow": "End Row",
         "filterNotice": "The active filter is applied:",
         "invalidRange": "Enter a range between 1 and {{total}}, with the start row first.",
+        "noRows": "No rows match the current filter.",
         "exporting": "Exporting...",
         "success": {
             "title": "Export Complete",

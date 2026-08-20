@@ -35,20 +35,25 @@ export function ExportModal({
 
   // The row count moves with the filter, so start from the full range every
   // time the modal is opened rather than from the last export's bounds.
+  // totalRows is deliberately not a dependency: a count landing while the
+  // modal is open must not clobber a range the user is editing.
   useEffect(() => {
     if (isOpen) {
       setStartRow(1);
       setEndRow(totalRows);
       setError(null);
     }
-  }, [isOpen, totalRows]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const pageStart = Math.min((currentPage - 1) * rowsPerPage + 1, totalRows);
+  const hasRows = totalRows > 0;
+  const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
   const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
   const rangeIsValid =
     exportRange !== "custom" || (startRow >= 1 && endRow >= startRow && endRow <= totalRows);
+  const canExport = hasRows && rangeIsValid && !isExporting;
 
   const handleExport = async () => {
     setError(null);
@@ -251,7 +256,10 @@ export function ExportModal({
             </div>
           )}
 
-          {!rangeIsValid && (
+          {!hasRows && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">{t('export.noRows')}</p>
+          )}
+          {hasRows && !rangeIsValid && (
             <p className="text-sm text-red-600">{t('export.invalidRange', { total: totalRows.toLocaleString() })}</p>
           )}
 
@@ -273,8 +281,8 @@ export function ExportModal({
           </button>
           <button
             onClick={handleExport}
-            disabled={isExporting || !rangeIsValid}
-            className={`btn-primary ${isExporting || !rangeIsValid ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!canExport}
+            className={`btn-primary ${!canExport ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isExporting ? t('export.exporting') : t('common.export')}
           </button>
