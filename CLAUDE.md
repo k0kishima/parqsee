@@ -29,8 +29,9 @@ It features:
 ### Backend
 - **Tauri v2** — desktop app framework
 - **Rust** — systems programming language
-- **Apache Arrow / Parquet 52** — reading Parquet files
-- **DataFusion 40** — SQL execution and paginated reads
+- **Apache Arrow / Parquet 58** — reading Parquet files
+- **DataFusion 54** — SQL execution and paginated reads (`default-features = false`; the
+  SQL function families are opted in explicitly in `Cargo.toml`)
 
 ## Project Structure
 
@@ -140,8 +141,9 @@ key equivalent beats the webview's keydown handler.
    The file is registered through `register_file_as_t` as a `file://` URL with
    its own extension and with statistics collection off — see its rustdoc
    before touching it: the plain `register_parquet` path mis-handled uppercase
-   extensions and glob characters in names, and statistics overflowed
-   DataFusion 40's selectivity arithmetic on 64-bit columns at their limits.
+   extensions and glob characters in names, and collected statistics overflow
+   DataFusion's selectivity arithmetic on 64-bit columns at their limits
+   (reproduced on both 40 and 54).
    Because the session is shared with the SQL view, `execute_sql_limited`
    plans first and refuses anything that would mutate it.
    Sessions run with `target_partitions = 1` — a deliberate trade-off: paged
