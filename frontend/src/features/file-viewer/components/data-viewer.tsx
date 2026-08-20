@@ -64,6 +64,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  /** The state the rows on screen were successfully loaded for. */
+  const lastGood = useRef<{ page: number; filter: string; totalRows: number } | null>(null);
+  /** Skip the reload triggered by rolling state back after a failed load. */
+  const skipReload = useRef(false);
+
   // Sync state changes to parent
   useEffect(() => {
     if (onStateChangeRef.current) {
@@ -84,6 +89,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   useEffect(() => {
     if (metadata) {
+      if (skipReload.current) {
+        skipReload.current = false;
+        return;
+      }
       loadData();
       // Scroll to top of table when page changes
       if (tableContainerRef.current) {
@@ -94,7 +103,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [rowsPerPage, activeFilter]);
+  }, [rowsPerPage]);
 
   // Keyboard shortcut for search
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
@@ -112,6 +121,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       setLoading(true);
       setError(null);
       setDataError(null);
+      lastGood.current = null;
       const meta = await openParquetFile(filePath);
       setMetadata(meta);
       setTotalRows(meta.num_rows);
@@ -129,21 +139,35 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
       setLoading(true);
       setDataError(null);
 
-      // Update total rows based on filter
-      if (activeFilter) {
-        const count = await countParquetData(filePath, activeFilter);
-        setTotalRows(count);
-      } else {
-        setTotalRows(metadata.num_rows);
-      }
-
+      const total = activeFilter
+        ? await countParquetData(filePath, activeFilter)
+        : metadata.num_rows;
       const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
+
+      // Commit only once the whole read succeeded, so the header, the export
+      // modal and the grid always describe the same result — a count that
+      // lands before a failing read must not update the page.
+      setTotalRows(total);
       setData(rows);
+      lastGood.current = { page: currentPage, filter: activeFilter, totalRows: total };
       setLoading(false);
     } catch (err) {
       // A rejected filter must not strand the tab on an error screen: keep the
       // previous result on screen and let the user correct the condition.
       setDataError(String(err));
+      // Roll the request state back to what the grid is still showing, so
+      // pagination and export never describe the failed filter or page. The
+      // rows on screen are already that state — skip the echo reload the
+      // rollback would trigger, which would also clear the error banner.
+      const good = lastGood.current;
+      if (good) {
+        if (good.filter !== activeFilter || good.page !== currentPage) {
+          skipReload.current = true;
+          setActiveFilter(good.filter);
+          setCurrentPage(good.page);
+        }
+        setTotalRows(good.totalRows);
+      }
       setLoading(false);
     }
   };
@@ -159,6 +183,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange }:
 
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);
+    // A new filter changes the row set; start from the first page. Done here
+    // rather than in an effect so rolling activeFilter back after a failed
+    // load does not also reset the page.
+    setCurrentPage(1);
   }, []);
 
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
