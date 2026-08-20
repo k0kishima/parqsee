@@ -42,7 +42,9 @@ impl RowWriter {
     /// source and the query *before* this, so a doomed export never gets as
     /// far as touching the filesystem.
     fn create(format: ExportFormat, path: &str) -> Result<Self, String> {
-        let mut out = BufWriter::new(File::create(path).map_err(|e| e.to_string())?);
+        let mut out = BufWriter::new(
+            File::create(path).map_err(|e| format!("Cannot write {}: {}", path, e))?,
+        );
         match format {
             ExportFormat::Csv => {
                 // UTF-8 BOM for Excel compatibility.
@@ -125,7 +127,7 @@ pub async fn export_data(
     match result {
         Ok(rows_written) => {
             std::fs::rename(&staging_path, &export_path)
-                .map_err(|e| format!("Failed to move the export into place: {}", e))?;
+                .map_err(|e| format!("Failed to move the export into place at {}: {}", export_path, e))?;
             Ok(rows_written)
         }
         Err(err) => {
@@ -145,7 +147,7 @@ fn export_range(
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let file = File::open(source_path).map_err(|e| e.to_string())?;
+    let file = File::open(source_path).map_err(|e| format!("Cannot open {}: {}", source_path, e))?;
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)
         .map_err(|e| format!("Failed to open parquet file: {}", e))?;
 

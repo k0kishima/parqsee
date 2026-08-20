@@ -293,7 +293,7 @@ fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
 
 /// Open a parquet file for reading. Shared by metadata inspection and export.
 pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
-    let file = File::open(path).map_err(|e| e.to_string())?;
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
     SerializedFileReader::new(file).map_err(|e| e.to_string())
 }
 
@@ -364,7 +364,9 @@ fn contains_json_unsafe(data_type: &DataType) -> bool {
         | DataType::Decimal256(_, _)
         | DataType::Float16
         | DataType::Float32
-        | DataType::Float64 => true,
+        | DataType::Float64
+        // Written as a date-time ("2024-02-29T00:00:00") although it is a date.
+        | DataType::Date64 => true,
         DataType::List(field)
         | DataType::LargeList(field)
         | DataType::FixedSizeList(field, _)
@@ -468,6 +470,8 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
         DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             non_finite_floats_as_strings(array)
         }
+        DataType::Date64 => arrow::compute::cast(array, &DataType::Date32)
+            .map_err(|e| format!("Failed to render date column: {}", e)),
         DataType::List(field) => decimals_in_list::<i32>(array, field),
         DataType::LargeList(field) => decimals_in_list::<i64>(array, field),
         DataType::FixedSizeList(field, size) => {
@@ -516,8 +520,8 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
 /// Arrow's JSON writers refuse decimals outright, which used to fail the read
 /// of any file carrying a money column, and they write NaN and ±Infinity as
 /// `null`, which showed a pandas NaN as a missing value. Render both as
-/// strings — exact, and distinguishable from NULL — and leave every other
-/// column alone.
+/// strings — exact, and distinguishable from NULL — print Date64 as the date
+/// it is, and leave every other column alone.
 pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
     let schema = batch.schema();
     if !schema.fields().iter().any(|f| contains_json_unsafe(f.data_type())) {
@@ -1217,6 +1221,25 @@ mod tests {
             .get_or_create_metadata(&path.to_string_lossy())
             .unwrap_err();
         assert!(err.contains("more than one column named \"id\""), "{err}");
+    }
+
+    #[tokio::test]
+    async fn date64_renders_as_a_date() {
+        let schema = Arc::new(Schema::new(vec![Field::new("d", DataType::Date64, true)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow::array::Date64Array::from(vec![Some(1_709_164_800_000), None])) as ArrayRef],
+        )
+        .unwrap();
+        let path = temp_path("date64.parquet");
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 2, None)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["d"], "2024-02-29");
     }
 
     #[test]
