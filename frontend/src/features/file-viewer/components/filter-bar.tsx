@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
+import { assertNever } from "../../../lib/exhaustive";
 
 interface FilterBarProps {
     columns: ColumnInfo[];
@@ -9,39 +10,86 @@ interface FilterBarProps {
     activeFilter: string;
 }
 
+export const FILTER_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"] as const;
+export type FilterOperator = typeof FILTER_OPERATORS[number];
+
+export function isFilterOperator(value: string): value is FilterOperator {
+    return (FILTER_OPERATORS as readonly string[]).includes(value);
+}
+
+/**
+ * How an operator uses the typed value: compared against a literal of the
+ * column's type, matched as a text pattern, or not at all.
+ */
+type OperatorForm = 'compare' | 'pattern' | 'unary';
+
+const OPERATOR_FORM = {
+    "=": 'compare',
+    "!=": 'compare',
+    ">": 'compare',
+    "<": 'compare',
+    ">=": 'compare',
+    "<=": 'compare',
+    "LIKE": 'pattern',
+    "IS NULL": 'unary',
+    "IS NOT NULL": 'unary',
+} satisfies Record<FilterOperator, OperatorForm>;
+
+export function operatorTakesValue(operator: FilterOperator): boolean {
+    return OPERATOR_FORM[operator] !== 'unary';
+}
+
 export interface FilterRow {
     id: number;
     column: string;
-    operator: string;
+    operator: FilterOperator;
     value: string;
 }
 
 /**
- * Column kinds that compare against a bare literal. Everything else — text,
- * dates, timestamps, binary — needs a quoted string literal, which
- * DataFusion coerces to the column type.
+ * How a typed value becomes the literal a column of this kind is compared
+ * with. Numbers and booleans go in bare; text keeps the value verbatim
+ * (spaces can be meaningful there); binary compares the lowercase hex the
+ * grid shows; everything else — dates, timestamps, nested values — is
+ * trimmed and quoted so DataFusion coerces it to the column type (its
+ * parsers do not trim, so a stray space from a paste would fail the filter).
  */
-const BARE_NUMERIC_KINDS: ReadonlySet<ColumnKind> = new Set(['integer', 'float', 'decimal']);
+type LiteralKind = 'number' | 'boolean' | 'text' | 'hex' | 'quoted';
+
+const KIND_LITERAL = {
+    boolean: 'boolean',
+    integer: 'number',
+    float: 'number',
+    decimal: 'number',
+    text: 'text',
+    temporal: 'quoted',
+    binary: 'hex',
+    nested: 'quoted',
+    other: 'quoted',
+} satisfies Record<ColumnKind, LiteralKind>;
 
 /** DataFusion lower-cases bare identifiers, so `MixedCase` resolves to nothing. */
 const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
-function formatLiteral(kind: ColumnKind, value: string): string {
-    // Text comparisons keep the value verbatim — spaces can be meaningful
-    // there. Everything else is parsed by DataFusion (dates, timestamps,
-    // numbers), whose parsers do not trim, so a stray space from a paste
-    // would fail the whole filter.
-    if (kind === 'text') return quoteLiteral(value);
-    const trimmed = value.trim();
+const isBooleanLiteral = (value: string) => /^(true|false)$/i.test(value);
+const isNumericLiteral = (value: string) => value !== "" && Number.isFinite(Number(value));
+
+function formatLiteral(literal: LiteralKind, value: string): string {
     // A value that does not parse still goes in quoted, so the backend
     // reports a cast error instead of "no field named abc".
-    if (kind === 'boolean' && /^(true|false)$/i.test(trimmed)) return trimmed;
-    if (BARE_NUMERIC_KINDS.has(kind) && trimmed !== "" && Number.isFinite(Number(trimmed))) {
-        return trimmed;
+    switch (literal) {
+        case 'text': return quoteLiteral(value);
+        case 'hex': return quoteLiteral(value.trim().toLowerCase());
+        case 'boolean': { const trimmed = value.trim(); return isBooleanLiteral(trimmed) ? trimmed : quoteLiteral(trimmed); }
+        case 'number': { const trimmed = value.trim(); return isNumericLiteral(trimmed) ? trimmed : quoteLiteral(trimmed); }
+        case 'quoted': return quoteLiteral(value.trim());
+        default: return assertNever(literal, 'literal kind');
     }
-    return quoteLiteral(trimmed);
 }
+
+const kindOf = (columns: ColumnInfo[], name: string): ColumnKind =>
+    columns.find(c => c.name === name)?.kind ?? 'other';
 
 /** A filter whose value can never match its column, found before it is run. */
 export interface InvalidFilterValue {
@@ -51,60 +99,74 @@ export interface InvalidFilterValue {
     expects: 'number' | 'boolean';
 }
 
+const EXPECTS_MESSAGE_KEY = {
+    number: 'viewer.filterNeedsNumber',
+    boolean: 'viewer.filterNeedsBoolean',
+} satisfies Record<InvalidFilterValue['expects'], string>;
+
+function invalidValueOf(filter: FilterRow, kind: ColumnKind): InvalidFilterValue | null {
+    if (!filter.column || OPERATOR_FORM[filter.operator] !== 'compare') return null;
+    const value = filter.value.trim();
+    if (!value) return null;
+    const literal = KIND_LITERAL[kind];
+    switch (literal) {
+        case 'number': return isNumericLiteral(value) ? null : { column: filter.column, value, expects: 'number' };
+        case 'boolean': return isBooleanLiteral(value) ? null : { column: filter.column, value, expects: 'boolean' };
+        case 'text':
+        case 'hex':
+        case 'quoted':
+            return null;
+        default: return assertNever(literal, 'literal kind');
+    }
+}
+
 /**
  * Catch values that DataFusion would silently cast to NULL — `id = 'abc'`
  * returned "0 rows" with no hint that the value was the problem.
  */
 export function findInvalidFilterValue(filters: FilterRow[], columns: ColumnInfo[]): InvalidFilterValue | null {
-    for (const filter of filters) {
-        if (!filter.column || filter.operator === 'LIKE' || filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL') continue;
-        const value = filter.value.trim();
-        if (!value) continue;
-        const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
-        if (BARE_NUMERIC_KINDS.has(kind) && !Number.isFinite(Number(value))) {
-            return { column: filter.column, value, expects: 'number' };
+    return filters
+        .map(filter => invalidValueOf(filter, kindOf(columns, filter.column)))
+        .find((problem): problem is InvalidFilterValue => problem !== null) ?? null;
+}
+
+/** The SQL condition for one row, or null for a row that is not filled in. */
+function conditionOf(filter: FilterRow, kind: ColumnKind): string | null {
+    if (!filter.column) return null;
+    const form = OPERATOR_FORM[filter.operator];
+    if (form !== 'unary' && !filter.value.trim()) return null;
+
+    const literal = KIND_LITERAL[kind];
+    // The grid shows binary as lowercase hex, so that is what gets typed
+    // back in; compare the same rendering rather than the raw bytes. The
+    // cast folds fixed-size and large binary into the one type encode()
+    // accepts.
+    const columnRef = literal === 'hex'
+        ? `encode(CAST(${quoteIdentifier(filter.column)} AS BYTEA), 'hex')`
+        : quoteIdentifier(filter.column);
+
+    switch (form) {
+        case 'unary':
+            return `${columnRef} ${filter.operator}`;
+        case 'pattern': {
+            // Patterns only apply to text, so cast anything else to keep
+            // partial matches working on numbers and dates.
+            const target = literal === 'text' || literal === 'hex' ? columnRef : `CAST(${columnRef} AS TEXT)`;
+            return `${target} ${filter.operator} ${quoteLiteral(filter.value)}`;
         }
-        if (kind === 'boolean' && !/^(true|false)$/i.test(value)) {
-            return { column: filter.column, value, expects: 'boolean' };
-        }
+        case 'compare':
+            return `${columnRef} ${filter.operator} ${formatLiteral(literal, filter.value)}`;
+        default:
+            return assertNever(form, 'operator form');
     }
-    return null;
 }
 
 /** Build the WHERE fragment the backend appends to `SELECT * FROM t`. */
 export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[]): string {
-    const conditions: string[] = [];
-
-    for (const filter of filters) {
-        if (!filter.column) continue;
-
-        const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
-        if (needsValue && !filter.value.trim()) continue;
-
-        const kind = columns.find(c => c.name === filter.column)?.kind ?? 'other';
-        // The grid shows binary as lowercase hex, so that is what gets typed
-        // back in; compare the same rendering rather than the raw bytes. The
-        // cast folds fixed-size and large binary into the one type encode()
-        // accepts.
-        const columnRef = kind === 'binary'
-            ? `encode(CAST(${quoteIdentifier(filter.column)} AS BYTEA), 'hex')`
-            : quoteIdentifier(filter.column);
-
-        if (!needsValue) {
-            conditions.push(`${columnRef} ${filter.operator}`);
-        } else if (filter.operator === "LIKE") {
-            // LIKE only applies to text, so cast anything else to keep partial
-            // matches working on numbers and dates.
-            const target = kind === 'text' || kind === 'binary' ? columnRef : `CAST(${columnRef} AS TEXT)`;
-            conditions.push(`${target} LIKE ${quoteLiteral(filter.value)}`);
-        } else if (kind === 'binary') {
-            conditions.push(`${columnRef} ${filter.operator} ${quoteLiteral(filter.value.trim().toLowerCase())}`);
-        } else {
-            conditions.push(`${columnRef} ${filter.operator} ${formatLiteral(kind, filter.value)}`);
-        }
-    }
-
-    return conditions.join(" AND ");
+    return filters
+        .map(filter => conditionOf(filter, kindOf(columns, filter.column)))
+        .filter((condition): condition is string => condition !== null)
+        .join(" AND ");
 }
 
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
@@ -149,8 +211,8 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
         }
     };
 
-    const handleChange = (id: number, field: keyof FilterRow, newValue: string) => {
-        setFilters(filters.map(f => (f.id === id ? { ...f, [field]: newValue } : f)));
+    const handleChange = (id: number, patch: Partial<Omit<FilterRow, 'id'>>) => {
+        setFilters(filters.map(f => (f.id === id ? { ...f, ...patch } : f)));
     };
 
     const handleClear = () => {
@@ -170,13 +232,11 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
     const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
-    const operators = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"];
-
     return (
         <div className="px-6 py-2 border-t flex flex-col gap-2 border-slate-200 bg-slate-50 dark:border-gray-700 dark:bg-gray-800/50">
             <form onSubmit={handleSubmit}>
                 {filters.map((filter, index) => {
-                    const needsValue = filter.operator !== "IS NULL" && filter.operator !== "IS NOT NULL";
+                    const needsValue = operatorTakesValue(filter.operator);
 
                     return (
                         <div key={filter.id} className="flex items-center gap-2 mb-2 last:mb-0">
@@ -196,7 +256,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             {/* Column Selector */}
                             <select
                                 value={filter.column}
-                                onChange={(e) => handleChange(filter.id, "column", e.target.value)}
+                                onChange={(e) => handleChange(filter.id, { column: e.target.value })}
                                 className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
                             >
                                 {columns.map(col => (
@@ -207,10 +267,13 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             {/* Operator Selector */}
                             <select
                                 value={filter.operator}
-                                onChange={(e) => handleChange(filter.id, "operator", e.target.value)}
+                                onChange={(e) => {
+                                    const operator = e.target.value;
+                                    if (isFilterOperator(operator)) handleChange(filter.id, { operator });
+                                }}
                                 className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 w-24 ${inputBg}`}
                             >
-                                {operators.map(op => (
+                                {FILTER_OPERATORS.map(op => (
                                     <option key={op} value={op}>{op}</option>
                                 ))}
                             </select>
@@ -219,7 +282,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             <input
                                 type="text"
                                 value={filter.value}
-                                onChange={(e) => handleChange(filter.id, "value", e.target.value)}
+                                onChange={(e) => handleChange(filter.id, { value: e.target.value })}
                                 disabled={!needsValue}
                                 placeholder={!needsValue ? "" : t('viewer.filterValuePlaceholder', { defaultValue: 'Value' })}
                                 className={`flex-1 px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -240,7 +303,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
 
                 {invalid && (
                     <p className="mt-1 pl-[80px] text-xs text-red-600 dark:text-red-400" role="alert">
-                        {t(invalid.expects === 'number' ? 'viewer.filterNeedsNumber' : 'viewer.filterNeedsBoolean', {
+                        {t(EXPECTS_MESSAGE_KEY[invalid.expects], {
                             column: invalid.column,
                             value: invalid.value,
                         })}
