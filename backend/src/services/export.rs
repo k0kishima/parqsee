@@ -3,11 +3,10 @@ use arrow::csv::WriterBuilder as CsvWriterBuilder;
 use arrow::json::ArrayWriter as JsonArrayWriter;
 use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::services::parquet::{json_unsafe_to_strings, nested_to_json_strings, ParquetCache};
+use crate::services::parquet::{json_unsafe_to_strings, nested_to_json_strings, range_reader, ParquetCache};
 
 /// Rows are decoded and written one batch at a time, so exports run in
 /// constant memory regardless of how many rows are exported, and the
@@ -139,7 +138,7 @@ pub async fn export_data(
 }
 
 /// Unfiltered: read straight from the parquet reader with the range pushed
-/// down, so a deep offset skips row groups instead of decoding past them.
+/// down (`range_reader`), the same path the grid's unfiltered pages take.
 fn export_range(
     source_path: &str,
     offset: Option<usize>,
@@ -147,20 +146,7 @@ fn export_range(
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let file = File::open(source_path).map_err(|e| format!("Cannot open {}: {}", source_path, e))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| format!("Failed to open parquet file: {}", e))?;
-
-    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
-    let offset = offset.unwrap_or(0).min(total_rows);
-    let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
-
-    let reader = builder
-        .with_batch_size(EXPORT_BATCH_SIZE)
-        .with_offset(offset)
-        .with_limit(limit)
-        .build()
-        .map_err(|e| format!("Failed to read parquet file: {}", e))?;
+    let reader = range_reader(source_path, offset, limit, EXPORT_BATCH_SIZE)?;
 
     let mut writer = RowWriter::create(format, staging_path)?;
     let mut rows_written = 0usize;
