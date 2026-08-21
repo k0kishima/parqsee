@@ -341,39 +341,42 @@ pub fn range_reader(
 
 fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     let reader = open_file_reader(path)?;
+    let file_metadata = reader.metadata().file_metadata();
+    metadata_from_schema(file_metadata.schema(), file_metadata.num_rows())
+}
 
-    let metadata = reader.metadata();
-    let schema = metadata.file_metadata().schema();
+/// Describe one top-level schema field the way the column header shows it.
+fn column_info(field: &parquet::schema::types::Type) -> ColumnInfo {
+    let physical_type = if field.is_primitive() {
+        format!("{:?}", field.get_physical_type())
+    } else {
+        group_type_to_string(field)
+    };
+    let basic_info = field.get_basic_info();
+    let logical_type = match (basic_info.logical_type_ref(), basic_info.converted_type()) {
+        (Some(lt), _) => Some(logical_type_to_string(lt)),
+        (None, parquet::basic::ConvertedType::NONE) => None,
+        (None, converted) => Some(converted_type_to_string(converted)),
+    };
 
-    let columns: Vec<ColumnInfo> = schema
-        .get_fields()
-        .iter()
-        .map(|field| {
-            let physical_type = if field.is_primitive() {
-                format!("{:?}", field.get_physical_type())
-            } else {
-                group_type_to_string(field)
-            };
-            let logical_type = if let Some(lt) = field.get_basic_info().logical_type_ref() {
-                Some(logical_type_to_string(lt))
-            } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE
-            {
-                Some(converted_type_to_string(field.get_basic_info().converted_type()))
-            } else {
-                None
-            };
+    ColumnInfo {
+        name: field.name().to_string(),
+        column_type: logical_type
+            .clone()
+            .unwrap_or_else(|| physical_type.clone()),
+        kind: column_kind(field),
+        logical_type,
+        physical_type,
+    }
+}
 
-            ColumnInfo {
-                name: field.name().to_string(),
-                column_type: logical_type
-                    .clone()
-                    .unwrap_or_else(|| physical_type.clone()),
-                kind: column_kind(field),
-                logical_type,
-                physical_type,
-            }
-        })
-        .collect();
+/// The metadata the webview shows for a file with this root schema and row
+/// count. Pure: `compute_metadata` reads them from the file.
+fn metadata_from_schema(
+    schema: &parquet::schema::types::Type,
+    num_rows: i64,
+) -> Result<ParquetMetadata, String> {
+    let columns: Vec<ColumnInfo> = schema.get_fields().iter().map(|f| column_info(f)).collect();
 
     // DataFusion cannot register a schema with duplicate field names, so every
     // read would fail after the tab had already opened. Refuse up front, with
@@ -387,7 +390,7 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     }
 
     Ok(ParquetMetadata {
-        num_rows: metadata.file_metadata().num_rows(),
+        num_rows,
         num_columns: columns.len(),
         columns,
     })
@@ -1604,6 +1607,51 @@ mod tests {
 
     fn rows(batches: &[RecordBatch]) -> usize {
         batches.iter().map(|b| b.num_rows()).sum()
+    }
+
+    #[test]
+    fn metadata_is_derived_from_the_schema_alone() {
+        use parquet::basic::{LogicalType, Repetition, Type as PhysicalType};
+        use parquet::schema::types::Type;
+
+        let primitive = |name: &str, physical, logical: Option<LogicalType>| {
+            Type::primitive_type_builder(name, physical)
+                .with_repetition(Repetition::OPTIONAL)
+                .with_logical_type(logical)
+                .build()
+                .unwrap()
+        };
+        let root = |fields: Vec<Type>| {
+            Type::group_type_builder("schema")
+                .with_fields(fields.into_iter().map(Arc::new).collect())
+                .build()
+                .unwrap()
+        };
+
+        let meta = super::metadata_from_schema(
+            &root(vec![
+                primitive("id", PhysicalType::INT64, None),
+                primitive("name", PhysicalType::BYTE_ARRAY, Some(LogicalType::String)),
+            ]),
+            7,
+        )
+        .unwrap();
+        assert_eq!(meta.num_rows, 7);
+        assert_eq!(meta.num_columns, 2);
+        assert_eq!(meta.columns[0].column_type, "INT64");
+        assert_eq!(meta.columns[0].kind, ColumnKind::Integer);
+        assert_eq!(meta.columns[1].column_type, "STRING");
+        assert_eq!(meta.columns[1].physical_type, "BYTE_ARRAY");
+
+        let err = super::metadata_from_schema(
+            &root(vec![
+                primitive("id", PhysicalType::INT64, None),
+                primitive("id", PhysicalType::INT32, None),
+            ]),
+            0,
+        )
+        .unwrap_err();
+        assert!(err.contains("more than one column named \"id\""), "{err}");
     }
 
     #[test]
