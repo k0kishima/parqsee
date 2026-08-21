@@ -52,7 +52,7 @@ fn file_entry(entry: io::Result<DirEntry>) -> Result<FileEntry, String> {
     let is_directory = metadata.is_dir();
     Ok(FileEntry {
         is_parquet: !is_directory && has_parquet_extension(&path),
-        size: (!is_directory).then(|| metadata.len()),
+        size: (!is_directory).then_some(metadata.len()),
         path,
         name: entry.file_name().to_string_lossy().into_owned(),
         is_directory,
