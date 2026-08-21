@@ -29,10 +29,11 @@ impl ParquetCache {
     /// # Single-partition execution — a deliberate trade-off
     ///
     /// Sessions are created with `target_partitions = 1`, so **everything that
-    /// runs through this context — paged reads, filtered exports, and the SQL
-    /// view — executes single-threaded.**
+    /// runs through this context — filtered paged reads, filtered exports, and
+    /// the SQL view — executes single-threaded.** (Unfiltered pages and
+    /// exports bypass the session: see `range_reader`.)
     ///
-    /// Why: the browse grid and the filtered export page with `LIMIT`/`OFFSET`
+    /// Why: the filtered grid and the filtered export page with `LIMIT`/`OFFSET`
     /// and no `ORDER BY` (the file has no sort key to order by). With parallel
     /// partitions DataFusion merges results in arrival order, so the same
     /// offset could return different rows on different executions — pages
