@@ -1,4 +1,5 @@
 use arrow::record_batch::RecordBatch;
+use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -28,10 +29,11 @@ impl ParquetCache {
     /// # Single-partition execution — a deliberate trade-off
     ///
     /// Sessions are created with `target_partitions = 1`, so **everything that
-    /// runs through this context — paged reads, filtered exports, and the SQL
-    /// view — executes single-threaded.**
+    /// runs through this context — filtered paged reads, filtered exports, and
+    /// the SQL view — executes single-threaded.** (Unfiltered pages and
+    /// exports bypass the session: see `range_reader`.)
     ///
-    /// Why: the browse grid and the filtered export page with `LIMIT`/`OFFSET`
+    /// Why: the filtered grid and the filtered export page with `LIMIT`/`OFFSET`
     /// and no `ORDER BY` (the file has no sort key to order by). With parallel
     /// partitions DataFusion merges results in arrival order, so the same
     /// offset could return different rows on different executions — pages
@@ -304,6 +306,35 @@ fn column_kind(field: &parquet::schema::types::Type) -> ColumnKind {
 pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String> {
     let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
     SerializedFileReader::new(file).map_err(|e| e.to_string())
+}
+
+/// A batch reader over `[offset, offset + limit)` of the file's rows, in file
+/// order. The range is pushed into the parquet reader, which skips whole row
+/// groups by their row counts instead of decoding everything before `offset`
+/// — the difference between 160 ms and 2.5 s for the last page of a 58M-row
+/// file. The range is clamped to the file, so a page past the end is empty
+/// rather than an error. Shared by unfiltered page reads and exports; the
+/// filtered variants go through DataFusion (`build_page_query`) instead.
+pub fn range_reader(
+    path: &str,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    batch_size: usize,
+) -> Result<ParquetRecordBatchReader, String> {
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+
+    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
+    let offset = offset.unwrap_or(0).min(total_rows);
+    let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
+
+    builder
+        .with_batch_size(batch_size.max(1))
+        .with_offset(offset)
+        .with_limit(limit)
+        .build()
+        .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))
 }
 
 fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
@@ -713,6 +744,13 @@ pub fn build_page_query(
     query
 }
 
+/// One page of rows. Without a filter the page comes straight from the
+/// parquet reader with the range pushed down (see `range_reader`); a
+/// `LIMIT/OFFSET` query would decode every row before the page, so the last
+/// page of a large file took seconds in release and a minute in debug. With
+/// a filter the page is the DataFusion query the filtered export shares, so
+/// what is exported is what the grid shows. Both read row groups in file
+/// order, so the two paths paginate the same sequence.
 pub async fn read_data(
     cache: &ParquetCache,
     path: &str,
@@ -720,9 +758,24 @@ pub async fn read_data(
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<Value>, String> {
-    let query = build_page_query(filter.as_deref(), Some(offset), Some(limit));
-
-    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    let batches = match where_clause(filter.as_deref()) {
+        Some(_) => {
+            let query = build_page_query(filter.as_deref(), Some(offset), Some(limit));
+            execute_sql_with_cache(cache, path, &query).await?.0
+        }
+        None => {
+            // Decoding is CPU-bound; keep it off the async workers so other
+            // commands (a count, another tab's page) are not stalled behind it.
+            let path = path.to_string();
+            tokio::task::spawn_blocking(move || {
+                range_reader(&path, Some(offset), Some(limit), limit)?
+                    .map(|b| b.map_err(|e| format!("Failed to read parquet file {}: {}", path, e)))
+                    .collect::<Result<Vec<RecordBatch>, String>>()
+            })
+            .await
+            .map_err(|e| format!("Page read task failed: {}", e))??
+        }
+    };
 
     batches_to_rows(&batches)
 }
@@ -1205,6 +1258,113 @@ mod tests {
             assert_eq!(rows.len(), expected, "{filter}");
             assert_eq!(super::count_data(&cache, &file, Some(filter.to_string())).await.unwrap(), expected, "{filter}");
         }
+    }
+
+    /// What a cell shows: the grid prints numbers and strings alike with
+    /// `String(value)`, and a float column is handed over as strings whenever
+    /// its batch holds a NaN (`non_finite_floats_as_strings`), so two paths
+    /// that cut batches differently can only be compared by rendered text.
+    fn rendered(rows: &[serde_json::Value]) -> Vec<Vec<(String, String)>> {
+        rows.iter()
+            .map(|row| {
+                row.as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, value)| {
+                        let text = match value {
+                            serde_json::Value::Null => "NULL".to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => {
+                                let f = n.as_f64().unwrap();
+                                if f.fract() == 0.0 { format!("{}", f as i64) } else { f.to_string() }
+                            }
+                            other => other.to_string(),
+                        };
+                        (name.clone(), text)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Unfiltered pages come from the parquet reader, filtered ones from
+    /// DataFusion; the grid must not change shape or order when a filter is
+    /// added, so both paths must paginate the same sequence identically —
+    /// across row-group boundaries, at the tail, and past the end.
+    #[tokio::test]
+    async fn unfiltered_pages_match_the_sql_path() {
+        use arrow::array::{BooleanArray, Float64Array, TimestampMillisecondArray};
+        use parquet::file::properties::WriterProperties;
+
+        let n: usize = 10;
+        let mut tags = ListBuilder::new(Int32Builder::new());
+        for i in 0..n as i32 {
+            tags.values().append_value(i);
+            tags.values().append_value(i * 10);
+            tags.append(true);
+        }
+        let tags = tags.finish();
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("x", DataType::Float64, true),
+            Field::new("ts", DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None), true),
+            Field::new("amount", DataType::Decimal128(12, 3), true),
+            Field::new("ok", DataType::Boolean, true),
+            Field::new("tags", tags.data_type().clone(), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from((0..n as i64).collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| if i % 3 == 0 { None } else { Some(format!("row {i}")) }).collect::<Vec<_>>(),
+                )),
+                Arc::new(Float64Array::from(
+                    (0..n).map(|i| if i == 4 { f64::NAN } else { i as f64 / 4.0 }).collect::<Vec<_>>(),
+                )),
+                Arc::new(TimestampMillisecondArray::from(
+                    (0..n).map(|i| Some(1_700_000_000_000 + i as i64 * 3_600_000)).collect::<Vec<_>>(),
+                )),
+                Arc::new(
+                    Decimal128Array::from((0..n).map(|i| Some(i as i128 * 1_001)).collect::<Vec<_>>())
+                        .with_precision_and_scale(12, 3)
+                        .unwrap(),
+                ),
+                Arc::new(BooleanArray::from(
+                    (0..n).map(|i| if i % 4 == 0 { None } else { Some(i % 2 == 0) }).collect::<Vec<_>>(),
+                )),
+                Arc::new(tags),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("pages.parquet");
+        let props = WriterProperties::builder().set_max_row_group_row_count(Some(4)).build();
+        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        // (offset, limit): inside one row group, across a boundary, the tail
+        // clipped by the end, an empty page past the end, and everything.
+        for (offset, limit) in [(0, 3), (2, 5), (8, 5), (10, 5), (42, 1), (0, 100)] {
+            let direct = super::read_data(&cache, &file, offset, limit, None).await.unwrap();
+            let via_sql = super::read_data(&cache, &file, offset, limit, Some("1 = 1".into()))
+                .await
+                .unwrap();
+            assert_eq!(rendered(&direct), rendered(&via_sql), "offset {offset} limit {limit}");
+            let expected = n.saturating_sub(offset).min(limit);
+            assert_eq!(direct.len(), expected, "offset {offset} limit {limit}");
+            if let Some(first) = direct.first() {
+                assert_eq!(first["id"], serde_json::json!(offset as i64));
+            }
+        }
+        // Spot-check the JSON-unsafe values survived the direct path too.
+        let all = super::read_data(&cache, &file, 0, n, None).await.unwrap();
+        assert_eq!(all[4]["x"], serde_json::json!("NaN"));
+        assert_eq!(all[1]["amount"], serde_json::json!("1.001"));
+        assert_eq!(all[0]["name"], serde_json::Value::Null);
     }
 
     #[test]

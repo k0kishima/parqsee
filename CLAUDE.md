@@ -146,12 +146,19 @@ key equivalent beats the webview's keydown handler.
    (reproduced on both 40 and 54).
    Because the session is shared with the SQL view, `execute_sql_limited`
    plans first and refuses anything that would mutate it.
-   Sessions run with `target_partitions = 1` — a deliberate trade-off: paged
-   reads and exports use `LIMIT`/`OFFSET` with no `ORDER BY`, and only
-   single-partition scans keep their row order deterministic (see the rustdoc
-   on `get_or_create_session`). The SQL view runs single-threaded as a result;
-   don't revert this for speed without splitting paging and querying into
-   separate sessions.
+   Sessions run with `target_partitions = 1` — a deliberate trade-off: filtered
+   paged reads and filtered exports use `LIMIT`/`OFFSET` with no `ORDER BY`, and
+   only single-partition scans keep their row order deterministic (see the
+   rustdoc on `get_or_create_session`). The SQL view runs single-threaded as a
+   result; don't revert this for speed without splitting paging and querying
+   into separate sessions.
+   Unfiltered pages do not go through DataFusion at all: `read_data` reads them
+   with `range_reader`, the parquet Arrow reader with offset/limit pushed down,
+   which skips whole row groups by their row counts. A `LIMIT`/`OFFSET` query
+   decodes every row before the page — the last page of a 58M-row file took
+   2.5 s in release and a minute in debug. Both paths read row groups in file
+   order, so adding a filter never reorders the grid
+   (`unfiltered_pages_match_the_sql_path` pins this).
 4. In the SQL view and in filters, the open file is always registered as table `t`.
 5. Settings and recent files are persisted in `localStorage`. `lib/settings-storage.ts`
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`
@@ -171,9 +178,9 @@ key equivalent beats the webview's keydown handler.
    compatible with this (no DOM lookups of off-screen cells).
 8. Exports stream RecordBatches straight into arrow's CSV/JSON writers —
    constant memory; don't buffer whole files. Without a filter they come from
-   the parquet Arrow reader with offset/limit pushed down; with one they are
-   streamed out of DataFusion so the exported range matches what the grid
-   shows.
+   `range_reader` (the parquet Arrow reader with offset/limit pushed down, the
+   same path unfiltered pages take); with one they are streamed out of
+   DataFusion so the exported range matches what the grid shows.
 9. Arrow's JSON writers reject decimals and write NaN/±Infinity as `null`, and
    the webview parses the IPC payload with JS number semantics.
    `batches_to_rows` (`services/parquet.rs`) is the one choke point that renders
