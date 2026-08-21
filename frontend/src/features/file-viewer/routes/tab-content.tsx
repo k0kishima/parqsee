@@ -40,18 +40,17 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // outgoing and the incoming tab.
   const onCloseRef = useRef(onClose);
   const onStateChangeRef = useRef(onStateChange);
-  const savedStateRef = useRef(savedState);
   useEffect(() => {
     onCloseRef.current = onClose;
     onStateChangeRef.current = onStateChange;
-    savedStateRef.current = savedState;
   });
   // The viewer only reads its initial state on mount.
   const [viewerInitialState] = useState(() => savedState);
   const handleClose = useCallback(() => onCloseRef.current(), []);
+  // The workspace merges patches, so the viewer's fields go up as they are
+  // and never carry a stale copy of the view mode with them.
   const handleViewerStateChange = useCallback((state: TabState) => {
-    // Merge with existing state to preserve viewMode
-    onStateChangeRef.current?.({ ...savedStateRef.current, ...state });
+    onStateChangeRef.current?.(state);
   }, []);
 
   // Local state if onStateChange is not provided (though it should be)
@@ -67,12 +66,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
 
   const handleViewModeChange = (mode: 'browse' | 'query') => {
     setLocalViewMode(mode);
-    if (onStateChange) {
-      onStateChange({
-        ...savedState,
-        viewMode: mode
-      });
-    }
+    onStateChange?.({ viewMode: mode });
   };
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import { X, FileText } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
 
 interface TabBarProps {
-  tabs: Tab[];
+  tabs: readonly Tab[];
   activeTabId: string | null;
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
@@ -73,17 +73,13 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
 
 // Memoize TabBar to prevent unnecessary re-renders
 export const TabBar = React.memo(TabBarComponent, (prevProps, nextProps) => {
-  // Deep comparison for tabs array
-  if (prevProps.tabs.length !== nextProps.tabs.length) return false;
-  if (prevProps.activeTabId !== nextProps.activeTabId) return false;
-
-  // Check if tabs content changed
-  for (let i = 0; i < prevProps.tabs.length; i++) {
-    if (prevProps.tabs[i].id !== nextProps.tabs[i].id ||
-      prevProps.tabs[i].name !== nextProps.tabs[i].name) {
-      return false;
-    }
-  }
-
-  return true;
+  // Equal when the tab list reads the same and the handlers are the same —
+  // skipping the handlers kept a stale onTabClose alive across renders.
+  return (
+    prevProps.activeTabId === nextProps.activeTabId &&
+    prevProps.onTabSelect === nextProps.onTabSelect &&
+    prevProps.onTabClose === nextProps.onTabClose &&
+    prevProps.tabs.length === nextProps.tabs.length &&
+    prevProps.tabs.every((tab, i) => tab.id === nextProps.tabs[i].id && tab.name === nextProps.tabs[i].name)
+  );
 });
