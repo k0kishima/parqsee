@@ -4,13 +4,7 @@ import type { TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
-
-export interface SearchMatch {
-  /** -1 for a column header match. */
-  rowIndex: number;
-  colIndex: number;
-  value: string;
-}
+import { SearchMatch, indexOfTerm } from '../lib/search';
 
 interface DataTableProps {
   columns: ColumnInfo[];
@@ -47,8 +41,7 @@ export function formatTypeLabel(col: ColumnInfo, typeDisplay: TypeDisplay): stri
 
 /** Wrap the first case-insensitive occurrence of the search term in a highlight. */
 function highlight(text: string, searchTerm: string): React.ReactNode {
-  if (!searchTerm || !text) return text;
-  const index = text.toLowerCase().indexOf(searchTerm.toLowerCase());
+  const index = indexOfTerm(text, searchTerm);
   if (index === -1) return text;
   return (
     <>
@@ -85,8 +78,6 @@ const DataRow = React.memo(function DataRow({
   activeMatchCol,
   onSelect,
 }: DataRowProps) {
-  const lowerSearchTerm = searchTerm.toLowerCase();
-
   return (
     <tr
       onClick={() => onSelect(rowIndex)}
@@ -102,7 +93,7 @@ const DataRow = React.memo(function DataRow({
       {padLeft > 0 && <td aria-hidden="true" />}
       {visibleColumns.map(({ index, name, mayTruncate }) => {
         const cellValueStr = formatCellValue(row[name]);
-        const hasSearchMatch = Boolean(searchTerm && cellValueStr && cellValueStr.toLowerCase().includes(lowerSearchTerm));
+        const hasSearchMatch = cellValueStr !== null && indexOfTerm(cellValueStr, searchTerm) !== -1;
 
         return (
           <td
