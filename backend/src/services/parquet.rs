@@ -325,7 +325,9 @@ pub fn range_reader(
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)
         .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
 
-    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
+    let num_rows = builder.metadata().file_metadata().num_rows();
+    let total_rows = usize::try_from(num_rows)
+        .map_err(|_| format!("Failed to read parquet file {}: invalid row count {}", path, num_rows))?;
     let offset = offset.unwrap_or(0).min(total_rows);
     let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
 
@@ -869,25 +871,21 @@ pub async fn count_data(
     };
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    count_from_batches(&batches)
+}
 
-    if batches.is_empty() {
+/// The single value of a `SELECT COUNT(*)` result; an empty result counts as 0.
+fn count_from_batches(batches: &[RecordBatch]) -> Result<usize, String> {
+    let Some(batch) = batches.iter().find(|b| b.num_rows() > 0) else {
         return Ok(0);
-    }
-
-    // Extract count from the first batch
-    let batch = &batches[0];
-    if batch.num_rows() == 0 {
-        return Ok(0);
-    }
-
-    let column = batch.column(0);
-    let count = column
+    };
+    let count = batch
+        .column(0)
         .as_any()
         .downcast_ref::<arrow::array::Int64Array>()
         .ok_or_else(|| "Failed to downcast count result".to_string())?
         .value(0);
-
-    Ok(count as usize)
+    usize::try_from(count).map_err(|_| format!("Invalid row count: {}", count))
 }
 
 pub async fn execute_sql_with_cache(
@@ -1606,6 +1604,20 @@ mod tests {
 
     fn rows(batches: &[RecordBatch]) -> usize {
         batches.iter().map(|b| b.num_rows()).sum()
+    }
+
+    #[test]
+    fn count_is_read_from_the_first_non_empty_batch() {
+        use arrow::array::Int64Array;
+        let schema = Arc::new(Schema::new(vec![Field::new("c", DataType::Int64, false)]));
+        let count = |values: Vec<i64>| {
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(values))]).unwrap()
+        };
+        assert_eq!(super::count_from_batches(&[]).unwrap(), 0);
+        assert_eq!(super::count_from_batches(&[count(vec![])]).unwrap(), 0);
+        assert_eq!(super::count_from_batches(&[count(vec![]), count(vec![42])]).unwrap(), 42);
+        assert!(super::count_from_batches(&[count(vec![-1])]).is_err());
+        assert!(super::count_from_batches(&[batch(1)]).is_err(), "an Int32 column is not a count");
     }
 
     #[test]
