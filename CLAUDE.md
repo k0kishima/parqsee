@@ -67,7 +67,10 @@ parqsee/
 │   └── MANUAL_QA.md              # Shell-dependent checks to run on the release app
 └── scripts/
     ├── apply_squircle.py         # Icon post-processing
-    └── qa/                       # Fixture generators for docs/MANUAL_QA.md (uv run)
+    └── qa/
+        ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
+        ├── gen_huge.py
+        └── e2e/                  # Playwright WebKit suite against the real backend (see README)
 ```
 
 ### Feature modules
@@ -202,6 +205,13 @@ extension matching in `commands/file.rs`, file registration edge cases
 (uppercase extensions, glob characters, 64-bit limits, duplicate columns),
 webview rendering of decimals / big integers / NaN, the read-only SQL view,
 result truncation and export.
+`scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
+drives the Vite dev server against the real backend through
+`backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same
+service functions the commands call). Run it after backend or frontend
+changes that touch paging, filters, export, the explorer or the SQL view —
+see its README for setup (`cargo build --example bridge`, `pnpm dev`,
+`pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
 window/appearance, recent-files persistence, Gatekeeper — is listed in
