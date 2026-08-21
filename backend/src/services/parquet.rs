@@ -945,15 +945,15 @@ pub async fn execute_sql_limited(
             .map_err(|e| format!("Failed to limit results: {}", e))?;
     }
 
-    let mut batches = df
+    let batches = df
         .collect()
         .await
         .map_err(|e| format!("Failed to collect results: {}", e))?;
 
-    let mut truncated = false;
-    if let Some(max) = max_rows {
-        truncated = truncate_batches(&mut batches, max);
-    }
+    let (batches, truncated) = match max_rows {
+        Some(max) => truncate_batches(batches, max),
+        None => (batches, false),
+    };
 
     Ok((batches, schema, truncated))
 }
@@ -976,26 +976,24 @@ fn reject_non_query(plan: &datafusion::logical_expr::LogicalPlan) -> Result<(), 
     ))
 }
 
-/// Drop rows past `max` across `batches`; returns true if anything was dropped.
-fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
+/// The first `max` rows of `batches`, and whether anything was dropped.
+fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>, bool) {
     let total: usize = batches.iter().map(|b| b.num_rows()).sum();
     if total <= max {
-        return false;
+        return (batches, false);
     }
-    let mut remaining = max;
-    let mut keep = 0;
-    for batch in batches.iter_mut() {
-        if remaining == 0 {
-            break;
-        }
-        if batch.num_rows() > remaining {
-            *batch = batch.slice(0, remaining);
-        }
-        remaining -= batch.num_rows();
-        keep += 1;
-    }
-    batches.truncate(keep);
-    true
+    let kept = batches
+        .into_iter()
+        .scan(max, |remaining, batch| {
+            if *remaining == 0 {
+                return None;
+            }
+            let take = batch.num_rows().min(*remaining);
+            *remaining -= take;
+            Some(if take == batch.num_rows() { batch } else { batch.slice(0, take) })
+        })
+        .collect();
+    (kept, true)
 }
 
 #[cfg(test)]
@@ -1612,17 +1610,18 @@ mod tests {
 
     #[test]
     fn keeps_results_within_the_limit() {
-        let mut batches = vec![batch(3), batch(4)];
-        assert!(!truncate_batches(&mut batches, 7));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4)], 7);
+        assert!(!truncated);
         assert_eq!(rows(&batches), 7);
-        assert!(!truncate_batches(&mut batches, 100));
+        let (batches, truncated) = truncate_batches(batches, 100);
+        assert!(!truncated);
         assert_eq!(batches.len(), 2);
     }
 
     #[test]
     fn cuts_inside_a_batch_and_drops_the_rest() {
-        let mut batches = vec![batch(3), batch(4), batch(5)];
-        assert!(truncate_batches(&mut batches, 5));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4), batch(5)], 5);
+        assert!(truncated);
         assert_eq!(batches.len(), 2);
         assert_eq!(rows(&batches), 5);
         assert_eq!(batches[1].num_rows(), 2);
@@ -1630,16 +1629,16 @@ mod tests {
 
     #[test]
     fn cuts_exactly_on_a_batch_boundary() {
-        let mut batches = vec![batch(3), batch(4)];
-        assert!(truncate_batches(&mut batches, 3));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4)], 3);
+        assert!(truncated);
         assert_eq!(batches.len(), 1);
         assert_eq!(rows(&batches), 3);
     }
 
     #[test]
     fn zero_limit_drops_everything() {
-        let mut batches = vec![batch(3)];
-        assert!(truncate_batches(&mut batches, 0));
+        let (batches, truncated) = truncate_batches(vec![batch(3)], 0);
+        assert!(truncated);
         assert!(batches.is_empty());
     }
 }
