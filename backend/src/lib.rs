@@ -81,7 +81,9 @@ pub fn run() {
             {
                 app.set_menu(build_menu(app)?)?;
                 app.on_menu_event(|app, event| {
-                    let _ = app.emit("menu", event.id().0.clone());
+                    if let Err(e) = app.emit("menu", event.id().0.clone()) {
+                        eprintln!("failed to forward menu event {}: {}", event.id().0, e);
+                    }
                 });
             }
             Ok(())
@@ -98,12 +100,13 @@ pub fn run() {
             commands::query::execute_sql
         ])
         .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
-                    // Send event to frontend
-                    window.emit("file-drop", paths).unwrap();
+            // Forward the drop to the frontend. This callback runs outside
+            // `commands::guarded`, so a panic here would unwind through the
+            // event loop; report a failed emit instead.
+            if let tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                if let Err(e) = window.emit("file-drop", paths) {
+                    eprintln!("failed to forward dropped files: {}", e);
                 }
-                _ => {}
             }
         })
         .run(tauri::generate_context!())
