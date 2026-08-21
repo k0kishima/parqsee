@@ -19,6 +19,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 MARKER = ".parqsee-fixtures"
+# Seeded so the files — and the row counts the e2e suite asserts — are the
+# same on every machine.
+random.seed(20250820)
 OUT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "fixtures"))
 if os.path.exists(OUT):
     if not os.path.exists(os.path.join(OUT, MARKER)):

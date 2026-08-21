@@ -4,8 +4,8 @@ The checks below are the ones the automated suites cannot make: they depend
 on the macOS shell around the webview — native menus, Finder, the clipboard,
 `alert()`, window management, code signing. Everything else (file parsing,
 paging, filters, the SQL view, export, the explorer) is covered by
-`cargo test --lib`, Vitest, and the WebKit end-to-end harness; do not re-check
-those by hand.
+`cargo test --lib`, Vitest, and the end-to-end suite in `scripts/qa/e2e/`;
+do not re-check those by hand.
 
 ## When to run
 
@@ -145,7 +145,7 @@ Notes: <anything that differed from Expected, with what happened>
 ## Candidates to automate
 
 Behaviour that has only been verified by hand so far but does not depend on
-the shell, so it belongs in the harness rather than here:
+the shell, so it belongs in `scripts/qa/e2e/suite.mjs` rather than here:
 
 - Refresh after the open file was deleted or replaced on disk shows the
   error state ("Error Loading File" with the backend message) instead of

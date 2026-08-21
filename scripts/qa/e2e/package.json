@@ -1,0 +1,14 @@
+{
+  "name": "parqsee-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright WebKit harness driving the Parqsee UI against the real Rust backend",
+  "scripts": {
+    "smoke": "node smoke.mjs",
+    "suite": "node suite.mjs",
+    "large-file": "node large-file.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

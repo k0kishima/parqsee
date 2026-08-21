@@ -33,33 +33,33 @@ pub async fn execute_sql(
     file_path: String,
     query: String,
 ) -> Result<QueryResult, String> {
-    guarded("The query", async {
-        let start = std::time::Instant::now();
+    guarded("The query", run_query(&cache, &file_path, &query)).await
+}
 
-        let (batches, schema, truncated) =
-            execute_sql_limited(&cache, &file_path, &query, Some(MAX_QUERY_ROWS)).await?;
+/// The SQL view's query, minus the Tauri plumbing, so the E2E bridge
+/// (`examples/bridge.rs`) runs exactly what the command runs.
+pub async fn run_query(cache: &ParquetCache, file_path: &str, query: &str) -> Result<QueryResult, String> {
+    let start = std::time::Instant::now();
 
-        // Get column info from schema
-        let columns: Vec<QueryColumn> = schema
-            .fields()
-            .iter()
-            .map(|f| QueryColumn {
-                name: f.name().clone(),
-                data_type: f.data_type().to_string(),
-            })
-            .collect();
+    let (batches, schema, truncated) =
+        execute_sql_limited(cache, file_path, query, Some(MAX_QUERY_ROWS)).await?;
 
-        let rows = batches_to_rows(&batches)?;
-
-        let duration = start.elapsed().as_millis();
-
-        Ok(QueryResult {
-            columns,
-            rows,
-            execution_time_ms: duration,
-            truncated,
-            max_rows: MAX_QUERY_ROWS,
+    let columns: Vec<QueryColumn> = schema
+        .fields()
+        .iter()
+        .map(|f| QueryColumn {
+            name: f.name().clone(),
+            data_type: f.data_type().to_string(),
         })
+        .collect();
+
+    let rows = batches_to_rows(&batches)?;
+
+    Ok(QueryResult {
+        columns,
+        rows,
+        execution_time_ms: start.elapsed().as_millis(),
+        truncated,
+        max_rows: MAX_QUERY_ROWS,
     })
-    .await
 }
