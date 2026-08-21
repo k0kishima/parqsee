@@ -7,7 +7,8 @@
     uv run scripts/qa/gen_fixtures.py [OUT_DIR]
 
 OUT_DIR defaults to scripts/qa/fixtures (git-ignored). The directory is wiped
-and rebuilt, so it refuses any existing directory it did not create itself.
+and rebuilt, so it refuses any existing directory it did not create itself;
+huge.parquet (from gen_huge.py) is kept across rebuilds.
 Families: numeric (incl. 64-bit limits and decimal256), NaN/Inf, temporal,
 text/binary, nested, odd and duplicate column names, empty/wide/multi-row-group
 shapes, corrupt files, and a `paths/` tree of hostile names (glob characters,
@@ -19,6 +20,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 MARKER = ".parqsee-fixtures"
+# gen_huge.py's output: gigabytes, and a minute of disk churn to recreate.
+KEEP = {"huge.parquet"}
 # Seeded so the files — and the row counts the e2e suite asserts — are the
 # same on every machine.
 random.seed(20250820)
@@ -30,8 +33,15 @@ if os.path.exists(OUT):
     noperm = os.path.join(OUT, "paths", "noperm")
     if os.path.exists(noperm):
         os.chmod(noperm, stat.S_IRWXU)
-    shutil.rmtree(OUT)
-os.makedirs(OUT)
+    for entry in os.listdir(OUT):
+        if entry in KEEP:
+            continue
+        path = os.path.join(OUT, entry)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, MARKER), "w").close()
 
 def w(name, table, **kw):
