@@ -219,7 +219,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setSearchTerm('');
     setIsSearchOpen(false);
     setMetadata(null);
-    await evictCache(filePath);
+    // Best effort, as when a tab closes: a refresh that could not drop the
+    // cache still re-reads the file — left unhandled, the rejection stranded
+    // the tab on an empty grid with no error.
+    await evictCache(filePath).catch(err => console.error('Failed to evict cache:', err));
     await loadFile();
   };
 
