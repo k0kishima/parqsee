@@ -620,12 +620,12 @@ fn nested_column_as_json(name: &str, column: &ArrayRef) -> Result<ArrayRef, Stri
     let batch = RecordBatch::try_new(schema, vec![column.clone()]).map_err(|e| e.to_string())?;
     let bytes = batches_to_json_bytes(&[batch])?;
 
-    let mut values: Vec<Option<String>> = Vec::with_capacity(column.len());
-    for row in serde_json::Deserializer::from_slice(&bytes).into_iter::<serde_json::Map<String, Value>>() {
+    let values = serde_json::Deserializer::from_slice(&bytes)
+        .into_iter::<serde_json::Map<String, Value>>()
         // A null value is written as an object without the field.
-        let mut row = row.map_err(|e| format!("Failed to render nested column: {}", e))?;
-        values.push(row.remove(name).map(|v| v.to_string()));
-    }
+        .map(|row| row.map(|mut row| row.remove(name).map(|v| v.to_string())))
+        .collect::<Result<Vec<Option<String>>, _>>()
+        .map_err(|e| format!("Failed to render nested column: {}", e))?;
 
     Ok(Arc::new(arrow::array::StringArray::from(values)) as ArrayRef)
 }
