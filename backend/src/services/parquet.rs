@@ -802,7 +802,10 @@ fn stringify_unsafe_integers(value: &mut Value) {
     }
 }
 
-fn where_clause(filter: Option<&str>) -> Option<&str> {
+/// The filter the webview sent, or None when it is absent or blank. This is
+/// the one place that decides what "no filter" means for the grid, the count
+/// and the export alike.
+pub fn where_clause(filter: Option<&str>) -> Option<&str> {
     filter.map(str::trim).filter(|f| !f.is_empty())
 }
 
