@@ -419,6 +419,9 @@ fn contains_json_unsafe(data_type: &DataType) -> bool {
 /// Floats stay numbers unless the column actually holds a value JSON cannot
 /// represent; then the whole column is rendered as strings, with the
 /// JavaScript spellings so NaN and ±Infinity stay distinguishable from NULL.
+/// Used for exports and for floats nested inside containers; top-level
+/// columns bound for the webview are handled per value instead, see
+/// `restore_non_finite_floats`.
 fn non_finite_floats_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
     use arrow::array::{AsArray, StringArray};
     use arrow::datatypes::{Float16Type, Float32Type, Float64Type};
@@ -563,6 +566,14 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
 /// strings — exact, and distinguishable from NULL — print Date64 as the date
 /// it is, and leave every other column alone.
 pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    convert_batch(batch, false)
+}
+
+/// `keep_top_level_floats` leaves top-level float columns untouched for
+/// `batches_to_rows`, which restores NaN and ±Infinity per value afterwards
+/// instead of rendering the whole column as strings; see
+/// `restore_non_finite_floats`.
+fn convert_batch(batch: &RecordBatch, keep_top_level_floats: bool) -> Result<RecordBatch, String> {
     let schema = batch.schema();
     if !schema.fields().iter().any(|f| contains_json_unsafe(f.data_type())) {
         return Ok(batch.clone());
@@ -571,7 +582,11 @@ pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String
     let mut fields = Vec::with_capacity(schema.fields().len());
     let mut columns = Vec::with_capacity(schema.fields().len());
     for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        let column = json_unsafe_as_strings(column)?;
+        let column = if keep_top_level_floats && is_float(column.data_type()) {
+            column.clone()
+        } else {
+            json_unsafe_as_strings(column)?
+        };
         fields.push(Arc::new(Field::new(
             field.name(),
             column.data_type().clone(),
@@ -645,7 +660,7 @@ fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
         let mut writer = LineDelimitedWriter::new(&mut buf);
         for batch in batches {
             writer
-                .write(&json_unsafe_to_strings(batch)?)
+                .write(&convert_batch(batch, true)?)
                 .map_err(|e| format!("Failed to write batch: {}", e))?;
         }
         writer
@@ -681,6 +696,8 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
         .collect::<Result<Vec<Value>, _>>()
         .map_err(|e| format!("Failed to parse JSON results: {}", e))?;
 
+    restore_non_finite_floats(&mut rows, batches);
+
     // The walk touches every value, so skip it for schemas that cannot hold
     // an unsafe integer (mirrors json_unsafe_to_strings' early return).
     let may_overflow = batches
@@ -695,6 +712,67 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
 
 /// The largest integer a JS number represents exactly.
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+fn is_float(data_type: &DataType) -> bool {
+    matches!(data_type, DataType::Float16 | DataType::Float32 | DataType::Float64)
+}
+
+/// The JavaScript spelling of a float JSON cannot carry, or None for a finite one.
+fn non_finite_spelling(v: f64) -> Option<&'static str> {
+    if v.is_nan() {
+        Some("NaN")
+    } else if v.is_infinite() {
+        Some(if v > 0.0 { "Infinity" } else { "-Infinity" })
+    } else {
+        None
+    }
+}
+
+/// Arrow's JSON writer drops NaN and ±Infinity as null. Put them back as
+/// their JavaScript spellings, per value, so a finite float is always a JSON
+/// number no matter which rows share its batch. Rendering the whole column
+/// as strings whenever one value was non-finite (what the export path still
+/// does, since it has no per-value stage) made the same value a number on
+/// one page and a string on another, depending on where the batches fell.
+/// Floats nested inside lists, structs and maps still take the column-wide
+/// route in `non_finite_floats_as_strings`.
+fn restore_non_finite_floats(rows: &mut [Value], batches: &[RecordBatch]) {
+    use arrow::array::AsArray;
+    use arrow::datatypes::{Float16Type, Float32Type, Float64Type};
+
+    let mut offset = 0;
+    for batch in batches {
+        for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+            let spellings: Vec<(usize, &'static str)> = match column.data_type() {
+                DataType::Float64 => column
+                    .as_primitive::<Float64Type>()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, v)| v.and_then(non_finite_spelling).map(|s| (i, s)))
+                    .collect(),
+                DataType::Float32 => column
+                    .as_primitive::<Float32Type>()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, v)| v.and_then(|v| non_finite_spelling(v as f64)).map(|s| (i, s)))
+                    .collect(),
+                DataType::Float16 => column
+                    .as_primitive::<Float16Type>()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, v)| v.and_then(|v| non_finite_spelling(v.to_f64())).map(|s| (i, s)))
+                    .collect(),
+                _ => continue,
+            };
+            for (i, text) in spellings {
+                if let Some(Value::Object(row)) = rows.get_mut(offset + i) {
+                    row.insert(field.name().clone(), Value::String(text.to_string()));
+                }
+            }
+        }
+        offset += batch.num_rows();
+    }
+}
 
 /// Every value crosses the IPC boundary as JSON, and the webview parses it
 /// into doubles, so an i64 past 2^53 arrives silently rounded — an id column
@@ -1126,10 +1204,10 @@ mod tests {
         assert_eq!(rows[0]["x"], "NaN");
         assert_eq!(rows[1]["x"], "Infinity");
         assert_eq!(rows[2]["x"], "-Infinity");
-        // A column that had to be rendered keeps its finite values readable,
-        // printed the way the webview prints numbers.
-        assert_eq!(rows[3]["x"], "1.5");
-        assert_eq!(rows[5]["x"], "2");
+        // Finite values in the same column stay numbers — only the values
+        // JSON cannot carry are spelled out.
+        assert_eq!(rows[3]["x"], 1.5);
+        assert_eq!(rows[5]["x"], 2.0);
         assert!(rows[4].get("x").is_none());
         // Columns without a non-finite value stay numbers.
         assert_eq!(rows[0]["y"], 2.0);
@@ -1260,33 +1338,6 @@ mod tests {
         }
     }
 
-    /// What a cell shows: the grid prints numbers and strings alike with
-    /// `String(value)`, and a float column is handed over as strings whenever
-    /// its batch holds a NaN (`non_finite_floats_as_strings`), so two paths
-    /// that cut batches differently can only be compared by rendered text.
-    fn rendered(rows: &[serde_json::Value]) -> Vec<Vec<(String, String)>> {
-        rows.iter()
-            .map(|row| {
-                row.as_object()
-                    .unwrap()
-                    .iter()
-                    .map(|(name, value)| {
-                        let text = match value {
-                            serde_json::Value::Null => "NULL".to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            serde_json::Value::Number(n) => {
-                                let f = n.as_f64().unwrap();
-                                if f.fract() == 0.0 { format!("{}", f as i64) } else { f.to_string() }
-                            }
-                            other => other.to_string(),
-                        };
-                        (name.clone(), text)
-                    })
-                    .collect()
-            })
-            .collect()
-    }
-
     /// Unfiltered pages come from the parquet reader, filtered ones from
     /// DataFusion; the grid must not change shape or order when a filter is
     /// added, so both paths must paginate the same sequence identically —
@@ -1353,16 +1404,18 @@ mod tests {
             let via_sql = super::read_data(&cache, &file, offset, limit, Some("1 = 1".into()))
                 .await
                 .unwrap();
-            assert_eq!(rendered(&direct), rendered(&via_sql), "offset {offset} limit {limit}");
+            assert_eq!(direct, via_sql, "offset {offset} limit {limit}");
             let expected = n.saturating_sub(offset).min(limit);
             assert_eq!(direct.len(), expected, "offset {offset} limit {limit}");
             if let Some(first) = direct.first() {
                 assert_eq!(first["id"], serde_json::json!(offset as i64));
             }
         }
-        // Spot-check the JSON-unsafe values survived the direct path too.
+        // Spot-check the JSON-unsafe values survived the direct path too, and
+        // that the NaN did not drag its finite neighbours into strings.
         let all = super::read_data(&cache, &file, 0, n, None).await.unwrap();
         assert_eq!(all[4]["x"], serde_json::json!("NaN"));
+        assert_eq!(all[3]["x"], serde_json::json!(0.75));
         assert_eq!(all[1]["amount"], serde_json::json!("1.001"));
         assert_eq!(all[0]["name"], serde_json::Value::Null);
     }

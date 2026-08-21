@@ -105,8 +105,12 @@ await scenario('S1-fidelity', async ({ page }) => {
     check(`S1.broken.${f}`, after === before && alerts.length === 1, `alerts=${JSON.stringify(alerts).slice(0, 200)}`);
   }
 
-  await openFile(page, `${FIX}/bad_page.parquet`);
-  report('S1.badpage', 'OBSERVE', `summary=${await summary(page)} rows=${(await visibleGrid(page)).length} dataError=${await dataError(page)} errorScreen=${await page.locator('text=Error Loading File').isVisible()}`);
+  // Valid footer, corrupted data pages: the file is unreadable as a whole, so
+  // the tab shows the file-level error, not "100,000 rows" over an empty grid.
+  await openFile(page, `${FIX}/bad_page.parquet`, { expectTab: false });
+  const badPageError = await page.locator('text=Error Loading File').waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
+  check('S1.badpage', badPageError && !(await dataError(page)), `errorScreen=${badPageError} dataError=${await dataError(page)}`);
+  await act(page).locator('button:has-text("Close")').first().click();
 
   await openFile(page, `${FIX}/wide.parquet`);
   const hc1 = await visibleHeader(page);
@@ -636,6 +640,31 @@ await scenario('S9-explorer', async ({ page }) => {
   }, null, { timeout: 2000 }).then(() => true, () => false);
   check('S9.hideSidebar', collapsed);
   await page.screenshot({ path: `${OUT}/shots/S9.png` });
+});
+
+// ---------------------------------------------------------------- S10 the file changes under an open tab
+await scenario('S10-external-change', async ({ page }) => {
+  const dir = `${OUT}/external`; fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
+  const target = `${dir}/changing.parquet`;
+  fs.copyFileSync(`${FIX}/multi_rowgroup.parquet`, target);
+  await openFile(page, target);
+  check('S10.open', (await footer(page))?.includes('100,000'), await footer(page));
+  const errorScreen = () => page.locator('text=Error Loading File').waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
+  const refresh = () => act(page).locator('button:has-text("Refresh")').first().click();
+
+  // Replaced on disk: Refresh drops the cached session and shows the new contents.
+  fs.copyFileSync(`${FIX}/one_row.parquet`, target);
+  await refresh(); await waitGrid(page); await page.waitForTimeout(200);
+  check('S10.replaced', (await footer(page))?.includes('of 1 ') && (await visibleHeader(page)).includes('only'), `footer=${await footer(page)} cols=${await visibleHeader(page)}`);
+
+  // Deleted: Refresh shows the file-level error naming the path, and Close drops the tab.
+  fs.rmSync(target);
+  await refresh();
+  const shown = await errorScreen();
+  const message = shown ? await act(page).locator('text=Error Loading File').locator('xpath=following-sibling::p').first().textContent() : null;
+  check('S10.deleted', shown && message?.includes('changing.parquet'), `errorScreen=${shown} message=${message}`);
+  await act(page).locator('button:has-text("Close")').first().click(); await page.waitForTimeout(300);
+  check('S10.closeAfterError', await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length) === 0, 'tab gone after Close');
 });
 
 console.log('\n\n===== SUMMARY =====');

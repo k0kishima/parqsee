@@ -185,6 +185,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setLoading(false);
     } catch (err) {
       if (seq !== loadSeq.current) return;
+      // Nothing has ever loaded for this file (first page after opening or
+      // after Refresh): the file itself is unreadable — a corrupted data page
+      // behind a valid footer, or a file deleted since it was opened. Show
+      // the file-level error instead of a banner over an empty grid.
+      if (!lastGood.current) {
+        setError(String(err));
+        setLoading(false);
+        return;
+      }
       // A rejected filter must not strand the tab on an error screen: keep the
       // previous result on screen and let the user correct the condition.
       setDataError(String(err));

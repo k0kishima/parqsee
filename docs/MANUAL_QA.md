@@ -141,12 +141,3 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-10 Gatekeeper on another Mac
 Notes: <anything that differed from Expected, with what happened>
 ```
-
-## Candidates to automate
-
-Behaviour that has only been verified by hand so far but does not depend on
-the shell, so it belongs in `scripts/qa/e2e/suite.mjs` rather than here:
-
-- Refresh after the open file was deleted or replaced on disk shows the
-  error state ("Error Loading File" with the backend message) instead of
-  stale rows.
