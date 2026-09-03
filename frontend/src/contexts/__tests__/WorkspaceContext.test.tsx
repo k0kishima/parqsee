@@ -25,6 +25,15 @@ function renderWorkspace() {
   return renderHook(() => useWorkspace(), { wrapper });
 }
 
+/** A workspace with one tab open per path, opened in order. */
+async function openTabs(...paths: string[]) {
+  const { result } = renderWorkspace();
+  for (const path of paths) {
+    await act(() => result.current.openParquetFile(path));
+  }
+  return result;
+}
+
 describe('WorkspaceProvider tabs', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -32,9 +41,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('opens a tab per file and activates the last one', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
-    await act(() => result.current.openParquetFile('/data/b.parquet'));
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
 
     expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/b.parquet']);
     expect(result.current.activeTab?.path).toBe('/data/b.parquet');
@@ -42,10 +49,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('re-activates the existing tab when the same file is opened again', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
-    await act(() => result.current.openParquetFile('/data/b.parquet'));
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/a.parquet');
 
     expect(result.current.tabs).toHaveLength(2);
     expect(result.current.activeTab?.path).toBe('/data/a.parquet');
@@ -65,9 +69,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('closing a tab through a stale closeTab keeps the other tabs\' state', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
-    await act(() => result.current.openParquetFile('/data/b.parquet'));
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
     const [a, b] = result.current.tabs;
 
     // TabBar is memoized on the tab list only, so it keeps calling the
@@ -82,8 +84,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('merges tab state patches from different writers', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    const result = await openTabs('/data/a.parquet');
     const [a] = result.current.tabs;
 
     // The tab owns viewMode, the grid owns the page: neither may erase the other.
@@ -94,10 +95,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('activates the neighbour when the active tab is closed', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
-    await act(() => result.current.openParquetFile('/data/b.parquet'));
-    await act(() => result.current.openParquetFile('/data/c.parquet'));
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
     const [, b, c] = result.current.tabs;
 
     act(() => result.current.closeTab(c.id));
@@ -109,9 +107,7 @@ describe('WorkspaceProvider tabs', () => {
   });
 
   it('evicts the backend cache only when no other tab shows the file', async () => {
-    const { result } = renderWorkspace();
-    await act(() => result.current.openParquetFile('/data/a.parquet'));
-    await act(() => result.current.openParquetFile('/data/b.parquet'));
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
     const [a, b] = result.current.tabs;
 
     act(() => result.current.closeTab(b.id));
