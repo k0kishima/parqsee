@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { exportData } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
 import { ExportRange, resolveExportRange } from "../lib/export-range";
+import { pageWindow } from "../lib/page-window";
 import { toErrorMessage } from "../../../lib/tauri";
 
 interface ExportModalProps {
@@ -70,8 +71,7 @@ export function ExportModal({
   if (!isOpen) return null;
 
   const hasRows = totalRows > 0;
-  const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
-  const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
+  const { startRow: pageStart, endRow: pageEnd } = pageWindow(currentPage, rowsPerPage, totalRows);
   // The window the backend will export, or null while the custom bounds
   // do not describe one.
   const exportWindow = resolveExportRange(exportRange, { totalRows, currentPage, rowsPerPage, startInput, endInput });

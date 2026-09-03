@@ -10,6 +10,7 @@ import { openParquetFile, readParquetData, countParquetData, evictCache, Parquet
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
+import { pageWindow } from "../lib/page-window";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 import { toErrorMessage } from "../../../lib/tauri";
 
@@ -173,7 +174,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       const total = activeFilter
         ? await countParquetData(filePath, activeFilter)
         : metadata.num_rows;
-      const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
+      const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
+      const rows = await readParquetData(filePath, offset, limit, activeFilter);
       // A newer load has taken over; its result describes the current state.
       if (seq !== loadSeq.current) return;
 
@@ -242,6 +244,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   }, []);
 
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+  const shownRows = pageWindow(currentPage, rowsPerPage, totalRows);
   const fileName = getFileName(filePath);
 
   const commitPageInput = useCallback(() => {
@@ -460,8 +463,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 <span className="text-sm text-slate-300 dark:text-gray-600">|</span>
                 <div className="text-sm text-slate-600 dark:text-gray-400">
                   {t('viewer.pagination.showing', {
-                    start: totalRows > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0,
-                    end: Math.min(currentPage * rowsPerPage, totalRows),
+                    start: shownRows.startRow,
+                    end: shownRows.endRow,
                     total: totalRows.toLocaleString()
                   })}
                 </div>
