@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilterExpression, findInvalidFilterValue, FilterRow } from '../filter-bar';
+import { buildFilterExpression, findInvalidFilterValue, FilterOperator, FilterRow } from '../filter-bar';
 import type { ColumnInfo, ColumnKind } from '../../api';
 
 const column = (name: string, column_type: string, kind: ColumnKind): ColumnInfo => ({
@@ -19,9 +19,12 @@ const columns = [
   column('MixedCase', 'INT64', 'integer'),
   column("od'd", 'STRING', 'text'),
   column('blob', 'BYTE_ARRAY', 'binary'),
+  column('ratio', 'DOUBLE', 'float'),
+  column('tags', 'LIST<STRING>', 'nested'),
+  column('mystery', 'UNKNOWN', 'other'),
 ];
 
-const row = (column: string, operator: string, value: string): FilterRow =>
+const row = (column: string, operator: FilterOperator, value: string): FilterRow =>
   ({ id: 1, column, operator, value });
 
 describe('buildFilterExpression', () => {
@@ -87,7 +90,26 @@ describe('buildFilterExpression', () => {
   });
 });
 
+describe('buildFilterExpression for the remaining kinds', () => {
+  it('treats floats like the other numeric kinds', () => {
+    expect(buildFilterExpression([row('ratio', '>', ' 0.5 ')], columns)).toBe('"ratio" > 0.5');
+    expect(buildFilterExpression([row('ratio', '=', 'abc')], columns)).toBe('"ratio" = \'abc\'');
+  });
+
+  it('quotes nested and unknown kinds trimmed, and casts them for LIKE', () => {
+    expect(buildFilterExpression([row('tags', '=', ' a ')], columns)).toBe('"tags" = \'a\'');
+    expect(buildFilterExpression([row('mystery', 'LIKE', '%x%')], columns)).toBe('CAST("mystery" AS TEXT) LIKE \'%x%\'');
+  });
+});
+
 describe('findInvalidFilterValue', () => {
+  it('checks floats but not nested or unknown kinds', () => {
+    expect(findInvalidFilterValue([row('ratio', '=', 'abc')], columns))
+      .toEqual({ column: 'ratio', value: 'abc', expects: 'number' });
+    expect(findInvalidFilterValue([row('tags', '=', 'abc')], columns)).toBeNull();
+    expect(findInvalidFilterValue([row('mystery', '=', 'abc')], columns)).toBeNull();
+  });
+
   it('rejects values a numeric or boolean column can never hold', () => {
     expect(findInvalidFilterValue([row('id', '=', 'abc')], columns))
       .toEqual({ column: 'id', value: 'abc', expects: 'number' });

@@ -1,0 +1,98 @@
+import type { TabState } from '../features/file-viewer';
+import { assertNever } from '../lib/exhaustive';
+
+export interface Tab {
+  id: string;
+  path: string;
+  name: string;
+}
+
+/**
+ * The open tabs, which one is active and the per-tab view state. Kept in one
+ * value and only ever replaced as a whole: the tab list and the active tab
+ * change together, and a tab's state lives exactly as long as the tab.
+ */
+export interface WorkspaceTabs {
+  readonly tabs: readonly Tab[];
+  readonly activeTabId: string | null;
+  readonly tabStates: Readonly<Record<string, TabState>>;
+}
+
+export const EMPTY_WORKSPACE_TABS: WorkspaceTabs = { tabs: [], activeTabId: null, tabStates: {} };
+
+export type WorkspaceTabsAction =
+  | { type: 'open'; tab: Tab }
+  | { type: 'close'; tabId: string }
+  | { type: 'select'; tabId: string }
+  | { type: 'patchState'; tabId: string; patch: Partial<TabState> };
+
+export function reduceWorkspaceTabs(state: WorkspaceTabs, action: WorkspaceTabsAction): WorkspaceTabs {
+  switch (action.type) {
+    case 'open': return openTab(state, action.tab);
+    case 'close': return closeTab(state, action.tabId).state;
+    case 'select': return selectTab(state, action.tabId);
+    case 'patchState': return patchTabState(state, action.tabId, action.patch);
+    default: return assertNever(action, 'workspace tabs action');
+  }
+}
+
+/** Activate the tab showing `tab.path`, adding `tab` if no tab shows it yet. */
+export function openTab(state: WorkspaceTabs, tab: Tab): WorkspaceTabs {
+  const existing = state.tabs.find(t => t.path === tab.path);
+  if (existing) return { ...state, activeTabId: existing.id };
+  return { ...state, tabs: [...state.tabs, tab], activeTabId: tab.id };
+}
+
+/**
+ * Remove the tab. When it was the active one, the tab that took its place
+ * (or the new last tab) becomes active. `evictPath` is the closed file when
+ * no other tab shows it any more, so the caller can drop its backend cache.
+ */
+export function closeTab(state: WorkspaceTabs, tabId: string): { state: WorkspaceTabs; evictPath: string | null } {
+  const index = state.tabs.findIndex(t => t.id === tabId);
+  if (index === -1) return { state, evictPath: null };
+  const closed = state.tabs[index];
+  const tabs = state.tabs.filter(t => t.id !== tabId);
+  const { [tabId]: _closedState, ...tabStates } = state.tabStates;
+
+  const activeTabId = state.activeTabId !== tabId
+    ? state.activeTabId
+    : tabs.length > 0 ? tabs[Math.min(index, tabs.length - 1)].id : null;
+  const evictPath = tabs.some(t => t.path === closed.path) ? null : closed.path;
+
+  return { state: { tabs, activeTabId, tabStates }, evictPath };
+}
+
+/** Make `tabId` active; an id that is not open leaves the state as it is. */
+export function selectTab(state: WorkspaceTabs, tabId: string): WorkspaceTabs {
+  if (state.activeTabId === tabId || !state.tabs.some(t => t.id === tabId)) return state;
+  return { ...state, activeTabId: tabId };
+}
+
+/**
+ * Merge `patch` into the tab's state. Writers only send the fields they own
+ * (the tab its view mode, the grid its page and filter), so a patch never
+ * clobbers what another writer stored.
+ */
+export function patchTabState(state: WorkspaceTabs, tabId: string, patch: Partial<TabState>): WorkspaceTabs {
+  return { ...state, tabStates: { ...state.tabStates, [tabId]: { ...state.tabStates[tabId], ...patch } } };
+}
+
+export function activeTab(state: WorkspaceTabs): Tab | undefined {
+  return state.tabs.find(t => t.id === state.activeTabId);
+}
+
+/** The tab `direction` steps from the active one, wrapping around the ends. */
+export function adjacentTabId(state: WorkspaceTabs, direction: 1 | -1): string | null {
+  const count = state.tabs.length;
+  if (count === 0) return null;
+  const current = state.tabs.findIndex(t => t.id === state.activeTabId);
+  // No active tab: step from just outside the list, so the first or last tab.
+  const from = current === -1 ? (direction === 1 ? -1 : count) : current;
+  return state.tabs[(from + direction + count) % count].id;
+}
+
+/** The tab at 1-based position `n`, as for the ⌘1 … ⌘9 shortcuts. */
+export function nthTabId(state: WorkspaceTabs, n: number): string | null {
+  return state.tabs[n - 1]?.id ?? null;
+}

@@ -6,11 +6,12 @@ import { DataViewer } from '../data-viewer';
 const mockOpenParquetFile = vi.fn();
 const mockReadParquetData = vi.fn();
 const mockCountParquetData = vi.fn();
+const mockEvictCache = vi.fn();
 vi.mock('../../api', () => ({
   openParquetFile: (...args: unknown[]) => mockOpenParquetFile(...args),
   readParquetData: (...args: unknown[]) => mockReadParquetData(...args),
   countParquetData: (...args: unknown[]) => mockCountParquetData(...args),
-  evictCache: vi.fn().mockResolvedValue(undefined),
+  evictCache: (...args: unknown[]) => mockEvictCache(...args),
 }));
 
 vi.mock('../../../../contexts/SettingsContext', () => ({
@@ -43,6 +44,7 @@ describe('DataViewer failed-load rollback', () => {
     mockOpenParquetFile.mockResolvedValue(metadata);
     mockReadParquetData.mockResolvedValue([{ id: 1 }]);
     mockCountParquetData.mockResolvedValue(5);
+    mockEvictCache.mockResolvedValue(undefined);
   });
 
   const renderViewer = async () => {
@@ -84,5 +86,18 @@ describe('DataViewer failed-load rollback', () => {
     await waitFor(() => expect(pageInput().value).toBe('1'));
     // offset 0 (initial) + offset 50 (failed) — no echo reload of page 1.
     expect(mockReadParquetData).toHaveBeenCalledTimes(2);
+  });
+
+  it('still reloads the file on Refresh when the cache could not be evicted', async () => {
+    await renderViewer();
+    mockEvictCache.mockRejectedValueOnce('boom: evict');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await userEvent.click(screen.getByText('viewer.refresh'));
+
+    await waitFor(() => expect(mockOpenParquetFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.error')).not.toBeInTheDocument();
   });
 });

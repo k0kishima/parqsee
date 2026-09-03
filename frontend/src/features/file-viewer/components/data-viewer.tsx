@@ -5,11 +5,11 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
-import { DataTable, SearchMatch } from "./data-table";
+import { DataTable } from "./data-table";
 import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
-import { formatCellValue } from "../../../lib/format";
+import { findSearchMatches } from "../lib/search";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 
 interface DataViewerProps {
@@ -219,7 +219,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setSearchTerm('');
     setIsSearchOpen(false);
     setMetadata(null);
-    await evictCache(filePath);
+    // Best effort, as when a tab closes: a refresh that could not drop the
+    // cache still re-reads the file — left unhandled, the rejection stranded
+    // the tab on an empty grid with no error.
+    await evictCache(filePath).catch(err => console.error('Failed to evict cache:', err));
     await loadFile();
   };
 
@@ -249,40 +252,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [pageInput, totalPages, currentPage]);
 
-  // Optimized search functionality with early returns
-  const searchMatches = useMemo(() => {
-    if (!searchTerm || !metadata || !data) return [];
-
-    const matches: SearchMatch[] = [];
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    const maxMatches = 1000; // Limit to prevent performance issues
-
-    // Search in column names first (fast)
-    for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
-      const col = metadata.columns[colIndex];
-      if (col.name.toLowerCase().includes(lowerSearchTerm)) {
-        matches.push({ rowIndex: -1, colIndex, value: col.name });
-        if (matches.length >= maxMatches) return matches;
-      }
-    }
-
-    // Search in data with early exit
-    outerLoop: for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
-      const row = data[rowIndex];
-      for (let colIndex = 0; colIndex < metadata.columns.length; colIndex++) {
-        const col = metadata.columns[colIndex];
-        const stringValue = formatCellValue(row[col.name]);
-        if (stringValue !== null) {
-          if (stringValue.toLowerCase().includes(lowerSearchTerm)) {
-            matches.push({ rowIndex, colIndex, value: stringValue });
-            if (matches.length >= maxMatches) break outerLoop;
-          }
-        }
-      }
-    }
-
-    return matches;
-  }, [searchTerm, data, metadata]);
+  const searchMatches = useMemo(
+    () => (metadata ? findSearchMatches(searchTerm, metadata.columns, data) : []),
+    [searchTerm, data, metadata]
+  );
 
   const handleSearchSubmit = useCallback((value: string) => {
     const trimmedValue = value.trim();

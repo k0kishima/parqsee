@@ -5,6 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { exportData } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
+import { ExportRange, resolveExportRange } from "../lib/export-range";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export function ExportModal({
 }: ExportModalProps) {
   const { t } = useTranslation();
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
-  const [exportRange, setExportRange] = useState<"all" | "current" | "custom">("all");
+  const [exportRange, setExportRange] = useState<ExportRange>("all");
   // Kept as the typed text: clamping on every keystroke made a cleared field
   // snap back to 1 (or to the last row) before the next digit, so a range
   // could not be typed in.
@@ -70,18 +71,14 @@ export function ExportModal({
   const hasRows = totalRows > 0;
   const pageStart = hasRows ? Math.min((currentPage - 1) * rowsPerPage + 1, totalRows) : 0;
   const pageEnd = Math.min(currentPage * rowsPerPage, totalRows);
-  const startRow = parseInt(startInput, 10);
-  const endRow = parseInt(endInput, 10);
-  const rangeIsValid =
-    exportRange !== "custom" ||
-    (Number.isInteger(startRow) &&
-      Number.isInteger(endRow) &&
-      startRow >= 1 &&
-      endRow >= startRow &&
-      endRow <= totalRows);
+  // The window the backend will export, or null while the custom bounds
+  // do not describe one.
+  const exportWindow = resolveExportRange(exportRange, { totalRows, currentPage, rowsPerPage, startInput, endInput });
+  const rangeIsValid = exportWindow !== null;
   const canExport = hasRows && rangeIsValid && !isExporting;
 
   const handleExport = async () => {
+    if (!exportWindow) return;
     setError(null);
     setIsExporting(true);
 
@@ -111,25 +108,12 @@ export function ExportModal({
         return;
       }
 
-      // Calculate offset and limit based on export range
-      let offset: number | undefined;
-      let limit: number | undefined;
-
-      if (exportRange === "custom") {
-        offset = startRow - 1;
-        limit = endRow - startRow + 1;
-      } else if (exportRange === "current") {
-        offset = (currentPage - 1) * rowsPerPage;
-        limit = rowsPerPage;
-      }
-
       // Call the export command
       const exportedRows = await exportData({
         sourcePath: filePath,
         exportPath: savePath,
         format: exportFormat,
-        offset,
-        limit,
+        ...exportWindow,
         // Ranges address the filtered result, so the backend has to apply the
         // same condition the grid is showing.
         filter: activeFilter || undefined
@@ -259,7 +243,7 @@ export function ExportModal({
                   type="radio"
                   value="all"
                   checked={exportRange === "all"}
-                  onChange={(e) => setExportRange(e.target.value as "all")}
+                  onChange={() => setExportRange("all")}
                   className="mr-2"
                 />
                 <span className="text-gray-700 dark:text-gray-300">
@@ -271,7 +255,7 @@ export function ExportModal({
                   type="radio"
                   value="current"
                   checked={exportRange === "current"}
-                  onChange={(e) => setExportRange(e.target.value as "current")}
+                  onChange={() => setExportRange("current")}
                   className="mr-2"
                 />
                 <span className="text-gray-700 dark:text-gray-300">
@@ -283,7 +267,7 @@ export function ExportModal({
                   type="radio"
                   value="custom"
                   checked={exportRange === "custom"}
-                  onChange={(e) => setExportRange(e.target.value as "custom")}
+                  onChange={() => setExportRange("custom")}
                   className="mr-2"
                 />
                 <span className="text-gray-700 dark:text-gray-300">

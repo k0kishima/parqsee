@@ -1,5 +1,4 @@
-
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useTransition, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
@@ -9,21 +8,27 @@ import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
+import {
+    Tab,
+    WorkspaceTabs,
+    EMPTY_WORKSPACE_TABS,
+    reduceWorkspaceTabs,
+    closeTab as closeTabTransition,
+    activeTab as activeTabOf,
+    adjacentTabId,
+    nthTabId,
+} from './workspace-tabs';
 
-export interface Tab {
-    id: string;
-    path: string;
-    name: string;
-}
+export type { Tab };
 
 interface WorkspaceContextType {
     currentFile: string | null;
-    tabs: Tab[];
+    tabs: WorkspaceTabs['tabs'];
     activeTabId: string | null;
     isSidebarOpen: boolean;
     isSettingsOpen: boolean;
     isPending: boolean;
-    tabStates: Record<string, TabState>;
+    tabStates: WorkspaceTabs['tabStates'];
     openParquetFile: (path: string) => Promise<void>;
     /** Show the native file picker and open what was chosen. */
     openFileDialog: () => Promise<void>;
@@ -31,7 +36,8 @@ interface WorkspaceContextType {
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
     toggleSettings: (isOpen: boolean) => void;
-    setTabState: (tabId: string, state: TabState) => void;
+    /** Merge `patch` into the tab's state; send only the fields you own. */
+    setTabState: (tabId: string, patch: Partial<TabState>) => void;
     activeTab: Tab | undefined;
 }
 
@@ -42,59 +48,38 @@ let nextTabSerial = 0;
 const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-    const [currentFile, setCurrentFile] = useState<string | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [tabs, setTabs] = useState<Tab[]>([]);
-    // Mirrors `tabs` synchronously, so several files opened in one tick (a
-    // multi-file drop) each see the tabs the previous one just added.
-    const tabsRef = useRef<Tab[]>([]);
-    const [activeTabId, setActiveTabId] = useState<string | null>(null);
-    const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
+    // Every transition goes through the reducer, so files opened back to back
+    // in one tick (a multi-file drop) and a closeTab captured by a memoized
+    // child both act on the latest tabs rather than on a stale snapshot.
+    const [workspaceTabs, dispatch] = useReducer(reduceWorkspaceTabs, EMPTY_WORKSPACE_TABS);
+    const { tabs, activeTabId, tabStates } = workspaceTabs;
+    // The last rendered tabs, for decisions made in stable callbacks.
+    const workspaceTabsRef = useRef(workspaceTabs);
+    workspaceTabsRef.current = workspaceTabs;
     const [isPending, startTransition] = useTransition();
     const { addRecentFile, removeRecentFile } = useRecentFiles();
 
 
     const handleTabSelect = useCallback((tabId: string) => {
-        const tab = tabs.find(t => t.id === tabId);
-        if (tab) {
-            requestAnimationFrame(() => {
-                startTransition(() => {
-                    setActiveTabId(tabId);
-                    setCurrentFile(tab.path);
-                });
+        requestAnimationFrame(() => {
+            startTransition(() => {
+                dispatch({ type: 'select', tabId });
             });
-        }
-    }, [tabs]);
+        });
+    }, []);
 
     const handleTabClose = useCallback((tabId: string) => {
-        const closedTab = tabs.find(t => t.id === tabId);
-        const tabIndex = tabs.findIndex(t => t.id === tabId);
-        const newTabs = tabs.filter(t => t.id !== tabId);
-        tabsRef.current = newTabs;
-        setTabs(newTabs);
-
-        // Clean up state for closed tab
-        const newTabStates = { ...tabStates };
-        delete newTabStates[tabId];
-        setTabStates(newTabStates);
-
-        // Evict backend cache if no other tab uses the same file
-        if (closedTab && !newTabs.some(t => t.path === closedTab.path)) {
-            evictCache(closedTab.path).catch(err => console.error('Failed to evict cache:', err));
+        // Whether the file is still shown elsewhere is read from the last
+        // render: closes come from user events, never in the same tick as
+        // the open that could make this one render stale.
+        const { evictPath } = closeTabTransition(workspaceTabsRef.current, tabId);
+        dispatch({ type: 'close', tabId });
+        if (evictPath) {
+            evictCache(evictPath).catch(err => console.error('Failed to evict cache:', err));
         }
-
-        if (activeTabId === tabId) {
-            if (newTabs.length > 0) {
-                const newIndex = Math.min(tabIndex, newTabs.length - 1);
-                setActiveTabId(newTabs[newIndex].id);
-                setCurrentFile(newTabs[newIndex].path);
-            } else {
-                setActiveTabId(null);
-                setCurrentFile(null);
-            }
-        }
-    }, [tabs, activeTabId, tabStates]);
+    }, []);
 
     const openParquetFile = useCallback(async (path: string) => {
         try {
@@ -116,25 +101,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                     size: fileInfo.size
                 });
 
-                const existingTab = tabsRef.current.find(tab => tab.path === path);
-                if (existingTab) {
-                    setActiveTabId(existingTab.id);
-                    setCurrentFile(path);
-                } else {
-                    const newTab: Tab = {
-                        id: newTabId(),
-                        path: fileInfo.path,
-                        name: fileInfo.name
-                    };
-                    tabsRef.current = [...tabsRef.current, newTab];
-                    setTabs(tabsRef.current);
-                    setActiveTabId(newTab.id);
-                    setCurrentFile(path);
-                }
-            } else {
-                // Browser fallback: there is no backend to open the file with.
-                setCurrentFile(path);
+                dispatch({ type: 'open', tab: { id: newTabId(), path: fileInfo.path, name: fileInfo.name } });
             }
+            // Browser fallback: there is no backend to open the file with.
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
@@ -178,28 +147,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             setIsSettingsOpen(true);
         } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
-            const currentIndex = tabs.findIndex(t => t.id === activeTabId);
-            if (currentIndex > 0) {
-                handleTabSelect(tabs[currentIndex - 1].id);
-            } else if (tabs.length > 0) {
-                handleTabSelect(tabs[tabs.length - 1].id);
-            }
+            const target = adjacentTabId(workspaceTabs, -1);
+            if (target) handleTabSelect(target);
         } else if ((e.metaKey && e.shiftKey && e.key === ']') || (e.metaKey && e.altKey && e.key === 'ArrowRight')) {
             e.preventDefault();
-            const currentIndex = tabs.findIndex(t => t.id === activeTabId);
-            if (currentIndex < tabs.length - 1) {
-                handleTabSelect(tabs[currentIndex + 1].id);
-            } else if (tabs.length > 0) {
-                handleTabSelect(tabs[0].id);
-            }
+            const target = adjacentTabId(workspaceTabs, 1);
+            if (target) handleTabSelect(target);
         } else if (e.metaKey && e.key >= '1' && e.key <= '9') {
             e.preventDefault();
-            const tabIndex = parseInt(e.key) - 1;
-            if (tabIndex < tabs.length) {
-                handleTabSelect(tabs[tabIndex].id);
-            }
+            const target = nthTabId(workspaceTabs, parseInt(e.key));
+            if (target) handleTabSelect(target);
         }
-    }, [activeTabId, tabs, handleTabClose, handleTabSelect, openFileDialog]));
+    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog]));
 
     // Native menu items (see build_menu in lib.rs)
     useEffect(() => {
@@ -241,10 +200,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, [openParquetFile]);
 
-    const activeTab = tabs.find(t => t.id === activeTabId);
+    const activeTab = activeTabOf(workspaceTabs);
 
     const value = {
-        currentFile,
+        currentFile: activeTab?.path ?? null,
         tabs,
         activeTabId,
         isSidebarOpen,
@@ -257,7 +216,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),
         toggleSettings: setIsSettingsOpen,
-        setTabState: (tabId: string, state: TabState) => setTabStates(prev => ({ ...prev, [tabId]: state })),
+        setTabState: (tabId: string, patch: Partial<TabState>) => dispatch({ type: 'patchState', tabId, patch }),
         activeTab
     };
 
