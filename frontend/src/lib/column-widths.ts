@@ -1,4 +1,5 @@
 import { RowData } from './row';
+import { formatCellValue } from './format';
 
 /**
  * Column width estimation for the virtualized data table.
@@ -57,11 +58,11 @@ export interface ColumnWidthInput {
   typeLabel: string;
 }
 
-const defaultFormat = (value: unknown): string | null =>
-  value === null || value === undefined ? null : String(value);
-
 export interface MeasureOptions {
-  /** Must produce the same text the cells render (null for NULL). */
+  /** Must produce the same text the cells render (null for NULL).
+   * Defaults to `formatCellValue`, which is what both grids pass — a local
+   * fallback here used to stringify a nested column as "[object Object]"
+   * and size it several characters too narrow. */
   format?: (value: unknown) => string | null;
   /** Font the cell values are rendered in. Values are not measured one by
    * one; an average glyph width for the font is multiplied by the length. */
@@ -77,7 +78,7 @@ const SAMPLE = '0123456789.-abcdefghijklmnopqrstuvwxyz_';
 export function measureColumnWidths(
   columns: ColumnWidthInput[],
   rows: RowData[],
-  { format = defaultFormat, valueFont = 'mono' }: MeasureOptions = {}
+  { format = formatCellValue, valueFont = 'mono' }: MeasureOptions = {}
 ): number[] {
   const ctx = getContext();
   const fonts = resolveFonts();
