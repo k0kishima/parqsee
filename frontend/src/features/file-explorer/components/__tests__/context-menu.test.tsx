@@ -3,12 +3,10 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ContextMenu } from '../context-menu';
 import type { FileEntry } from '../../api';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
-// Directly access the mocked module
-const mockRevealItemInDir = vi.fn();
-vi.mock('@tauri-apps/plugin-opener', () => ({
-  revealItemInDir: (...args: unknown[]) => mockRevealItemInDir(...args),
-}));
+// test/setup.ts already mocks the module for every suite.
+const mockRevealItemInDir = vi.mocked(revealItemInDir);
 
 const parquetEntry: FileEntry = {
   path: '/data/test.parquet',

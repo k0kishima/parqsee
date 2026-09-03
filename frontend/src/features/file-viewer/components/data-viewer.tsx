@@ -6,11 +6,14 @@ import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
-import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
+import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
+import { pageWindow } from "../lib/page-window";
+import type { RowData } from "../../../lib/row";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
+import { toErrorMessage } from "../../../lib/tauri";
 
 interface DataViewerProps {
   filePath: string;
@@ -32,7 +35,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const { t } = useTranslation();
 
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<RowData[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
   /** Fatal: the file itself could not be opened. */
@@ -156,7 +159,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // user clears it.
     } catch (err) {
       if (seq !== loadSeq.current) return;
-      setError(err as string);
+      setError(toErrorMessage(err));
       setLoading(false);
     }
   };
@@ -172,7 +175,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       const total = activeFilter
         ? await countParquetData(filePath, activeFilter)
         : metadata.num_rows;
-      const rows = await readParquetData(filePath, (currentPage - 1) * rowsPerPage, rowsPerPage, activeFilter);
+      const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
+      const rows = await readParquetData(filePath, offset, limit, activeFilter);
       // A newer load has taken over; its result describes the current state.
       if (seq !== loadSeq.current) return;
 
@@ -190,13 +194,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // behind a valid footer, or a file deleted since it was opened. Show
       // the file-level error instead of a banner over an empty grid.
       if (!lastGood.current) {
-        setError(String(err));
+        setError(toErrorMessage(err));
         setLoading(false);
         return;
       }
       // A rejected filter must not strand the tab on an error screen: keep the
       // previous result on screen and let the user correct the condition.
-      setDataError(String(err));
+      setDataError(toErrorMessage(err));
       // Roll the request state back to what the grid is still showing, so
       // pagination and export never describe the failed filter or page. The
       // rows on screen are already that state — skip the echo reload the
@@ -219,10 +223,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setSearchTerm('');
     setIsSearchOpen(false);
     setMetadata(null);
-    // Best effort, as when a tab closes: a refresh that could not drop the
-    // cache still re-reads the file — left unhandled, the rejection stranded
-    // the tab on an empty grid with no error.
-    await evictCache(filePath).catch(err => console.error('Failed to evict cache:', err));
+    await evictCacheQuietly(filePath);
     await loadFile();
   };
 
@@ -241,6 +242,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   }, []);
 
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+  const shownRows = pageWindow(currentPage, rowsPerPage, totalRows);
   const fileName = getFileName(filePath);
 
   const commitPageInput = useCallback(() => {
@@ -459,8 +461,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 <span className="text-sm text-slate-300 dark:text-gray-600">|</span>
                 <div className="text-sm text-slate-600 dark:text-gray-400">
                   {t('viewer.pagination.showing', {
-                    start: totalRows > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0,
-                    end: Math.min(currentPage * rowsPerPage, totalRows),
+                    start: shownRows.startRow,
+                    end: shownRows.endRow,
                     total: totalRows.toLocaleString()
                   })}
                 </div>

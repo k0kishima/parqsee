@@ -3,6 +3,7 @@ import { executeSql } from '../api/execute-sql';
 import { QueryEditor } from '../components/query-editor';
 import { QueryResults } from '../components/query-results';
 import { QueryResult } from '../types';
+import { toErrorMessage } from '../../../lib/tauri';
 
 interface QueryViewProps {
     filePath: string;
@@ -21,7 +22,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath }) => {
             setResult(data);
         } catch (err) {
             console.error(err);
-            setError(typeof err === 'string' ? err : 'An unknown error occurred');
+            setError(toErrorMessage(err));
             setResult(undefined);
         } finally {
             setIsLoading(false);

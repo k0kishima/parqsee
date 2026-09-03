@@ -5,6 +5,7 @@ import { listDirectory, FileEntry } from '../api';
 import { ContextMenu } from '../components/context-menu';
 import { BreadcrumbNav } from '../components/breadcrumb-nav';
 import { ExplorerEntry } from '../components/explorer-entry';
+import { toErrorMessage } from '../../../lib/tauri';
 
 interface FileExplorerProps {
   currentPath?: string;
@@ -78,7 +79,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     } catch (error) {
       console.error('Failed to load directory:', error);
       setEntries([]);
-      setListError(String(error));
+      setListError(toErrorMessage(error));
     }
   };
 
@@ -90,7 +91,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
       console.error('Failed to load sub-directory:', error);
       // Leave the folder expanded with the reason where its children would
       // be, instead of an arrow that opens onto nothing.
-      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: [], loadError: String(error) })));
+      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: [], loadError: toErrorMessage(error) })));
     }
   }, []);
 

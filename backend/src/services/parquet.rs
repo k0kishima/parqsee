@@ -1010,15 +1010,12 @@ mod tests {
     };
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
-    use parquet::arrow::ArrowWriter;
-    use std::fs::File;
     use std::path::PathBuf;
+    use crate::services::test_support::{self, write_parquet};
     use std::sync::Arc;
 
     fn temp_path(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("parqsee-parquet-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join(name)
+        test_support::temp_path("parquet", name)
     }
 
     /// A list column and a struct column next to a plain one, the shape Spark
@@ -1064,9 +1061,7 @@ mod tests {
         .unwrap();
 
         let path = temp_path("nested.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
         path
     }
 
@@ -1114,9 +1109,7 @@ mod tests {
         .unwrap();
 
         let path = temp_path("decimal.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
         path
     }
 
@@ -1156,9 +1149,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("decimal_containers.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
         let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 1, None)
@@ -1195,9 +1186,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("nan.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
         let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 6, None)
@@ -1237,10 +1226,7 @@ mod tests {
             vec![Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef],
         )
         .unwrap();
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let mut writer = ArrowWriter::try_new(File::create(path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(path, &batch, None);
     }
 
     /// macOS is case-insensitive, so `DATA.PARQUET` is a perfectly ordinary
@@ -1325,9 +1311,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("limits.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
         let file = path.to_string_lossy().to_string();
@@ -1393,9 +1377,7 @@ mod tests {
         .unwrap();
         let path = temp_path("pages.parquet");
         let props = WriterProperties::builder().set_max_row_group_row_count(Some(4)).build();
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, Some(props)).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, Some(props));
 
         let cache = ParquetCache::new();
         let file = path.to_string_lossy().to_string();
@@ -1437,9 +1419,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("dup.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let err = ParquetCache::new()
             .get_or_create_metadata(&path.to_string_lossy())
@@ -1456,9 +1436,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("date64.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 2, None)
             .await
@@ -1508,9 +1486,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("big_ints.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
         let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
@@ -1561,9 +1537,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("kinds.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
 
         let meta = ParquetCache::new()
             .get_or_create_metadata(&path.to_string_lossy())

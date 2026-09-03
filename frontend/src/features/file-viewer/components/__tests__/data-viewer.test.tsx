@@ -11,7 +11,11 @@ vi.mock('../../api', () => ({
   openParquetFile: (...args: unknown[]) => mockOpenParquetFile(...args),
   readParquetData: (...args: unknown[]) => mockReadParquetData(...args),
   countParquetData: (...args: unknown[]) => mockCountParquetData(...args),
-  evictCache: (...args: unknown[]) => mockEvictCache(...args),
+  // The real wrapper swallows the rejection; the double must too, or the
+  // "could not be evicted" case below would test an impossible state.
+  // api/__tests__/evict-cache-quietly.test.ts pins the real one.
+  evictCacheQuietly: (...args: unknown[]) =>
+    mockEvictCache(...args).catch((err: unknown) => console.error('Failed to evict cache:', err)),
 }));
 
 vi.mock('../../../../contexts/SettingsContext', () => ({

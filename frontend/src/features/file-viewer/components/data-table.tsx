@@ -5,10 +5,11 @@ import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
 import { SearchMatch, indexOfTerm } from '../lib/search';
+import type { RowData } from '../../../lib/row';
 
 interface DataTableProps {
   columns: ColumnInfo[];
-  rows: Record<string, unknown>[];
+  rows: RowData[];
   selectedRow: number | null;
   onSelectRow: (rowIndex: number) => void;
   searchTerm: string;
@@ -55,7 +56,7 @@ function highlight(text: string, searchTerm: string): React.ReactNode {
 }
 
 interface DataRowProps {
-  row: Record<string, unknown>;
+  row: RowData;
   rowIndex: number;
   visibleColumns: VisibleColumn[];
   padLeft: number;

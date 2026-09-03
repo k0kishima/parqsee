@@ -1,4 +1,5 @@
 import { assertNever } from '../../../lib/exhaustive';
+import { pageWindow } from './page-window';
 
 export const EXPORT_RANGES = ['all', 'current', 'custom'] as const;
 export type ExportRange = typeof EXPORT_RANGES[number];
@@ -33,8 +34,10 @@ export function resolveExportRange(range: ExportRange, ctx: ExportRangeContext):
   switch (range) {
     case 'all':
       return {};
-    case 'current':
-      return { offset: (ctx.currentPage - 1) * ctx.rowsPerPage, limit: ctx.rowsPerPage };
+    case 'current': {
+      const { offset, limit } = pageWindow(ctx.currentPage, ctx.rowsPerPage, ctx.totalRows);
+      return { offset, limit };
+    }
     case 'custom': {
       const start = parseInt(ctx.startInput, 10);
       const end = parseInt(ctx.endInput, 10);
