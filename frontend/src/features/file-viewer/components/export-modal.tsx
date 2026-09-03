@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { exportData } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
 import { ExportRange, resolveExportRange } from "../lib/export-range";
+import { toErrorMessage } from "../../../lib/tauri";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -132,7 +133,7 @@ export function ExportModal({
         icon: "done"
       });
     } catch (err) {
-      setError(String(err));
+      setError(toErrorMessage(err));
     } finally {
       setIsExporting(false);
     }

@@ -11,6 +11,7 @@ import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
+import { toErrorMessage } from "../../../lib/tauri";
 
 interface DataViewerProps {
   filePath: string;
@@ -156,7 +157,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // user clears it.
     } catch (err) {
       if (seq !== loadSeq.current) return;
-      setError(err as string);
+      setError(toErrorMessage(err));
       setLoading(false);
     }
   };
@@ -190,13 +191,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // behind a valid footer, or a file deleted since it was opened. Show
       // the file-level error instead of a banner over an empty grid.
       if (!lastGood.current) {
-        setError(String(err));
+        setError(toErrorMessage(err));
         setLoading(false);
         return;
       }
       // A rejected filter must not strand the tab on an error screen: keep the
       // previous result on screen and let the user correct the condition.
-      setDataError(String(err));
+      setDataError(toErrorMessage(err));
       // Roll the request state back to what the grid is still showing, so
       // pagination and export never describe the failed filter or page. The
       // rows on screen are already that state — skip the echo reload the
