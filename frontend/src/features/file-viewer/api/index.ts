@@ -68,6 +68,15 @@ export const evictCache = async (path: string): Promise<void> => {
     return await invoke('evict_cache', { path });
 };
 
+/**
+ * Drop the cached session, best effort. A caller that is closing a tab or
+ * refreshing a file must carry on either way: left unhandled, the rejection
+ * stranded the tab on an empty grid with no error.
+ */
+export const evictCacheQuietly = async (path: string): Promise<void> => {
+    return await evictCache(path).catch(err => console.error('Failed to evict cache:', err));
+};
+
 /** Resolves with the number of rows written. */
 export const exportData = async (params: ExportDataParams): Promise<number> => {
     return await invoke('export_data', params as any);

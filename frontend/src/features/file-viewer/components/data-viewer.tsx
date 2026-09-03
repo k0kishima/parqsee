@@ -6,7 +6,7 @@ import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
-import { openParquetFile, readParquetData, countParquetData, evictCache, ParquetMetadata } from "../api";
+import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
@@ -223,10 +223,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setSearchTerm('');
     setIsSearchOpen(false);
     setMetadata(null);
-    // Best effort, as when a tab closes: a refresh that could not drop the
-    // cache still re-reads the file — left unhandled, the rejection stranded
-    // the tab on an empty grid with no error.
-    await evictCache(filePath).catch(err => console.error('Failed to evict cache:', err));
+    await evictCacheQuietly(filePath);
     await loadFile();
   };
 

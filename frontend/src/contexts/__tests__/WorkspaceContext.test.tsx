@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { WorkspaceProvider, useWorkspace } from '../WorkspaceContext';
 import { RecentFilesProvider } from '../RecentFilesContext';
-import { evictCache } from '../../features/file-viewer/api';
+import { evictCacheQuietly } from '../../features/file-viewer/api';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -12,7 +12,7 @@ vi.mock('../../features/file-viewer/api', () => ({
   checkFileExists: vi.fn(async () => true),
   openParquetFile: vi.fn(async () => ({ num_rows: 1, num_columns: 1, columns: [] })),
   getFileInfo: vi.fn(async (path: string) => ({ path, name: path.split('/').pop(), size: 1 })),
-  evictCache: vi.fn(async () => undefined),
+  evictCacheQuietly: vi.fn(async () => undefined),
 }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -28,7 +28,7 @@ function renderWorkspace() {
 describe('WorkspaceProvider tabs', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.mocked(evictCache).mockClear();
+    vi.mocked(evictCacheQuietly).mockClear();
   });
 
   it('opens a tab per file and activates the last one', async () => {
@@ -115,11 +115,11 @@ describe('WorkspaceProvider tabs', () => {
     const [a, b] = result.current.tabs;
 
     act(() => result.current.closeTab(b.id));
-    expect(evictCache).toHaveBeenCalledWith('/data/b.parquet');
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/b.parquet');
 
-    vi.mocked(evictCache).mockClear();
+    vi.mocked(evictCacheQuietly).mockClear();
     act(() => result.current.closeTab(a.id));
-    expect(evictCache).toHaveBeenCalledWith('/data/a.parquet');
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/a.parquet');
     expect(result.current.tabs).toHaveLength(0);
     expect(result.current.currentFile).toBeNull();
   });

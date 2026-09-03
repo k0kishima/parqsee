@@ -6,7 +6,7 @@ import { isTauri } from '../lib/tauri';
 import { isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
-import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCache } from '../features/file-viewer/api';
+import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCacheQuietly } from '../features/file-viewer/api';
 import { TabState } from '../features/file-viewer';
 import {
     Tab,
@@ -77,7 +77,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const { evictPath } = closeTabTransition(workspaceTabsRef.current, tabId);
         dispatch({ type: 'close', tabId });
         if (evictPath) {
-            evictCache(evictPath).catch(err => console.error('Failed to evict cache:', err));
+            evictCacheQuietly(evictPath);
         }
     }, []);
 
