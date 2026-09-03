@@ -1,3 +1,4 @@
+import { RowData } from '../../../lib/row';
 import { formatCellValue } from '../../../lib/format';
 
 export interface SearchMatch {
@@ -33,7 +34,7 @@ export function matchesTerm(text: string | null, term: string): boolean {
 export function findSearchMatches(
   term: string,
   columns: readonly { name: string }[],
-  rows: readonly Record<string, unknown>[],
+  rows: readonly RowData[],
   maxMatches = MAX_SEARCH_MATCHES
 ): SearchMatch[] {
   if (!term) return [];

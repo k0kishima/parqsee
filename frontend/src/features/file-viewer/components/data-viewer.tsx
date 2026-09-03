@@ -11,6 +11,7 @@ import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
 import { pageWindow } from "../lib/page-window";
+import type { RowData } from "../../../lib/row";
 import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
 import { toErrorMessage } from "../../../lib/tauri";
 
@@ -34,7 +35,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const { t } = useTranslation();
 
   const [metadata, setMetadata] = useState<ParquetMetadata | null>(null);
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<RowData[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
   /** Fatal: the file itself could not be opened. */

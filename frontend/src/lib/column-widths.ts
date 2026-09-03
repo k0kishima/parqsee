@@ -1,3 +1,5 @@
+import { RowData } from './row';
+
 /**
  * Column width estimation for the virtualized data table.
  *
@@ -74,7 +76,7 @@ const SAMPLE = '0123456789.-abcdefghijklmnopqrstuvwxyz_';
  */
 export function measureColumnWidths(
   columns: ColumnWidthInput[],
-  rows: Record<string, unknown>[],
+  rows: RowData[],
   { format = defaultFormat, valueFont = 'mono' }: MeasureOptions = {}
 ): number[] {
   const ctx = getContext();
