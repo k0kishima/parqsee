@@ -236,15 +236,12 @@ mod tests {
     };
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
-    use parquet::arrow::ArrowWriter;
-    use std::fs::File;
     use std::path::PathBuf;
+    use crate::services::test_support::{self, write_parquet};
     use std::sync::Arc;
 
     fn temp_path(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("parqsee-export-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join(name)
+        test_support::temp_path("export", name)
     }
 
     /// Three columns, four rows, one null, written in schema order id, name, score.
@@ -264,9 +261,7 @@ mod tests {
         )
         .unwrap();
         let path = temp_path("fixture.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&path, &batch, None);
         path
     }
 
@@ -312,9 +307,7 @@ mod tests {
         )
         .unwrap();
         let src = temp_path("decimal.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&src).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&src, &batch, None);
 
         let out = temp_path("decimal.json");
         let n = export_data(
@@ -392,9 +385,7 @@ mod tests {
         let batch =
             RecordBatch::try_new(schema.clone(), vec![Arc::new(tags.finish()) as ArrayRef]).unwrap();
         let src = temp_path("nested.parquet");
-        let mut writer = ArrowWriter::try_new(File::create(&src).unwrap(), schema, None).unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        write_parquet(&src, &batch, None);
 
         let out = temp_path("nested.csv");
         let n = export_data(
