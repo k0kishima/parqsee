@@ -6,7 +6,9 @@ use futures::StreamExt;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::services::parquet::{json_unsafe_to_strings, nested_to_json_strings, range_reader, ParquetCache};
+use crate::services::parquet::{
+    build_page_query, json_unsafe_to_strings, nested_to_json_strings, range_reader, where_clause, ParquetCache,
+};
 
 /// Rows are decoded and written one batch at a time, so exports run in
 /// constant memory regardless of how many rows are exported, and the
@@ -106,7 +108,7 @@ pub async fn export_data(
     let format = ExportFormat::parse(&format)?;
     let staging_path = format!("{}.partial", export_path);
 
-    let result = match filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+    let result = match where_clause(filter.as_deref()) {
         Some(filter) => {
             export_filtered(cache, &source_path, filter, offset, limit, format, &staging_path).await
         }
@@ -168,7 +170,7 @@ async fn export_filtered(
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let query = crate::services::parquet::build_page_query(Some(filter), offset, limit);
+    let query = build_page_query(Some(filter), offset, limit);
 
     // Planning rejects a bad filter here, before any file is created.
     let ctx = cache.get_or_create_session(source_path).await?;

@@ -325,7 +325,9 @@ pub fn range_reader(
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)
         .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
 
-    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
+    let num_rows = builder.metadata().file_metadata().num_rows();
+    let total_rows = usize::try_from(num_rows)
+        .map_err(|_| format!("Failed to read parquet file {}: invalid row count {}", path, num_rows))?;
     let offset = offset.unwrap_or(0).min(total_rows);
     let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
 
@@ -339,39 +341,42 @@ pub fn range_reader(
 
 fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     let reader = open_file_reader(path)?;
+    let file_metadata = reader.metadata().file_metadata();
+    metadata_from_schema(file_metadata.schema(), file_metadata.num_rows())
+}
 
-    let metadata = reader.metadata();
-    let schema = metadata.file_metadata().schema();
+/// Describe one top-level schema field the way the column header shows it.
+fn column_info(field: &parquet::schema::types::Type) -> ColumnInfo {
+    let physical_type = if field.is_primitive() {
+        format!("{:?}", field.get_physical_type())
+    } else {
+        group_type_to_string(field)
+    };
+    let basic_info = field.get_basic_info();
+    let logical_type = match (basic_info.logical_type_ref(), basic_info.converted_type()) {
+        (Some(lt), _) => Some(logical_type_to_string(lt)),
+        (None, parquet::basic::ConvertedType::NONE) => None,
+        (None, converted) => Some(converted_type_to_string(converted)),
+    };
 
-    let columns: Vec<ColumnInfo> = schema
-        .get_fields()
-        .iter()
-        .map(|field| {
-            let physical_type = if field.is_primitive() {
-                format!("{:?}", field.get_physical_type())
-            } else {
-                group_type_to_string(field)
-            };
-            let logical_type = if let Some(lt) = field.get_basic_info().logical_type_ref() {
-                Some(logical_type_to_string(lt))
-            } else if field.get_basic_info().converted_type() != parquet::basic::ConvertedType::NONE
-            {
-                Some(converted_type_to_string(field.get_basic_info().converted_type()))
-            } else {
-                None
-            };
+    ColumnInfo {
+        name: field.name().to_string(),
+        column_type: logical_type
+            .clone()
+            .unwrap_or_else(|| physical_type.clone()),
+        kind: column_kind(field),
+        logical_type,
+        physical_type,
+    }
+}
 
-            ColumnInfo {
-                name: field.name().to_string(),
-                column_type: logical_type
-                    .clone()
-                    .unwrap_or_else(|| physical_type.clone()),
-                kind: column_kind(field),
-                logical_type,
-                physical_type,
-            }
-        })
-        .collect();
+/// The metadata the webview shows for a file with this root schema and row
+/// count. Pure: `compute_metadata` reads them from the file.
+fn metadata_from_schema(
+    schema: &parquet::schema::types::Type,
+    num_rows: i64,
+) -> Result<ParquetMetadata, String> {
+    let columns: Vec<ColumnInfo> = schema.get_fields().iter().map(|f| column_info(f)).collect();
 
     // DataFusion cannot register a schema with duplicate field names, so every
     // read would fail after the tab had already opened. Refuse up front, with
@@ -385,7 +390,7 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     }
 
     Ok(ParquetMetadata {
-        num_rows: metadata.file_metadata().num_rows(),
+        num_rows,
         num_columns: columns.len(),
         columns,
     })
@@ -620,12 +625,12 @@ fn nested_column_as_json(name: &str, column: &ArrayRef) -> Result<ArrayRef, Stri
     let batch = RecordBatch::try_new(schema, vec![column.clone()]).map_err(|e| e.to_string())?;
     let bytes = batches_to_json_bytes(&[batch])?;
 
-    let mut values: Vec<Option<String>> = Vec::with_capacity(column.len());
-    for row in serde_json::Deserializer::from_slice(&bytes).into_iter::<serde_json::Map<String, Value>>() {
+    let values = serde_json::Deserializer::from_slice(&bytes)
+        .into_iter::<serde_json::Map<String, Value>>()
         // A null value is written as an object without the field.
-        let mut row = row.map_err(|e| format!("Failed to render nested column: {}", e))?;
-        values.push(row.remove(name).map(|v| v.to_string()));
-    }
+        .map(|row| row.map(|mut row| row.remove(name).map(|v| v.to_string())))
+        .collect::<Result<Vec<Option<String>>, _>>()
+        .map_err(|e| format!("Failed to render nested column: {}", e))?;
 
     Ok(Arc::new(arrow::array::StringArray::from(values)) as ArrayRef)
 }
@@ -797,7 +802,10 @@ fn stringify_unsafe_integers(value: &mut Value) {
     }
 }
 
-fn where_clause(filter: Option<&str>) -> Option<&str> {
+/// The filter the webview sent, or None when it is absent or blank. This is
+/// the one place that decides what "no filter" means for the grid, the count
+/// and the export alike.
+pub fn where_clause(filter: Option<&str>) -> Option<&str> {
     filter.map(str::trim).filter(|f| !f.is_empty())
 }
 
@@ -869,25 +877,21 @@ pub async fn count_data(
     };
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    count_from_batches(&batches)
+}
 
-    if batches.is_empty() {
+/// The single value of a `SELECT COUNT(*)` result; an empty result counts as 0.
+fn count_from_batches(batches: &[RecordBatch]) -> Result<usize, String> {
+    let Some(batch) = batches.iter().find(|b| b.num_rows() > 0) else {
         return Ok(0);
-    }
-
-    // Extract count from the first batch
-    let batch = &batches[0];
-    if batch.num_rows() == 0 {
-        return Ok(0);
-    }
-
-    let column = batch.column(0);
-    let count = column
+    };
+    let count = batch
+        .column(0)
         .as_any()
         .downcast_ref::<arrow::array::Int64Array>()
         .ok_or_else(|| "Failed to downcast count result".to_string())?
         .value(0);
-
-    Ok(count as usize)
+    usize::try_from(count).map_err(|_| format!("Invalid row count: {}", count))
 }
 
 pub async fn execute_sql_with_cache(
@@ -945,15 +949,15 @@ pub async fn execute_sql_limited(
             .map_err(|e| format!("Failed to limit results: {}", e))?;
     }
 
-    let mut batches = df
+    let batches = df
         .collect()
         .await
         .map_err(|e| format!("Failed to collect results: {}", e))?;
 
-    let mut truncated = false;
-    if let Some(max) = max_rows {
-        truncated = truncate_batches(&mut batches, max);
-    }
+    let (batches, truncated) = match max_rows {
+        Some(max) => truncate_batches(batches, max),
+        None => (batches, false),
+    };
 
     Ok((batches, schema, truncated))
 }
@@ -976,26 +980,24 @@ fn reject_non_query(plan: &datafusion::logical_expr::LogicalPlan) -> Result<(), 
     ))
 }
 
-/// Drop rows past `max` across `batches`; returns true if anything was dropped.
-fn truncate_batches(batches: &mut Vec<RecordBatch>, max: usize) -> bool {
+/// The first `max` rows of `batches`, and whether anything was dropped.
+fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>, bool) {
     let total: usize = batches.iter().map(|b| b.num_rows()).sum();
     if total <= max {
-        return false;
+        return (batches, false);
     }
-    let mut remaining = max;
-    let mut keep = 0;
-    for batch in batches.iter_mut() {
-        if remaining == 0 {
-            break;
-        }
-        if batch.num_rows() > remaining {
-            *batch = batch.slice(0, remaining);
-        }
-        remaining -= batch.num_rows();
-        keep += 1;
-    }
-    batches.truncate(keep);
-    true
+    let kept = batches
+        .into_iter()
+        .scan(max, |remaining, batch| {
+            if *remaining == 0 {
+                return None;
+            }
+            let take = batch.num_rows().min(*remaining);
+            *remaining -= take;
+            Some(if take == batch.num_rows() { batch } else { batch.slice(0, take) })
+        })
+        .collect();
+    (kept, true)
 }
 
 #[cfg(test)]
@@ -1611,18 +1613,78 @@ mod tests {
     }
 
     #[test]
+    fn metadata_is_derived_from_the_schema_alone() {
+        use parquet::basic::{LogicalType, Repetition, Type as PhysicalType};
+        use parquet::schema::types::Type;
+
+        let primitive = |name: &str, physical, logical: Option<LogicalType>| {
+            Type::primitive_type_builder(name, physical)
+                .with_repetition(Repetition::OPTIONAL)
+                .with_logical_type(logical)
+                .build()
+                .unwrap()
+        };
+        let root = |fields: Vec<Type>| {
+            Type::group_type_builder("schema")
+                .with_fields(fields.into_iter().map(Arc::new).collect())
+                .build()
+                .unwrap()
+        };
+
+        let meta = super::metadata_from_schema(
+            &root(vec![
+                primitive("id", PhysicalType::INT64, None),
+                primitive("name", PhysicalType::BYTE_ARRAY, Some(LogicalType::String)),
+            ]),
+            7,
+        )
+        .unwrap();
+        assert_eq!(meta.num_rows, 7);
+        assert_eq!(meta.num_columns, 2);
+        assert_eq!(meta.columns[0].column_type, "INT64");
+        assert_eq!(meta.columns[0].kind, ColumnKind::Integer);
+        assert_eq!(meta.columns[1].column_type, "STRING");
+        assert_eq!(meta.columns[1].physical_type, "BYTE_ARRAY");
+
+        let err = super::metadata_from_schema(
+            &root(vec![
+                primitive("id", PhysicalType::INT64, None),
+                primitive("id", PhysicalType::INT32, None),
+            ]),
+            0,
+        )
+        .unwrap_err();
+        assert!(err.contains("more than one column named \"id\""), "{err}");
+    }
+
+    #[test]
+    fn count_is_read_from_the_first_non_empty_batch() {
+        use arrow::array::Int64Array;
+        let schema = Arc::new(Schema::new(vec![Field::new("c", DataType::Int64, false)]));
+        let count = |values: Vec<i64>| {
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(values))]).unwrap()
+        };
+        assert_eq!(super::count_from_batches(&[]).unwrap(), 0);
+        assert_eq!(super::count_from_batches(&[count(vec![])]).unwrap(), 0);
+        assert_eq!(super::count_from_batches(&[count(vec![]), count(vec![42])]).unwrap(), 42);
+        assert!(super::count_from_batches(&[count(vec![-1])]).is_err());
+        assert!(super::count_from_batches(&[batch(1)]).is_err(), "an Int32 column is not a count");
+    }
+
+    #[test]
     fn keeps_results_within_the_limit() {
-        let mut batches = vec![batch(3), batch(4)];
-        assert!(!truncate_batches(&mut batches, 7));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4)], 7);
+        assert!(!truncated);
         assert_eq!(rows(&batches), 7);
-        assert!(!truncate_batches(&mut batches, 100));
+        let (batches, truncated) = truncate_batches(batches, 100);
+        assert!(!truncated);
         assert_eq!(batches.len(), 2);
     }
 
     #[test]
     fn cuts_inside_a_batch_and_drops_the_rest() {
-        let mut batches = vec![batch(3), batch(4), batch(5)];
-        assert!(truncate_batches(&mut batches, 5));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4), batch(5)], 5);
+        assert!(truncated);
         assert_eq!(batches.len(), 2);
         assert_eq!(rows(&batches), 5);
         assert_eq!(batches[1].num_rows(), 2);
@@ -1630,16 +1692,16 @@ mod tests {
 
     #[test]
     fn cuts_exactly_on_a_batch_boundary() {
-        let mut batches = vec![batch(3), batch(4)];
-        assert!(truncate_batches(&mut batches, 3));
+        let (batches, truncated) = truncate_batches(vec![batch(3), batch(4)], 3);
+        assert!(truncated);
         assert_eq!(batches.len(), 1);
         assert_eq!(rows(&batches), 3);
     }
 
     #[test]
     fn zero_limit_drops_everything() {
-        let mut batches = vec![batch(3)];
-        assert!(truncate_batches(&mut batches, 0));
+        let (batches, truncated) = truncate_batches(vec![batch(3)], 0);
+        assert!(truncated);
         assert!(batches.is_empty());
     }
 }
