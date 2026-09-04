@@ -15,15 +15,13 @@ export function BreadcrumbNav({ currentDir, onNavigate }: BreadcrumbNavProps) {
   const breadcrumbSegments = useMemo(() => {
     if (!currentDir) return [];
     const parts = currentDir.split('/').filter(Boolean);
-    const segments: { name: string; path: string }[] = [];
-    segments.push({ name: t('fileExplorer.breadcrumb.root'), path: '/' });
-    for (let i = 0; i < parts.length; i++) {
-      segments.push({
-        name: parts[i],
-        path: '/' + parts.slice(0, i + 1).join('/'),
-      });
-    }
-    return segments;
+    return [
+      { name: t('fileExplorer.breadcrumb.root'), path: '/' },
+      ...parts.map((name, index) => ({
+        name,
+        path: '/' + parts.slice(0, index + 1).join('/'),
+      })),
+    ];
   }, [currentDir, t]);
 
   const visibleBreadcrumbs = useMemo(() => {
