@@ -43,6 +43,8 @@ export function ExportModal({
    * never be delivered (permission denied, unsigned build), and then a
    * silently closing modal was the only sign anything had happened. */
   const [done, setDone] = useState<{ rows: number; path: string } | null>(null);
+  /** Copy Path acknowledges the click by relabelling itself for a moment. */
+  const [copied, setCopied] = useState(false);
 
   // The row count moves with the filter, so start from the full range every
   // time the modal is opened rather than from the last export's bounds.
@@ -54,6 +56,7 @@ export function ExportModal({
       setEndInput(String(totalRows));
       setError(null);
       setDone(null);
+      setCopied(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -67,6 +70,13 @@ export function ExportModal({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isOpen, isExporting, onClose]);
+
+  // Revert the "Copied" label; the timer must not outlive a closed modal.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   if (!isOpen) return null;
 
@@ -139,6 +149,17 @@ export function ExportModal({
     }
   };
 
+  // Same approach as the explorer context menu (context-menu.tsx).
+  const handleCopyPath = async () => {
+    if (!done) return;
+    try {
+      await navigator.clipboard.writeText(done.path);
+      setCopied(true);
+    } catch (err) {
+      console.error('Failed to copy path:', err);
+    }
+  };
+
   if (done) {
     return (
       <div
@@ -162,6 +183,12 @@ export function ExportModal({
             <p className="text-xs font-mono break-all text-gray-500 dark:text-gray-400">{done.path}</p>
           </div>
           <div className="px-6 py-4 border-t flex justify-end space-x-3 border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleCopyPath}
+              className="btn-secondary border border-gray-300 dark:border-gray-600"
+            >
+              {copied ? t('export.success.copied') : t('fileExplorer.contextMenu.copyPath')}
+            </button>
             <button
               onClick={() => revealItemInDir(done.path).catch((err) => console.error('Failed to reveal in Finder:', err))}
               className="btn-secondary border border-gray-300 dark:border-gray-600"

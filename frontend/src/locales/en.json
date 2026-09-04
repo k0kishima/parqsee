@@ -138,7 +138,8 @@
         "exporting": "Exporting...",
         "success": {
             "title": "Export Complete",
-            "body": "Successfully exported {{rows}} rows to {{file}}"
+            "body": "Successfully exported {{rows}} rows to {{file}}",
+            "copied": "Copied"
         }
     }
 }
