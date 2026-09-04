@@ -3,10 +3,11 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
-import { isParquetPath, PARQUET_EXTENSION } from '../lib/path';
+import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
-import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCacheQuietly } from '../features/file-viewer/api';
+import { openParquetFile as apiOpenParquetFile, checkFileExists, evictCacheQuietly } from '../features/file-viewer/api';
+import { rememberFile } from '../features/welcome/api';
 import { TabState } from '../features/file-viewer';
 import {
     WorkspaceRoot,
@@ -70,7 +71,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const workspaceTabsRef = useRef(workspaceTabs);
     workspaceTabsRef.current = workspaceTabs;
     const [isPending, startTransition] = useTransition();
-    const { addRecentFile, removeRecentFile } = useRecentFiles();
+    const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
 
     // The roots the backend restored from its store (and re-acquired access
@@ -113,23 +114,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 }
 
                 await apiOpenParquetFile(path);
-                const fileInfo = await getFileInfo(path);
 
-                addRecentFile({
-                    path: fileInfo.path,
-                    name: fileInfo.name,
-                    lastAccessed: new Date().toLocaleString(),
-                    size: fileInfo.size
+                // Recorded now, while the app can read the file, so Recent
+                // Files can reopen it after a relaunch. A failure to record
+                // it is not a failure to open it.
+                const recent = await rememberFile(path).catch(error => {
+                    console.error('Failed to record the file in Recent Files:', error);
+                    return null;
                 });
+                if (recent) upsertRecentFile(recent);
 
-                dispatch({ type: 'open', tab: { id: newTabId(), path: fileInfo.path, name: fileInfo.name } });
+                dispatch({ type: 'open', tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) } });
             }
             // Browser fallback: there is no backend to open the file with.
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
         }
-    }, [addRecentFile, removeRecentFile]);
+    }, [upsertRecentFile, removeRecentFile]);
 
     const openFileDialog = useCallback(async () => {
         try {

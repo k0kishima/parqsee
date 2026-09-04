@@ -32,7 +32,7 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                     recentFiles.map((file) => (
                         <div
                             key={file.path}
-                            className="w-full flex items-center rounded-lg border transition-all group bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:shadow-none"
+                            className={`w-full flex items-center rounded-lg border transition-all group bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:shadow-none ${file.available ? '' : 'opacity-60'}`}
                         >
                             <button
                                 onClick={() => onFileSelect(file.path)}
@@ -52,6 +52,11 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                                             <p className="text-sm text-slate-500 dark:text-gray-500">
                                                 {file.path}
                                             </p>
+                                            {!file.available && (
+                                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                                    {t('welcome.recentFiles.unavailable')}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -59,7 +64,7 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                                             {formatFileSize(file.size)}
                                         </p>
                                         <p className="text-xs text-slate-500 dark:text-gray-500">
-                                            {file.lastAccessed}
+                                            {new Date(file.last_accessed).toLocaleString()}
                                         </p>
                                     </div>
                                 </div>

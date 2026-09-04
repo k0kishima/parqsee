@@ -6,6 +6,9 @@ import { RecentFilesProvider } from '../RecentFilesContext';
 import { evictCacheQuietly } from '../../features/file-viewer/api';
 import { open } from '@tauri-apps/plugin-dialog';
 import { addWorkspaceRoot, listWorkspaceRoots, removeWorkspaceRoot } from '../../features/workspace/api';
+import { rememberFile, removeRecentFile } from '../../features/welcome/api';
+import { checkFileExists } from '../../features/file-viewer/api';
+import { useRecentFiles } from '../RecentFilesContext';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -18,8 +21,13 @@ vi.mock('../../features/workspace/api', () => ({
 vi.mock('../../features/file-viewer/api', () => ({
   checkFileExists: vi.fn(async () => true),
   openParquetFile: vi.fn(async () => ({ num_rows: 1, num_columns: 1, columns: [] })),
-  getFileInfo: vi.fn(async (path: string) => ({ path, name: path.split('/').pop(), size: 1 })),
   evictCacheQuietly: vi.fn(async () => undefined),
+}));
+vi.mock('../../features/welcome/api', () => ({
+  listRecentFiles: vi.fn(async () => []),
+  rememberFile: vi.fn(async (path: string) => ({ path, name: path.split('/').pop(), size: 1, last_accessed: 0, available: true })),
+  removeRecentFile: vi.fn(async () => undefined),
+  clearRecentFiles: vi.fn(async () => undefined),
 }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -173,5 +181,51 @@ describe('WorkspaceProvider workspace roots', () => {
 
     expect(result.current.roots).toEqual([{ path: '/more', name: 'more' }]);
     expect(removeWorkspaceRoot).toHaveBeenCalledWith('/data');
+  });
+});
+
+describe('WorkspaceProvider recent files', () => {
+  beforeEach(() => {
+    vi.mocked(rememberFile).mockClear();
+    vi.mocked(removeRecentFile).mockClear();
+    vi.mocked(checkFileExists).mockClear();
+  });
+
+  function renderBoth() {
+    return renderHook(() => ({ workspace: useWorkspace(), recent: useRecentFiles() }), { wrapper });
+  }
+
+  it('records an opened file in the backend and shows it first in the list', async () => {
+    const { result } = renderBoth();
+
+    await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
+    await act(() => result.current.workspace.openParquetFile('/data/b.parquet'));
+
+    expect(rememberFile).toHaveBeenCalledWith('/data/a.parquet');
+    expect(result.current.recent.recentFiles.map(f => f.path)).toEqual(['/data/b.parquet', '/data/a.parquet']);
+    expect(result.current.workspace.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet']);
+  });
+
+  it('still opens the tab when the file could not be recorded', async () => {
+    vi.mocked(rememberFile).mockRejectedValueOnce('disk full');
+    const { result } = renderBoth();
+
+    await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
+
+    expect(result.current.workspace.tabs.map(t => t.name)).toEqual(['a.parquet']);
+    expect(result.current.recent.recentFiles).toEqual([]);
+  });
+
+  it('drops a file that no longer exists from the list instead of opening it', async () => {
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const { result } = renderBoth();
+    await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
+
+    vi.mocked(checkFileExists).mockResolvedValueOnce(false);
+    await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
+
+    expect(removeRecentFile).toHaveBeenCalledWith('/data/a.parquet');
+    expect(result.current.recent.recentFiles).toEqual([]);
+    expect(window.alert).toHaveBeenCalledWith('File not found: /data/a.parquet');
   });
 });
