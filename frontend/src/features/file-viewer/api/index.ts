@@ -55,3 +55,12 @@ export const evictCacheQuietly = async (path: string): Promise<void> => {
 export const exportData = async (params: ExportDataParams): Promise<number> => {
     return await invoke('export_data', params as any);
 };
+
+/**
+ * The folder the save panel for an export of `sourcePath` should start in:
+ * the file's own folder inside an open workspace root, else the last export
+ * folder, else null for the panel's default.
+ */
+export const exportDefaultDir = async (sourcePath: string): Promise<string | null> => {
+    return (await invoke<string | null>('export_default_dir', { sourcePath })) ?? null;
+};

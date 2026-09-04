@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
-import { exportData } from "../api";
+import { exportData, exportDefaultDir } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
 import { ExportRange, resolveExportRange } from "../lib/export-range";
 import { pageWindow } from "../lib/page-window";
@@ -105,9 +105,18 @@ export function ExportModal({
       const baseFileName = stripParquetExtension(originalFileName);
       const defaultFileName = `${baseFileName}.${exportFormat}`;
 
-      // Open save dialog
+      // Where the panel starts is a nicety: if the backend cannot say,
+      // the panel opens wherever it likes and the export goes ahead.
+      const defaultDir = await exportDefaultDir(filePath).catch((err) => {
+        console.error('Failed to resolve the export folder:', err);
+        return null;
+      });
+      const defaultPath = defaultDir ? `${defaultDir}/${defaultFileName}` : defaultFileName;
+
+      // Open save dialog. Under the sandbox the panel grants write access
+      // to whatever the user picks; defaultPath only chooses the start.
       const savePath = await save({
-        defaultPath: defaultFileName,
+        defaultPath,
         filters: [{
           name: `${exportFormat.toUpperCase()} files`,
           extensions: extensions[exportFormat]
