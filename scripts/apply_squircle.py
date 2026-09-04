@@ -1,7 +1,15 @@
 import os
-from PIL import Image, ImageDraw
+
+
+def squircle_layout(size, scale_factor):
+    """Return the resized dimensions and centered offset for an icon canvas."""
+    new_size = (int(size[0] * scale_factor), int(size[1] * scale_factor))
+    offset = ((size[0] - new_size[0]) // 2, (size[1] - new_size[1]) // 2)
+    return new_size, offset
 
 def create_squircle_mask(size, radius_ratio=0.225):
+    from PIL import Image, ImageDraw
+
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
     w, h = size
@@ -32,6 +40,23 @@ def create_squircle_mask(size, radius_ratio=0.225):
         
     return mask
 
+
+def render_squircle_icon(image, scale_factor):
+    """Resize, center, and mask an RGBA image without touching the filesystem."""
+    from PIL import Image
+
+    original_size = image.size
+    new_size, (offset_x, offset_y) = squircle_layout(original_size, scale_factor)
+    image_resized = image.resize(new_size, Image.Resampling.LANCZOS)
+    background = Image.new("RGBA", original_size, (0, 0, 0, 0))
+    background.paste(image_resized, (offset_x, offset_y))
+
+    small_mask = create_squircle_mask(new_size)
+    full_mask = Image.new("L", original_size, 0)
+    full_mask.paste(small_mask, (offset_x, offset_y))
+    background.putalpha(full_mask)
+    return background
+
 def apply_mask():
     # Determine project root based on script location (./scripts/apply_squircle.py -> ../)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,33 +74,11 @@ def apply_mask():
         exit(1)
         
     try:
+        from PIL import Image
+
         # Load original
         img = Image.open(input_path).convert("RGBA")
-        original_size = img.size
-        
-        # 1. Resize visual content
-        new_size = (int(original_size[0] * SCALE_FACTOR), int(original_size[1] * SCALE_FACTOR))
-        img_resized = img.resize(new_size, Image.Resampling.LANCZOS)
-        
-        # 2. Create new transparent background 1024x1024 (or original size)
-        background = Image.new("RGBA", original_size, (0, 0, 0, 0))
-        
-        # 3. Paste resized image in center
-        offset_x = (original_size[0] - new_size[0]) // 2
-        offset_y = (original_size[1] - new_size[1]) // 2
-        background.paste(img_resized, (offset_x, offset_y))
-        
-        # 4. Create Squircle mask for the RESIZED content
-        # We need the mask to match the new resized shape to clip it correctly
-        # OR, we clip the original image then resize? 
-        # Better: Create mask at new_size, then paste it into a full-size transparent mask.
-        
-        small_mask = create_squircle_mask(new_size)
-        full_mask = Image.new("L", original_size, 0)
-        full_mask.paste(small_mask, (offset_x, offset_y))
-        
-        # 5. Apply combined mask
-        background.putalpha(full_mask)
+        background = render_squircle_icon(img, SCALE_FACTOR)
         
         # Save
         background.save(output_path, "PNG")

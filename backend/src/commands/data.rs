@@ -27,8 +27,7 @@ pub async fn evict_cache(
     cache: tauri::State<'_, ParquetCache>,
     path: String,
 ) -> Result<(), String> {
-    cache.evict(&path);
-    Ok(())
+    cache.evict(&path).await
 }
 
 #[tauri::command]

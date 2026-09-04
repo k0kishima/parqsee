@@ -4,7 +4,8 @@ use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata};
 
@@ -13,6 +14,10 @@ use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata};
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
+    /// Per-path gates make a cache fill and eviction one atomic transition
+    /// without serializing operations for unrelated files.
+    session_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+    metadata_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
 }
 
 impl ParquetCache {
@@ -20,7 +25,31 @@ impl ParquetCache {
         Self {
             sessions: Mutex::new(HashMap::new()),
             metadata: Mutex::new(HashMap::new()),
+            session_gates: Mutex::new(HashMap::new()),
+            metadata_gates: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn gate_for(
+        gates: &Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+        path: &str,
+    ) -> Result<Arc<AsyncMutex<()>>, String> {
+        let mut gates = gates.lock().map_err(|e| e.to_string())?;
+        gates.retain(|_, gate| gate.strong_count() > 0);
+        if let Some(gate) = gates.get(path).and_then(Weak::upgrade) {
+            return Ok(gate);
+        }
+        let gate = Arc::new(AsyncMutex::new(()));
+        gates.insert(path.to_string(), Arc::downgrade(&gate));
+        Ok(gate)
+    }
+
+    fn session_gate(&self, path: &str) -> Result<Arc<AsyncMutex<()>>, String> {
+        Self::gate_for(&self.session_gates, path)
+    }
+
+    fn metadata_gate(&self, path: &str) -> Result<Arc<AsyncMutex<()>>, String> {
+        Self::gate_for(&self.metadata_gates, path)
     }
 
     /// Get or create a SessionContext for the given file path.
@@ -51,7 +80,20 @@ impl ParquetCache {
         &self,
         path: &str,
     ) -> Result<datafusion::execution::context::SessionContext, String> {
-        // Check cache first
+        // Check cache first. A hit may proceed while an already-started query
+        // still uses that context; eviction only guarantees later creations
+        // cannot repopulate the cache with an older context.
+        {
+            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+            if let Some(ctx) = sessions.get(path) {
+                return Ok(ctx.clone());
+            }
+        }
+
+        let gate = self.session_gate(path)?;
+        let _gate = gate.lock().await;
+
+        // A concurrent miss may have completed while this call waited.
         {
             let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
             if let Some(ctx) = sessions.get(path) {
@@ -78,7 +120,14 @@ impl ParquetCache {
     }
 
     /// Get cached metadata, or compute and cache it.
-    pub fn get_or_create_metadata(&self, path: &str) -> Result<ParquetMetadata, String> {
+    pub async fn get_or_create_metadata(&self, path: &str) -> Result<ParquetMetadata, String> {
+        self.get_or_create_metadata_with(path, || compute_metadata(path)).await
+    }
+
+    async fn get_or_create_metadata_with<F>(&self, path: &str, compute: F) -> Result<ParquetMetadata, String>
+    where
+        F: FnOnce() -> Result<ParquetMetadata, String>,
+    {
         // Check cache first
         {
             let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
@@ -87,8 +136,18 @@ impl ParquetCache {
             }
         }
 
-        // Compute metadata
-        let meta = compute_metadata(path)?;
+        let gate = self.metadata_gate(path)?;
+        let _gate = gate.lock().await;
+
+        // A concurrent miss may have completed while this call waited.
+        {
+            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
+            if let Some(meta) = metadata_cache.get(path) {
+                return Ok(meta.clone());
+            }
+        }
+
+        let meta = compute()?;
 
         // Store in cache
         {
@@ -100,13 +159,19 @@ impl ParquetCache {
     }
 
     /// Remove cached entries for a given file path.
-    pub fn evict(&self, path: &str) {
+    pub async fn evict(&self, path: &str) -> Result<(), String> {
+        let session_gate = self.session_gate(path)?;
+        let _session_gate = session_gate.lock().await;
+        let metadata_gate = self.metadata_gate(path)?;
+        let _metadata_gate = metadata_gate.lock().await;
+
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(path);
         }
         if let Ok(mut metadata_cache) = self.metadata.lock() {
             metadata_cache.remove(path);
         }
+        Ok(())
     }
 }
 
@@ -495,13 +560,15 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
     let DataType::Struct(fields) = array.data_type() else {
         return Err("Failed to read struct column".to_string());
     };
-    let mut converted_fields = Vec::with_capacity(fields.len());
-    let mut converted_columns = Vec::with_capacity(fields.len());
-    for (field, column) in fields.iter().zip(array.columns()) {
-        let column = json_unsafe_as_strings(column)?;
-        converted_fields.push(retyped_field(field, column.data_type()));
-        converted_columns.push(column);
-    }
+    let converted = fields
+        .iter()
+        .zip(array.columns())
+        .map(|(field, column)| {
+            let column = json_unsafe_as_strings(column)?;
+            Ok((retyped_field(field, column.data_type()), column))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (converted_fields, converted_columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
     StructArray::try_new(converted_fields.into(), converted_columns, array.nulls().cloned())
         .map_err(|e| e.to_string())
 }
@@ -584,21 +651,27 @@ fn convert_batch(batch: &RecordBatch, keep_top_level_floats: bool) -> Result<Rec
         return Ok(batch.clone());
     }
 
-    let mut fields = Vec::with_capacity(schema.fields().len());
-    let mut columns = Vec::with_capacity(schema.fields().len());
-    for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        let column = if keep_top_level_floats && is_float(column.data_type()) {
-            column.clone()
-        } else {
-            json_unsafe_as_strings(column)?
-        };
-        fields.push(Arc::new(Field::new(
-            field.name(),
-            column.data_type().clone(),
-            field.is_nullable(),
-        )));
-        columns.push(column);
-    }
+    let converted = schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .map(|(field, column)| {
+            let column = if keep_top_level_floats && is_float(column.data_type()) {
+                column.clone()
+            } else {
+                json_unsafe_as_strings(column)?
+            };
+            Ok((
+                Arc::new(Field::new(
+                    field.name(),
+                    column.data_type().clone(),
+                    field.is_nullable(),
+                )),
+                column,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
 }
@@ -644,17 +717,22 @@ pub fn nested_to_json_strings(batch: &RecordBatch) -> Result<RecordBatch, String
         return Ok(batch.clone());
     }
 
-    let mut fields = Vec::with_capacity(schema.fields().len());
-    let mut columns = Vec::with_capacity(schema.fields().len());
-    for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        if is_nested(field.data_type()) {
-            fields.push(Arc::new(Field::new(field.name(), DataType::Utf8, true)));
-            columns.push(nested_column_as_json(field.name(), column)?);
-        } else {
-            fields.push(field.clone());
-            columns.push(column.clone());
-        }
-    }
+    let converted = schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .map(|(field, column)| {
+            if is_nested(field.data_type()) {
+                Ok((
+                    Arc::new(Field::new(field.name(), DataType::Utf8, true)),
+                    nested_column_as_json(field.name(), column)?,
+                ))
+            } else {
+                Ok((field.clone(), column.clone()))
+            }
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
 }
@@ -1003,7 +1081,7 @@ fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>,
 #[cfg(test)]
 mod tests {
     use super::{truncate_batches, ParquetCache};
-    use crate::models::ColumnKind;
+    use crate::models::{ColumnKind, ParquetMetadata};
     use arrow::array::{
         Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
         Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder, StructArray,
@@ -1012,7 +1090,8 @@ mod tests {
     use arrow::record_batch::RecordBatch;
     use std::path::PathBuf;
     use crate::services::test_support::{self, write_parquet};
-    use std::sync::Arc;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
 
     fn temp_path(name: &str) -> PathBuf {
         test_support::temp_path("parquet", name)
@@ -1404,8 +1483,8 @@ mod tests {
         assert_eq!(all[0]["name"], serde_json::Value::Null);
     }
 
-    #[test]
-    fn duplicate_column_names_are_refused_when_opening() {
+    #[tokio::test]
+    async fn duplicate_column_names_are_refused_when_opening() {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
             Field::new("id", DataType::Utf8, false),
@@ -1423,8 +1502,46 @@ mod tests {
 
         let err = ParquetCache::new()
             .get_or_create_metadata(&path.to_string_lossy())
+            .await
             .unwrap_err();
         assert!(err.contains("more than one column named \"id\""), "{err}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn eviction_cannot_reinsert_metadata_created_before_it() {
+        let cache = Arc::new(ParquetCache::new());
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let creating_cache = Arc::clone(&cache);
+
+        let creation = tokio::spawn(async move {
+            creating_cache
+                .get_or_create_metadata_with("same-path", move || {
+                    started_tx.send(()).expect("test must receive creation signal");
+                    release_rx.recv().expect("test must release metadata creation");
+                    Ok(ParquetMetadata { num_rows: 1, num_columns: 0, columns: vec![] })
+                })
+                .await
+        });
+
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("metadata creation must begin");
+
+        let evicting_cache = Arc::clone(&cache);
+        let mut eviction = tokio::spawn(async move { evicting_cache.evict("same-path").await });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut eviction).await.is_err(),
+            "eviction must wait for the in-flight creation before removing its result"
+        );
+
+        release_tx.send(()).expect("metadata creation must still be waiting");
+        assert!(creation.await.expect("creation task must complete").is_ok());
+        assert!(eviction.await.expect("eviction task must complete").is_ok());
+        assert!(
+            !cache.metadata.lock().expect("metadata cache lock").contains_key("same-path"),
+            "an eviction issued during creation must leave no stale metadata behind"
+        );
     }
 
     #[tokio::test]
@@ -1502,8 +1619,8 @@ mod tests {
         assert_eq!(rows[1]["small"], 9007199254740991i64);
     }
 
-    #[test]
-    fn metadata_classifies_primitive_columns_structurally() {
+    #[tokio::test]
+    async fn metadata_classifies_primitive_columns_structurally() {
         let schema = Arc::new(Schema::new(vec![
             Field::new("flag", DataType::Boolean, false),
             Field::new("n", DataType::Int64, false),
@@ -1541,6 +1658,7 @@ mod tests {
 
         let meta = ParquetCache::new()
             .get_or_create_metadata(&path.to_string_lossy())
+            .await
             .unwrap();
         let kinds: Vec<ColumnKind> = meta.columns.iter().map(|c| c.kind).collect();
         assert_eq!(
@@ -1558,12 +1676,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn metadata_labels_group_columns_instead_of_panicking() {
+    #[tokio::test]
+    async fn metadata_labels_group_columns_instead_of_panicking() {
         let path = write_nested_fixture();
         let cache = ParquetCache::new();
         let meta = cache
             .get_or_create_metadata(&path.to_string_lossy())
+            .await
             .expect("nested schemas must not fail metadata");
 
         assert_eq!(meta.num_columns, 3);

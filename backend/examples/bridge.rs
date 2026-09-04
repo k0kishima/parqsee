@@ -36,7 +36,7 @@ fn opt_u(args: &Value, key: &str) -> Option<usize> {
 async fn dispatch(cache: &ParquetCache, cmd: &str, args: Value) -> Result<Value, String> {
     let v = match cmd {
         "check_file_exists" => json!(check_file_exists(s(&args, "path")?).await?),
-        "open_parquet_file" => json!(cache.get_or_create_metadata(&s(&args, "path")?)?),
+        "open_parquet_file" => json!(cache.get_or_create_metadata(&s(&args, "path")?).await?),
         "get_file_info" => json!(get_file_info(s(&args, "path")?).await?),
         "list_directory" => json!(list_directory(s(&args, "path")?).await?),
         "read_parquet_data" => json!(
@@ -51,7 +51,7 @@ async fn dispatch(cache: &ParquetCache, cmd: &str, args: Value) -> Result<Value,
         ),
         "count_parquet_data" => json!(count_data(cache, &s(&args, "path")?, opt_s(&args, "filter")).await?),
         "evict_cache" => {
-            cache.evict(&s(&args, "path")?);
+            cache.evict(&s(&args, "path")?).await?;
             Value::Null
         }
         "export_data" => json!(
