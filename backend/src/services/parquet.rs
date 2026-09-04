@@ -560,13 +560,15 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
     let DataType::Struct(fields) = array.data_type() else {
         return Err("Failed to read struct column".to_string());
     };
-    let mut converted_fields = Vec::with_capacity(fields.len());
-    let mut converted_columns = Vec::with_capacity(fields.len());
-    for (field, column) in fields.iter().zip(array.columns()) {
-        let column = json_unsafe_as_strings(column)?;
-        converted_fields.push(retyped_field(field, column.data_type()));
-        converted_columns.push(column);
-    }
+    let converted = fields
+        .iter()
+        .zip(array.columns())
+        .map(|(field, column)| {
+            let column = json_unsafe_as_strings(column)?;
+            Ok((retyped_field(field, column.data_type()), column))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (converted_fields, converted_columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
     StructArray::try_new(converted_fields.into(), converted_columns, array.nulls().cloned())
         .map_err(|e| e.to_string())
 }
@@ -649,21 +651,27 @@ fn convert_batch(batch: &RecordBatch, keep_top_level_floats: bool) -> Result<Rec
         return Ok(batch.clone());
     }
 
-    let mut fields = Vec::with_capacity(schema.fields().len());
-    let mut columns = Vec::with_capacity(schema.fields().len());
-    for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        let column = if keep_top_level_floats && is_float(column.data_type()) {
-            column.clone()
-        } else {
-            json_unsafe_as_strings(column)?
-        };
-        fields.push(Arc::new(Field::new(
-            field.name(),
-            column.data_type().clone(),
-            field.is_nullable(),
-        )));
-        columns.push(column);
-    }
+    let converted = schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .map(|(field, column)| {
+            let column = if keep_top_level_floats && is_float(column.data_type()) {
+                column.clone()
+            } else {
+                json_unsafe_as_strings(column)?
+            };
+            Ok((
+                Arc::new(Field::new(
+                    field.name(),
+                    column.data_type().clone(),
+                    field.is_nullable(),
+                )),
+                column,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
 }
@@ -709,17 +717,22 @@ pub fn nested_to_json_strings(batch: &RecordBatch) -> Result<RecordBatch, String
         return Ok(batch.clone());
     }
 
-    let mut fields = Vec::with_capacity(schema.fields().len());
-    let mut columns = Vec::with_capacity(schema.fields().len());
-    for (field, column) in schema.fields().iter().zip(batch.columns()) {
-        if is_nested(field.data_type()) {
-            fields.push(Arc::new(Field::new(field.name(), DataType::Utf8, true)));
-            columns.push(nested_column_as_json(field.name(), column)?);
-        } else {
-            fields.push(field.clone());
-            columns.push(column.clone());
-        }
-    }
+    let converted = schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .map(|(field, column)| {
+            if is_nested(field.data_type()) {
+                Ok((
+                    Arc::new(Field::new(field.name(), DataType::Utf8, true)),
+                    nested_column_as_json(field.name(), column)?,
+                ))
+            } else {
+                Ok((field.clone(), column.clone()))
+            }
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
 }
