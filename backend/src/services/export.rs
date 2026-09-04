@@ -245,7 +245,9 @@ mod tests {
     }
 
     /// Three columns, four rows, one null, written in schema order id, name, score.
-    fn write_fixture() -> PathBuf {
+    /// `name` keeps the file apart per test: the tests run in parallel, and
+    /// two of them writing the same fixture path raced each other.
+    fn write_fixture(name: &str) -> PathBuf {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
             Field::new("name", DataType::Utf8, true),
@@ -260,14 +262,14 @@ mod tests {
             ],
         )
         .unwrap();
-        let path = temp_path("fixture.parquet");
+        let path = temp_path(&format!("{name}.parquet"));
         write_parquet(&path, &batch, None);
         path
     }
 
     #[tokio::test]
     async fn csv_keeps_columns_in_schema_order_and_honours_the_range() {
-        let src = write_fixture();
+        let src = write_fixture("csv_range");
         let out = temp_path("out.csv");
         let n = export_data(
             &ParquetCache::new(),
@@ -329,7 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_filter_narrows_the_export_and_the_range_follows_it() {
-        let src = write_fixture();
+        let src = write_fixture("filtered");
         let cache = ParquetCache::new();
 
         // id 2, 3 and 4 match; the range then addresses the filtered rows.
@@ -408,7 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_export_leaves_an_existing_destination_untouched() {
-        let src = write_fixture();
+        let src = write_fixture("precious");
         let out = temp_path("precious.csv");
         std::fs::write(&out, "previous good export").unwrap();
 
@@ -461,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn json_exports_all_rows_by_default() {
-        let src = write_fixture();
+        let src = write_fixture("json_all");
         let out = temp_path("out.json");
         let n = export_data(
             &ParquetCache::new(),
