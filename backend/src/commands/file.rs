@@ -91,7 +91,19 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
 #[cfg(test)]
 mod tests {
     use super::{has_parquet_extension, list_directory};
+    use serde::Deserialize;
     use std::path::PathBuf;
+
+    #[derive(Deserialize)]
+    struct ParquetExtensionCase {
+        path: String,
+        matches: bool,
+    }
+
+    fn parquet_extension_cases() -> Vec<ParquetExtensionCase> {
+        serde_json::from_str(include_str!("../../../contracts/parquet-extension-cases.json"))
+            .expect("the shared parquet-extension contract must be valid JSON")
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()
@@ -136,16 +148,9 @@ mod tests {
     }
 
     #[test]
-    fn matches_regardless_of_case() {
-        assert!(has_parquet_extension("/data/report.parquet"));
-        assert!(has_parquet_extension("/data/Report.PARQUET"));
-        assert!(has_parquet_extension("/data/report.Parquet"));
-    }
-
-    #[test]
-    fn rejects_other_extensions() {
-        assert!(!has_parquet_extension("/data/report.csv"));
-        assert!(!has_parquet_extension("/data/parquet"));
-        assert!(!has_parquet_extension("/data/report.parquet.bak"));
+    fn follows_the_shared_parquet_extension_contract() {
+        for case in parquet_extension_cases() {
+            assert_eq!(has_parquet_extension(&case.path), case.matches, "{}", case.path);
+        }
     }
 }

@@ -1,0 +1,8 @@
+[
+  { "path": "/data/report.parquet", "matches": true },
+  { "path": "/data/Report.PARQUET", "matches": true },
+  { "path": "/data/report.Parquet", "matches": true },
+  { "path": "/data/readme.txt", "matches": false },
+  { "path": "/data/parquet", "matches": false },
+  { "path": "/data/report.parquet.bak", "matches": false }
+]

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import parquetExtensionCases from '../../../../contracts/parquet-extension-cases.json';
 import { getFileName, isParquetPath, stripParquetExtension } from '../path';
 
 describe('getFileName', () => {
@@ -12,16 +13,10 @@ describe('getFileName', () => {
 });
 
 describe('isParquetPath', () => {
-  it('matches the extension regardless of case', () => {
-    expect(isParquetPath('/data/sales.parquet')).toBe(true);
-    expect(isParquetPath('/data/Report.PARQUET')).toBe(true);
-    expect(isParquetPath('/data/Report.Parquet')).toBe(true);
-  });
-
-  it('rejects other extensions', () => {
-    expect(isParquetPath('/data/readme.txt')).toBe(false);
-    expect(isParquetPath('/data/parquet')).toBe(false);
-    expect(isParquetPath('/data/sales.parquet.bak')).toBe(false);
+  it('follows the shared parquet-extension contract', () => {
+    for (const testCase of parquetExtensionCases) {
+      expect(isParquetPath(testCase.path), testCase.path).toBe(testCase.matches);
+    }
   });
 });
 
