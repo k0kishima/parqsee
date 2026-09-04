@@ -18,7 +18,7 @@ pub async fn open_parquet_file(
     cache: tauri::State<'_, ParquetCache>,
     path: String,
 ) -> Result<ParquetMetadata, String> {
-    guarded("Opening the file", async { cache.get_or_create_metadata(&path) }).await
+    guarded("Opening the file", async { cache.get_or_create_metadata(&path).await }).await
 }
 
 #[tauri::command]
