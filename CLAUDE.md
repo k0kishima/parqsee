@@ -7,12 +7,14 @@ A fast and simple Parquet file viewer built with Tauri v2, React, and TypeScript
 Parqsee is a desktop application for viewing and exploring Apache Parquet files.
 It features:
 
-- Drag-and-drop file loading and a built-in file explorer
+- Drag-and-drop file loading and a built-in file explorer over folders the
+  user opens (⌘⇧O), remembered across launches
 - Fast Rust backend (Arrow / Parquet / DataFusion) for file processing
 - Tabbed browsing with pagination, filtering and in-page search
 - SQL query view (DataFusion) over the open file
 - CSV / JSON export
-- Recent files history
+- Recent files history, persisted with security-scoped bookmarks so the
+  sandboxed App Store build can reopen them
 - Dark/light mode and English/Japanese localization
 
 ## Tech Stack
@@ -55,12 +57,13 @@ parqsee/
 │   └── vitest.config.ts
 ├── backend/                      # Tauri backend
 │   ├── src/
-│   │   ├── commands/             # Tauri command handlers (file, data, query)
-│   │   ├── services/             # parquet (cache, reads, SQL), export
+│   │   ├── commands/             # Tauri command handlers (file, data, query, workspace)
+│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks)
 │   │   ├── models/               # Serde types shared with the frontend
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
 │   ├── Cargo.toml
+│   ├── Entitlements.plist        # App Sandbox entitlements (applied to signed release builds)
 │   └── tauri.conf.json           # Tauri config (window, bundle, build hooks)
 ├── docs/
 │   ├── ASSETS.md
@@ -79,9 +82,9 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 `routes/` and (where it talks to Rust) `api/`, and re-exports through
 `index.ts`:
 
-- `welcome` — landing screen: drop zone, recent files, feature highlights
-- `workspace` — main layout: sidebar, header, tab hosting
-- `file-explorer` — directory tree, search, breadcrumb, context menu
+- `welcome` — landing screen: drop zone, recent files, feature highlights; `api/` for recent files
+- `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
+- `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
 - `layout` — tab bar
@@ -124,8 +127,14 @@ Argument names are camelCase on the JS side.
 |---|---|---|
 | `open_parquet_file` | `(path)` → `ParquetMetadata` | Open a file and return its schema/row count (cached) |
 | `get_file_info` | `(path)` → `FileInfo` | Path, name and byte size |
-| `check_file_exists` | `(path)` → `bool` | Existence check before opening |
-| `list_directory` | `(path)` → `FileEntry[]` | Directory listing, directories first |
+| `check_file_exists` | `(path)` → `bool` | Existence check before opening; resolves the file's bookmark first under the sandbox |
+| `list_directory` | `(path)` → `FileEntry[]` | Directory listing, directories first. Under the sandbox only readable inside an open workspace root |
+| `remember_file` | `(path)` → `RecentFile` | Record a just-opened file in Recent Files and create its security-scoped bookmark |
+| `list_recent_files` | `()` → `RecentFile[]` | Newest first; `available` is false when the file cannot be reached any more |
+| `remove_recent_file` / `clear_recent_files` | `(path)` / `()` → `void` | Edit the Recent Files list |
+| `list_workspace_roots` | `()` → `WorkspaceRoot[]` | The folders open in the explorer, restored at launch |
+| `add_workspace_root` | `(path)` → `WorkspaceRoot` | Open a folder (chosen in the folder dialog) as a root; bookmarked for the next launch |
+| `remove_workspace_root` | `(path)` → `void` | Close a root and release its access grant |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result |
@@ -134,9 +143,9 @@ Argument names are camelCase on the JS side.
 
 The frontend also listens for a `file-drop` event emitted from
 `lib.rs`'s window drag-drop handler, and for a `menu` event carrying the id
-of the native menu item that was chosen (`open-file`, `close-tab`,
-`settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘W / ⌘, because a native
-key equivalent beats the webview's keydown handler.
+of the native menu item that was chosen (`open-file`, `open-folder`,
+`close-tab`, `settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘⇧O / ⌘W / ⌘,
+because a native key equivalent beats the webview's keydown handler.
 
 ## Architecture Notes
 
@@ -196,27 +205,53 @@ key equivalent beats the webview's keydown handler.
 10. Commands wrap their bodies in `commands::guarded`, which turns a panic into
     an error; a panic that escapes a Tauri command never resolves the promise
     and leaves the grid on its spinner.
+11. The release build runs under the App Sandbox (`backend/Entitlements.plist`,
+    applied because `tauri.conf.json` signs ad-hoc; `APPLE_SIGNING_IDENTITY`
+    overrides the identity). `pnpm tauri dev` and the e2e bridge are not
+    sandboxed, so sandbox behaviour is only visible on the release `.app`.
+    The entitlements include `com.apple.security.network.client` even though
+    the app never talks to the network: WKWebView's GPU/Networking helpers
+    fail to start under the sandbox without it and the window stays blank
+    (the plist comment records the evidence). A blank release window is the
+    first thing to suspect after touching the entitlements.
+    `services/access` (`FileAccess`, Tauri managed state) owns what makes
+    files readable there: `bookmarks.json` in the app data directory records
+    workspace roots and recent files with their security-scoped bookmarks
+    (keyed by path, nothing tied to the bundle identifier), and a grant is
+    held per path — for a root from open until removed, for a file exactly as
+    long as its `ParquetCache` entry (`acquire` on fill, `release` on evict;
+    DataFusion reopens the file on every query, so the grant cannot end with
+    the first read). Files dropped on the window or picked in a dialog are
+    readable without any of this for the rest of the session; `remember_file`
+    creates their bookmark at open time so Recent Files can reopen them
+    later. The ObjC calls sit behind the `BookmarkProvider` trait
+    (`access/macos.rs`); the store and the lifecycle are unit-tested with a
+    fake on any OS.
 
 ## Testing
 
-Vitest + Testing Library cover the file-explorer feature, `lib/path`,
-`lib/column-widths` and `hooks/useVirtualRange`; `cargo test --lib` covers the
-extension matching in `commands/file.rs`, file registration edge cases
-(uppercase extensions, glob characters, 64-bit limits, duplicate columns),
-webview rendering of decimals / big integers / NaN, the read-only SQL view,
-result truncation and export.
+Vitest + Testing Library cover the file-explorer feature, the workspace
+context (tabs, roots, recent files), `lib/path`, `lib/column-widths` and
+`hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
+`commands/file.rs`, file registration edge cases (uppercase extensions, glob
+characters, 64-bit limits, duplicate columns), webview rendering of decimals /
+big integers / NaN, the read-only SQL view, result truncation, export, and
+the bookmark store and access-grant lifecycle in `services/access` (with a
+fake provider; the real `NSURL` round trip has one macOS-only test).
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through
 `backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same
-service functions the commands call). Run it after backend or frontend
-changes that touch paging, filters, export, the explorer or the SQL view —
-see its README for setup (`cargo build --example bridge`, `pnpm dev`,
-`pnpm suite`); rebuild the bridge after backend edits.
+service functions the commands call, over an unsandboxed store under
+`PARQSEE_DATA_DIR`). Run it after backend or frontend changes that touch
+paging, filters, export, the explorer, workspace roots, recent files or the
+SQL view — see its README for setup (`cargo build --example bridge`,
+`pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
-window/appearance, recent-files persistence, Gatekeeper — is listed in
-`docs/MANUAL_QA.md` with steps, expected results and a results template; run
-it on the release `.app` before tagging a release and after touching the
-menu, capabilities, plugins or the Tauri version. The fixtures it refers to
+window/appearance, the sandbox (entitlements, bookmarks surviving a
+relaunch), Gatekeeper — is listed in `docs/MANUAL_QA.md` with steps,
+expected results and a results template; run it on the release `.app`
+before tagging a release and after touching the menu, entitlements,
+`services/access`, capabilities, plugins or the Tauri version. The fixtures it refers to
 are generated by `uv run scripts/qa/gen_fixtures.py` and
 `uv run scripts/qa/gen_huge.py` into the git-ignored `scripts/qa/fixtures/`.

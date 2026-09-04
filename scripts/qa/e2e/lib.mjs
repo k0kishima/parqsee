@@ -6,7 +6,7 @@
 // uses (event, dialog, notification) in-process. See README.md.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { webkit, chromium } from 'playwright-core';
@@ -24,11 +24,15 @@ export const DEV_URL = process.env.DEV_URL ?? 'http://localhost:1420/';
 for (const dir of [OUT, path.join(OUT, 'shots')]) mkdirSync(dir, { recursive: true });
 
 export class Bridge {
-  constructor() {
+  /** `dataDir` is where the bridge keeps workspace roots and recent files (bookmarks.json). */
+  constructor(dataDir) {
     if (!existsSync(BRIDGE_BIN)) {
       throw new Error(`bridge binary not found at ${BRIDGE_BIN} — run \`cargo build --example bridge\` in backend/`);
     }
-    this.proc = spawn(BRIDGE_BIN, [], { stdio: ['pipe', 'pipe', process.env.BRIDGE_QUIET ? 'ignore' : 'inherit'] });
+    this.proc = spawn(BRIDGE_BIN, [], {
+      stdio: ['pipe', 'pipe', process.env.BRIDGE_QUIET ? 'ignore' : 'inherit'],
+      env: { ...process.env, PARQSEE_DATA_DIR: dataDir },
+    });
     this.pending = new Map();
     this.seq = 0;
     this.log = [];
@@ -106,9 +110,21 @@ async function assertDevServer() {
   catch { throw new Error(`no dev server at ${DEV_URL} — run \`pnpm dev\` in frontend/ first`); }
 }
 
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {} } = {}) {
+let launches = 0;
+
+/**
+ * A browser and a bridge. `dataDir` is the bridge's store directory: by
+ * default a fresh one per launch, so scenarios start with no workspace roots
+ * and no recent files; pass the same one twice to act out a relaunch.
+ */
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir } = {}) {
   await assertDevServer();
-  const bridge = new Bridge();
+  if (!dataDir) {
+    dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const bridge = new Bridge(dataDir);
   const engine = browser === 'chromium' ? chromium : webkit;
   const b = await engine.launch({ headless });
   const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
@@ -125,12 +141,24 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   await page.goto(DEV_URL);
   await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
   const close = async () => { await b.close(); bridge.close(); };
-  return { page, bridge, browser: b, close };
+  return { page, bridge, browser: b, dataDir, close };
 }
 
 /** Deliver a file-drop the way lib.rs's drag-drop handler does. */
 export async function dropFile(page, path) {
   await page.evaluate((p) => window.__emit('file-drop', [p]), path);
+}
+
+/**
+ * Open `dir` as a workspace root through the Open Folder button (the folder
+ * dialog is answered with `dir`), from the welcome screen or the workspace.
+ */
+export async function openFolder(page, dir) {
+  await page.evaluate((p) => { window.__dialog.open = p; }, dir);
+  const inWorkspace = page.locator('[title="Open Folder (⌘⇧O)"]').first();
+  if (await inWorkspace.count()) await inWorkspace.click();
+  else await page.locator('button:has-text("Open Folder")').first().click();
+  await page.waitForFunction((d) => [...document.querySelectorAll('.py-1 [title]')].some(el => el.getAttribute('title') === d), dir, { timeout: 5000 });
 }
 
 /** Wait until the browse grid has settled (no spinner). */

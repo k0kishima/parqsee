@@ -1,73 +1,69 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { isTauri } from '../lib/tauri';
+import {
+  RecentFile,
+  listRecentFiles,
+  removeRecentFile as apiRemoveRecentFile,
+  clearRecentFiles as apiClearRecentFiles,
+} from '../features/welcome/api';
 
-
-export interface RecentFile {
-  path: string;
-  name: string;
-  lastAccessed: string;
-  size: number;
-}
+export type { RecentFile };
 
 interface RecentFilesContextType {
   recentFiles: RecentFile[];
-  addRecentFile: (file: RecentFile) => void;
+  /** Put a file the backend just recorded (see `rememberFile`) at the front of the list. */
+  upsertRecentFile: (file: RecentFile) => void;
   clearRecentFiles: () => void;
   removeRecentFile: (path: string) => void;
 }
 
 const RecentFilesContext = createContext<RecentFilesContextType | undefined>(undefined);
 const MAX_RECENT_FILES = 5;
-const RECENT_FILES_STORAGE_KEY = 'parqsee-recent-files';
+/** Where the list lived before it moved into the backend's store. */
+const LEGACY_STORAGE_KEY = 'parqsee-recent-files';
 
 /**
- * Read the persisted list, dropping anything unusable. A corrupt entry used
- * to throw out of the provider and leave the app blank with no way to recover.
+ * Recent Files as the backend keeps them. The list is owned by Rust
+ * (bookmarks.json in the app data directory, next to the security-scoped
+ * bookmarks that reopen the files under the sandbox); this context mirrors
+ * it and applies each change locally so the UI does not wait on a round
+ * trip.
  */
-export function loadRecentFiles(): RecentFile[] {
-  try {
-    const saved = localStorage.getItem(RECENT_FILES_STORAGE_KEY);
-    const parsed: unknown = saved ? JSON.parse(saved) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (f): f is RecentFile => !!f && typeof f === 'object' && typeof (f as RecentFile).path === 'string'
-    );
-  } catch (e) {
-    console.error('Failed to parse recent files', e);
-    return [];
-  }
-}
-
 export function RecentFilesProvider({ children }: { children: ReactNode }) {
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(loadRecentFiles);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
 
   useEffect(() => {
-    // Save recent files to localStorage when they change
-    localStorage.setItem(RECENT_FILES_STORAGE_KEY, JSON.stringify(recentFiles));
-  }, [recentFiles]);
+    try {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      // Storage may be unavailable; there is nothing to migrate anyway.
+    }
+    if (!isTauri()) return;
+    listRecentFiles()
+      .then(setRecentFiles)
+      .catch(error => console.error('Failed to list recent files:', error));
+  }, []);
 
-  const addRecentFile = (file: RecentFile) => {
-    setRecentFiles(prev => {
-      // Remove existing entry if present
-      const filtered = prev.filter(f => f.path !== file.path);
+  const upsertRecentFile = useCallback((file: RecentFile) => {
+    setRecentFiles(prev => [file, ...prev.filter(f => f.path !== file.path)].slice(0, MAX_RECENT_FILES));
+  }, []);
 
-      // Add new file at the beginning
-      const updated = [file, ...filtered];
-
-      // Limit to MAX_RECENT_FILES
-      return updated.slice(0, MAX_RECENT_FILES);
-    });
-  };
-
-  const clearRecentFiles = () => {
+  const clearRecentFiles = useCallback(() => {
     setRecentFiles([]);
-  };
+    if (isTauri()) {
+      apiClearRecentFiles().catch(error => console.error('Failed to clear recent files:', error));
+    }
+  }, []);
 
-  const removeRecentFile = (path: string) => {
+  const removeRecentFile = useCallback((path: string) => {
     setRecentFiles(prev => prev.filter(f => f.path !== path));
-  };
+    if (isTauri()) {
+      apiRemoveRecentFile(path).catch(error => console.error('Failed to remove recent file:', error));
+    }
+  }, []);
 
   return (
-    <RecentFilesContext.Provider value={{ recentFiles, addRecentFile, clearRecentFiles, removeRecentFile }}>
+    <RecentFilesContext.Provider value={{ recentFiles, upsertRecentFile, clearRecentFiles, removeRecentFile }}>
       {children}
     </RecentFilesContext.Provider>
   );

@@ -8,9 +8,16 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata};
+use crate::services::access::FileAccess;
 
 /// Cache for DataFusion SessionContext and Parquet metadata.
 /// Stored as Tauri managed state to avoid re-creating sessions on every request.
+///
+/// The cache also scopes file access under the App Sandbox: an entry is
+/// filled only after `FileAccess::acquire` has resolved the file's bookmark
+/// (when it has one), and `evict` releases that grant. So a file stays
+/// readable exactly as long as some tab shows it — DataFusion reopens the
+/// file on every query, so the grant cannot end with the first read.
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
@@ -18,15 +25,22 @@ pub struct ParquetCache {
     /// without serializing operations for unrelated files.
     session_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     metadata_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+    access: Arc<FileAccess>,
 }
 
 impl ParquetCache {
+    /// A cache with no bookmarks and nothing persisted (the bridge, tests).
     pub fn new() -> Self {
+        Self::with_access(Arc::new(FileAccess::disabled()))
+    }
+
+    pub fn with_access(access: Arc<FileAccess>) -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
             metadata: Mutex::new(HashMap::new()),
             session_gates: Mutex::new(HashMap::new()),
             metadata_gates: Mutex::new(HashMap::new()),
+            access,
         }
     }
 
@@ -103,6 +117,7 @@ impl ParquetCache {
 
         // Create the session and register the parquet file. Single partition,
         // deliberately — see the trade-off note in this function's doc.
+        self.access.acquire(path)?;
         let config = datafusion::execution::context::SessionConfig::new()
             .with_target_partitions(1)
             // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
@@ -147,6 +162,7 @@ impl ParquetCache {
             }
         }
 
+        self.access.acquire(path)?;
         let meta = compute()?;
 
         // Store in cache
@@ -171,6 +187,7 @@ impl ParquetCache {
         if let Ok(mut metadata_cache) = self.metadata.lock() {
             metadata_cache.remove(path);
         }
+        self.access.release(path);
         Ok(())
     }
 }
@@ -1542,6 +1559,40 @@ mod tests {
             !cache.metadata.lock().expect("metadata cache lock").contains_key("same-path"),
             "an eviction issued during creation must leave no stale metadata behind"
         );
+    }
+
+    /// The sandbox grant for a file lives exactly as long as its cache entry.
+    #[tokio::test]
+    async fn a_cache_entry_holds_the_files_grant_until_evicted() {
+        use crate::services::access::fake::FakeBookmarks;
+        use crate::services::access::FileAccess;
+
+        let path = temp_path("granted.parquet");
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)])),
+            vec![Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef],
+        )
+        .unwrap();
+        write_parquet(&path, &batch, None);
+        let path = path.to_string_lossy().into_owned();
+
+        let fake = FakeBookmarks::default();
+        let access = Arc::new(FileAccess::load(Box::new(fake.clone()), None));
+        // Recorded in an earlier session, so the cache has to resolve it.
+        access.remember_file(&path).unwrap();
+        access.release(&path);
+        assert!(fake.active().is_empty());
+
+        let cache = ParquetCache::with_access(access);
+        cache.get_or_create_metadata(&path).await.unwrap();
+        assert_eq!(fake.active(), [path.clone()], "filling the metadata entry resolves the bookmark");
+        cache.get_or_create_session(&path).await.unwrap();
+        cache.get_or_create_metadata(&path).await.unwrap();
+        assert_eq!(fake.starts(), 2, "the session fill reuses the held grant; hits do not touch it");
+
+        cache.evict(&path).await.unwrap();
+        assert!(fake.active().is_empty(), "eviction ends the grant");
+        assert_eq!(fake.stops(), 2);
     }
 
     #[tokio::test]

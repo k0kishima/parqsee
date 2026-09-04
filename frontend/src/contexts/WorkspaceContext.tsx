@@ -3,11 +3,18 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { isTauri } from '../lib/tauri';
-import { isParquetPath, PARQUET_EXTENSION } from '../lib/path';
+import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
-import { openParquetFile as apiOpenParquetFile, checkFileExists, getFileInfo, evictCacheQuietly } from '../features/file-viewer/api';
+import { openParquetFile as apiOpenParquetFile, checkFileExists, evictCacheQuietly } from '../features/file-viewer/api';
+import { rememberFile } from '../features/welcome/api';
 import { TabState } from '../features/file-viewer';
+import {
+    WorkspaceRoot,
+    listWorkspaceRoots,
+    addWorkspaceRoot as apiAddWorkspaceRoot,
+    removeWorkspaceRoot as apiRemoveWorkspaceRoot,
+} from '../features/workspace/api';
 import {
     Tab,
     WorkspaceTabs,
@@ -19,7 +26,7 @@ import {
     nthTabId,
 } from './workspace-tabs';
 
-export type { Tab };
+export type { Tab, WorkspaceRoot };
 
 interface WorkspaceContextType {
     currentFile: string | null;
@@ -29,9 +36,14 @@ interface WorkspaceContextType {
     isSettingsOpen: boolean;
     isPending: boolean;
     tabStates: WorkspaceTabs['tabStates'];
+    /** The folders open in the explorer, restored from the last session. */
+    roots: readonly WorkspaceRoot[];
     openParquetFile: (path: string) => Promise<void>;
     /** Show the native file picker and open what was chosen. */
     openFileDialog: () => Promise<void>;
+    /** Show the native folder picker and add what was chosen as a workspace root. */
+    openFolderDialog: () => Promise<void>;
+    removeWorkspaceRoot: (path: string) => void;
     closeTab: (tabId: string) => void;
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
@@ -59,7 +71,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const workspaceTabsRef = useRef(workspaceTabs);
     workspaceTabsRef.current = workspaceTabs;
     const [isPending, startTransition] = useTransition();
-    const { addRecentFile, removeRecentFile } = useRecentFiles();
+    const { upsertRecentFile, removeRecentFile } = useRecentFiles();
+    const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
+
+    // The roots the backend restored from its store (and re-acquired access
+    // to, under the sandbox).
+    useEffect(() => {
+        if (!isTauri()) return;
+        listWorkspaceRoots()
+            .then(setRoots)
+            .catch(error => console.error('Failed to list workspace roots:', error));
+    }, []);
 
 
     const handleTabSelect = useCallback((tabId: string) => {
@@ -92,23 +114,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 }
 
                 await apiOpenParquetFile(path);
-                const fileInfo = await getFileInfo(path);
 
-                addRecentFile({
-                    path: fileInfo.path,
-                    name: fileInfo.name,
-                    lastAccessed: new Date().toLocaleString(),
-                    size: fileInfo.size
+                // Recorded now, while the app can read the file, so Recent
+                // Files can reopen it after a relaunch. A failure to record
+                // it is not a failure to open it.
+                const recent = await rememberFile(path).catch(error => {
+                    console.error('Failed to record the file in Recent Files:', error);
+                    return null;
                 });
+                if (recent) upsertRecentFile(recent);
 
-                dispatch({ type: 'open', tab: { id: newTabId(), path: fileInfo.path, name: fileInfo.name } });
+                dispatch({ type: 'open', tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) } });
             }
             // Browser fallback: there is no backend to open the file with.
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
         }
-    }, [addRecentFile, removeRecentFile]);
+    }, [upsertRecentFile, removeRecentFile]);
 
     const openFileDialog = useCallback(async () => {
         try {
@@ -130,8 +153,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, [openParquetFile]);
 
-    // Keyboard shortcuts. On macOS the native menu owns ⌘W / ⌘O / ⌘, and
-    // forwards them as `menu` events (below); these handlers cover the
+    const openFolderDialog = useCallback(async () => {
+        try {
+            if (!isTauri()) {
+                alert("The folder browser is only available in the desktop app. Please drag and drop a file instead.");
+                return;
+            }
+            const selected = await open({ directory: true, multiple: false });
+            if (selected && typeof selected === 'string') {
+                const root = await apiAddWorkspaceRoot(selected);
+                setRoots(prev => [...prev.filter(r => r.path !== root.path), root]);
+            }
+        } catch (error) {
+            console.error("Failed to open folder:", error);
+            alert(`Failed to open folder: ${error}`);
+        }
+    }, []);
+
+    const removeWorkspaceRoot = useCallback((path: string) => {
+        setRoots(prev => prev.filter(r => r.path !== path));
+        if (isTauri()) {
+            apiRemoveWorkspaceRoot(path).catch(error => console.error('Failed to remove workspace root:', error));
+        }
+    }, []);
+
+    // Keyboard shortcuts. On macOS the native menu owns ⌘W / ⌘O / ⌘⇧O / ⌘,
+    // and forwards them as `menu` events (below); these handlers cover the
     // browser and any platform without that menu.
     useGlobalKeydown(useCallback((e: KeyboardEvent) => {
         if (isModifierPressed(e) && e.key === 'w') {
@@ -139,6 +186,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (activeTabId) {
                 handleTabClose(activeTabId);
             }
+        } else if (isModifierPressed(e) && e.shiftKey && e.key.toLowerCase() === 'o') {
+            e.preventDefault();
+            openFolderDialog();
         } else if (isModifierPressed(e) && e.key === 'o') {
             e.preventDefault();
             openFileDialog();
@@ -158,7 +208,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const target = nthTabId(workspaceTabs, parseInt(e.key));
             if (target) handleTabSelect(target);
         }
-    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog]));
+    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog, openFolderDialog]));
 
     // Native menu items (see build_menu in lib.rs)
     useEffect(() => {
@@ -166,6 +216,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const unlisten = listen<string>('menu', (event) => {
             switch (event.payload) {
                 case 'open-file': openFileDialog(); break;
+                case 'open-folder': openFolderDialog(); break;
                 case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
                 case 'settings': setIsSettingsOpen(true); break;
             }
@@ -173,7 +224,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return () => {
             unlisten.then(fn => fn());
         };
-    }, [activeTabId, handleTabClose, openFileDialog]);
+    }, [activeTabId, handleTabClose, openFileDialog, openFolderDialog]);
 
     // File drop listener
     useEffect(() => {
@@ -210,8 +261,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isSettingsOpen,
         isPending,
         tabStates,
+        roots,
         openParquetFile,
         openFileDialog,
+        openFolderDialog,
+        removeWorkspaceRoot,
         closeTab: handleTabClose,
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),

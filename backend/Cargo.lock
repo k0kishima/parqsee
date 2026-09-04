@@ -3761,8 +3761,11 @@ name = "parqsee"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "base64 0.22.1",
  "datafusion",
  "futures",
+ "objc2",
+ "objc2-foundation",
  "parquet",
  "serde",
  "serde_json",

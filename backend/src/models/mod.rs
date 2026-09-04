@@ -54,3 +54,25 @@ pub struct FileEntry {
     pub size: Option<u64>,
     pub children: Option<Vec<FileEntry>>,
 }
+
+/// A folder the user opened as a workspace root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct WorkspaceRoot {
+    pub path: String,
+    pub name: String,
+}
+
+/// One Recent Files entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct RecentFile {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    /// Unix time in milliseconds; the webview formats it.
+    pub last_accessed: i64,
+    /// False when the file cannot be reached any more (deleted, or the
+    /// bookmark no longer resolves); the list shows it greyed out.
+    pub available: bool,
+}

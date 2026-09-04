@@ -1,10 +1,12 @@
 use crate::commands::guarded;
-use crate::models::{FileEntry, FileInfo, ParquetMetadata};
+use crate::models::{FileEntry, FileInfo, ParquetMetadata, RecentFile};
+use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
 use std::cmp::Ordering;
 use std::fs::{metadata, read_dir, DirEntry};
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Match the parquet extension case-insensitively. macOS and Windows preserve
 /// case but treat `data.PARQUET` and `data.parquet` as the same file, and the
@@ -39,9 +41,47 @@ pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
     })
 }
 
+/// Whether the file can be reached. Goes through `FileAccess` because under
+/// the sandbox a recent file is only visible once its bookmark is resolved.
 #[tauri::command]
-pub async fn check_file_exists(path: String) -> Result<bool, String> {
-    Ok(Path::new(&path).exists())
+pub async fn check_file_exists(
+    access: tauri::State<'_, Arc<FileAccess>>,
+    path: String,
+) -> Result<bool, String> {
+    Ok(access.file_exists(&path))
+}
+
+/// Record a file that was just opened so Recent Files can reopen it after a
+/// relaunch. Separate from `open_parquet_file`, which the grid also calls to
+/// refresh a tab; only a user-initiated open should bump the list.
+#[tauri::command]
+pub async fn remember_file(
+    access: tauri::State<'_, Arc<FileAccess>>,
+    path: String,
+) -> Result<RecentFile, String> {
+    access.remember_file(&path)
+}
+
+#[tauri::command]
+pub async fn list_recent_files(
+    access: tauri::State<'_, Arc<FileAccess>>,
+) -> Result<Vec<RecentFile>, String> {
+    Ok(access.recent_files())
+}
+
+#[tauri::command]
+pub async fn remove_recent_file(
+    access: tauri::State<'_, Arc<FileAccess>>,
+    path: String,
+) -> Result<(), String> {
+    access.forget_file(&path);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_recent_files(access: tauri::State<'_, Arc<FileAccess>>) -> Result<(), String> {
+    access.clear_recent();
+    Ok(())
 }
 
 /// Describe one directory entry for the explorer.

@@ -2,6 +2,7 @@
   "common": {
     "fileExplorer": "ファイルエクスプローラー",
     "openFile": "ファイルを開く",
+    "openFolder": "フォルダを開く",
     "recentFiles": "最近開いたファイル",
     "cancel": "キャンセル",
     "saveChanges": "変更を保存",
@@ -21,11 +22,12 @@
       "title": "Parquet ファイルをここにドロップ",
       "subtitle": "または下のボタンをクリックして参照",
       "browse": "ファイルを参照",
-      "hint": ".parquet ファイルに対応 • ⌘+O で開く"
+      "hint": "対応形式: .parquet • ⌘O でファイル、⌘⇧O でフォルダを開く"
     },
     "recentFiles": {
       "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
-      "remove": "履歴から削除"
+      "remove": "履歴から削除",
+      "unavailable": "見つかりません"
     },
     "features": {
       "performance": {
@@ -111,10 +113,9 @@
       "revealInFinder": "Finderで表示",
       "openInNewTab": "開く"
     },
-    "breadcrumb": {
-      "root": "/"
-    },
-    "loadError": "このフォルダを読めません: {{reason}}"
+    "loadError": "このフォルダを読めません: {{reason}}",
+    "empty": "フォルダを開くと Parquet ファイルを閲覧できます",
+    "removeFolder": "ワークスペースから削除"
   },
   "export": {
     "title": "データのエクスポート",

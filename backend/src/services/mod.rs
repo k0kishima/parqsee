@@ -1,3 +1,4 @@
+pub mod access;
 pub mod export;
 pub mod parquet;
 

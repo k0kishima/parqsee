@@ -3,148 +3,99 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BreadcrumbNav } from '../breadcrumb-nav';
 
-describe('BreadcrumbNav', () => {
-  const defaultProps = {
-    currentDir: '/Users/test/Documents',
-    onNavigate: vi.fn(),
-  };
+const root = { path: '/Users/test', name: 'test' };
 
+describe('BreadcrumbNav', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
   describe('rendering', () => {
-    it('returns null when currentDir is empty', () => {
+    it('returns null when the directory is outside the root', () => {
       const { container } = render(
-        <BreadcrumbNav currentDir="" onNavigate={vi.fn()} />
+        <BreadcrumbNav root={root} dir="/elsewhere/deep" onNavigate={vi.fn()} />
       );
       expect(container.firstChild).toBeNull();
     });
 
-    it('renders root segment and path segments', () => {
-      render(<BreadcrumbNav {...defaultProps} />);
-
-      // Root segment uses translated '/' value
-      expect(screen.getByRole('button', { name: '/' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Users' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'test' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Documents' })).toBeInTheDocument();
-    });
-
-    it('splits the path correctly into segments', () => {
-      render(<BreadcrumbNav currentDir="/a/b/c" onNavigate={vi.fn()} />);
+    it('starts at the root, shown by its name, and never climbs above it', () => {
+      render(<BreadcrumbNav root={root} dir="/Users/test/Documents/reports" onNavigate={vi.fn()} />);
 
       const buttons = screen.getAllByRole('button');
-      // root + a + b + c = 4
-      expect(buttons).toHaveLength(4);
-      expect(buttons[0]).toHaveTextContent('/');
-      expect(buttons[1]).toHaveTextContent('a');
-      expect(buttons[2]).toHaveTextContent('b');
-      expect(buttons[3]).toHaveTextContent('c');
+      expect(buttons.map(b => b.textContent)).toEqual(['test', 'Documents', 'reports']);
+      expect(screen.queryByRole('button', { name: 'Users' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '/' })).not.toBeInTheDocument();
     });
 
-    it('renders root directory correctly', () => {
-      render(<BreadcrumbNav currentDir="/" onNavigate={vi.fn()} />);
+    it('shows only the root when the directory is the root itself', () => {
+      render(<BreadcrumbNav root={root} dir="/Users/test" onNavigate={vi.fn()} />);
 
       const buttons = screen.getAllByRole('button');
-      // Only root
       expect(buttons).toHaveLength(1);
-      expect(buttons[0]).toHaveTextContent('/');
+      expect(buttons[0]).toHaveTextContent('test');
     });
   });
 
   describe('truncation', () => {
     it('does not truncate when segments count is within limit', () => {
-      // MAX_VISIBLE_SEGMENTS = 3, root + 3 path segments = 4 total, which is within limit (3+1=4)
-      render(<BreadcrumbNav currentDir="/a/b/c" onNavigate={vi.fn()} />);
+      // MAX_VISIBLE_SEGMENTS = 3, root + 3 segments = 4 total, within the limit.
+      render(<BreadcrumbNav root={root} dir="/Users/test/a/b/c" onNavigate={vi.fn()} />);
 
       expect(screen.queryByText('...')).not.toBeInTheDocument();
     });
 
-    it('truncates long paths with ellipsis', () => {
-      // root + 5 segments = 6 total, exceeds MAX_VISIBLE_SEGMENTS + 1 = 4
-      render(
-        <BreadcrumbNav currentDir="/a/b/c/d/e" onNavigate={vi.fn()} />
-      );
+    it('truncates long paths with ellipsis, keeping the root and the last three', () => {
+      render(<BreadcrumbNav root={root} dir="/Users/test/a/b/c/d/e" onNavigate={vi.fn()} />);
 
       expect(screen.getByText('...')).toBeInTheDocument();
-      // Should show root + last 3 segments
-      expect(screen.getByRole('button', { name: '/' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'c' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'd' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'e' })).toBeInTheDocument();
-      // 'a' and 'b' should not be visible
-      expect(screen.queryByRole('button', { name: 'a' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'b' })).not.toBeInTheDocument();
-    });
-
-    it('shows exactly MAX_VISIBLE_SEGMENTS + 1 (root) segments when truncated', () => {
-      render(
-        <BreadcrumbNav currentDir="/a/b/c/d/e/f/g" onNavigate={vi.fn()} />
-      );
-
-      // root + last 3 = 4 buttons
-      const buttons = screen.getAllByRole('button');
-      expect(buttons).toHaveLength(4);
+      expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['test', 'c', 'd', 'e']);
     });
   });
 
   describe('navigation', () => {
-    it('calls onNavigate with correct path when segment is clicked', async () => {
+    it('calls onNavigate with the directory of the clicked segment', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
-      render(<BreadcrumbNav currentDir="/Users/test/Documents" onNavigate={onNavigate} />);
+      render(<BreadcrumbNav root={root} dir="/Users/test/Documents/reports" onNavigate={onNavigate} />);
 
-      await user.click(screen.getByRole('button', { name: 'Users' }));
-      expect(onNavigate).toHaveBeenCalledWith('/Users');
+      await user.click(screen.getByRole('button', { name: 'Documents' }));
+      expect(onNavigate).toHaveBeenCalledWith('/Users/test/Documents');
     });
 
-    it('calls onNavigate with root path when root is clicked', async () => {
+    it('calls onNavigate with the root path when the root is clicked', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
-      render(<BreadcrumbNav currentDir="/Users/test" onNavigate={onNavigate} />);
+      render(<BreadcrumbNav root={root} dir="/Users/test/Documents" onNavigate={onNavigate} />);
 
-      await user.click(screen.getByRole('button', { name: '/' }));
-      expect(onNavigate).toHaveBeenCalledWith('/');
-    });
-
-    it('calls onNavigate with full path when last segment is clicked', async () => {
-      const user = userEvent.setup();
-      const onNavigate = vi.fn();
-      render(<BreadcrumbNav currentDir="/a/b/c" onNavigate={onNavigate} />);
-
-      await user.click(screen.getByRole('button', { name: 'c' }));
-      expect(onNavigate).toHaveBeenCalledWith('/a/b/c');
+      await user.click(screen.getByRole('button', { name: 'test' }));
+      expect(onNavigate).toHaveBeenCalledWith('/Users/test');
     });
 
     it('navigates correctly for truncated segments', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
-      render(
-        <BreadcrumbNav currentDir="/a/b/c/d/e" onNavigate={onNavigate} />
-      );
+      render(<BreadcrumbNav root={root} dir="/Users/test/a/b/c/d/e" onNavigate={onNavigate} />);
 
-      // Click the last segment 'e'
       await user.click(screen.getByRole('button', { name: 'e' }));
-      expect(onNavigate).toHaveBeenCalledWith('/a/b/c/d/e');
+      expect(onNavigate).toHaveBeenCalledWith('/Users/test/a/b/c/d/e');
     });
   });
 
   describe('title attribute', () => {
     it('sets title attribute on segments for full path tooltip', () => {
-      render(<BreadcrumbNav currentDir="/Users/test" onNavigate={vi.fn()} />);
+      render(<BreadcrumbNav root={root} dir="/Users/test/Documents" onNavigate={vi.fn()} />);
 
-      const usersButton = screen.getByRole('button', { name: 'Users' });
-      expect(usersButton).toHaveAttribute('title', '/Users');
+      expect(screen.getByRole('button', { name: 'test' })).toHaveAttribute('title', '/Users/test');
+      expect(screen.getByRole('button', { name: 'Documents' })).toHaveAttribute('title', '/Users/test/Documents');
     });
 
-    it('sets container title to full currentDir', () => {
+    it('sets container title to the full directory', () => {
       const { container } = render(
-        <BreadcrumbNav currentDir="/Users/test" onNavigate={vi.fn()} />
+        <BreadcrumbNav root={root} dir="/Users/test/Documents" onNavigate={vi.fn()} />
       );
 
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper).toHaveAttribute('title', '/Users/test');
+      expect(wrapper).toHaveAttribute('title', '/Users/test/Documents');
     });
   });
 });

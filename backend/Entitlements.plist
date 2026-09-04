@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      App Sandbox is required for the Mac App Store. Only what the app
+      needs: the sandbox itself, read/write to what the user picks in a
+      dialog or drops on the window, and app-scoped security bookmarks so
+      workspace folders and recent files reopen on the next launch
+      (see services/access in the backend). No camera, no microphone.
+    -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <!--
+      The app itself makes no network requests, but WKWebView's helper
+      processes (GPU / Networking) need the outgoing-connections
+      entitlement to start under the sandbox at all. Without it the GPU
+      process exits at launch ("GPUProcessProxy::gpuProcessExited:
+      reason=Crash" in Console) and the window stays blank. Verified on
+      macOS 26 by re-signing the same bundle with and without this key.
+    -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
