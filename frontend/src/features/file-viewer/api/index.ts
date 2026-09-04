@@ -1,37 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { RowData } from '../../../lib/row';
+import type { ColumnInfo } from '../../../bindings/ipc/ColumnInfo';
+import type { ColumnKind } from '../../../bindings/ipc/ColumnKind';
+import type { FileInfo } from '../../../bindings/ipc/FileInfo';
+import type { ParquetMetadata } from '../../../bindings/ipc/ParquetMetadata';
 
-/** Structural classification of a column, independent of its display label. */
-export type ColumnKind =
-    | 'boolean'
-    | 'integer'
-    | 'float'
-    | 'decimal'
-    | 'text'
-    | 'temporal'
-    | 'binary'
-    | 'nested'
-    | 'other';
-
-export interface ColumnInfo {
-    name: string;
-    column_type: string;
-    kind: ColumnKind;
-    logical_type?: string;
-    physical_type: string;
-}
-
-export interface ParquetMetadata {
-    num_rows: number;
-    num_columns: number;
-    columns: ColumnInfo[];
-}
-
-export interface FileInfo {
-    path: string;
-    name: string;
-    size: number;
-}
+export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata };
 
 export interface ExportDataParams {
     sourcePath: string;

@@ -1,0 +1,5 @@
+[env]
+# Rust owns the Tauri response schema. `cargo test` refreshes these checked-in
+# bindings so frontend callers cannot silently drift from serialized responses.
+TS_RS_EXPORT_DIR = { value = "../frontend/src/bindings", relative = true }
+TS_RS_LARGE_INT = "number"

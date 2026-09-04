@@ -6,6 +6,7 @@ const column = (name: string, column_type: string, kind: ColumnKind): ColumnInfo
   name,
   column_type,
   kind,
+  logical_type: null,
   physical_type: column_type,
 });
 
