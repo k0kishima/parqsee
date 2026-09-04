@@ -134,7 +134,7 @@ around ten items or nobody will run it.
 |---|---|
 | Fixture | the release `.app`; `multi_rowgroup.parquet` |
 | Steps | Run `codesign -d --entitlements - backend/target/release/bundle/macos/Parqsee.app`. Launch the app and keep Console.app open filtered on `Parqsee`. Open a folder, browse it, open a file, export it to CSV into a folder you choose in the save dialog (not the workspace folder), then **Reveal in Finder**. Right-click a file → **Reveal in Finder**. Run `pnpm tauri dev` once. |
-| Expected | The entitlements list exactly `com.apple.security.app-sandbox`, `com.apple.security.files.user-selected.read-write` and `com.apple.security.files.bookmarks.app-scope`. Everything works and Console shows no `deny` lines from `sandboxd` for Parqsee. The dev build starts and behaves as before (it is unsandboxed; that is expected). |
+| Expected | The entitlements list exactly `com.apple.security.app-sandbox`, `com.apple.security.files.user-selected.read-write`, `com.apple.security.files.bookmarks.app-scope` and `com.apple.security.network.client` (the last one is for WKWebView's helper processes; without it the window stays blank). The window renders the Welcome screen — a blank white window means the sandbox is blocking the webview. Everything works and Console shows no `deny` lines from `sandboxd` for Parqsee. The dev build starts and behaves as before (it is unsandboxed; that is expected). |
 | Why manual | Whether the sandbox is actually applied depends on the signature of the built artifact; every automated suite runs an unsandboxed binary. |
 
 ## Results template

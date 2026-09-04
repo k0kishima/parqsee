@@ -209,6 +209,11 @@ because a native key equivalent beats the webview's keydown handler.
     applied because `tauri.conf.json` signs ad-hoc; `APPLE_SIGNING_IDENTITY`
     overrides the identity). `pnpm tauri dev` and the e2e bridge are not
     sandboxed, so sandbox behaviour is only visible on the release `.app`.
+    The entitlements include `com.apple.security.network.client` even though
+    the app never talks to the network: WKWebView's GPU/Networking helpers
+    fail to start under the sandbox without it and the window stays blank
+    (the plist comment records the evidence). A blank release window is the
+    first thing to suspect after touching the entitlements.
     `services/access` (`FileAccess`, Tauri managed state) owns what makes
     files readable there: `bookmarks.json` in the app data directory records
     workspace roots and recent files with their security-scoped bookmarks
