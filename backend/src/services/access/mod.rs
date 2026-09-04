@@ -21,7 +21,9 @@
 //! lives exactly as long as its cache entry — DataFusion reopens the file on
 //! every query, so the grant has to outlive the first read. Workspace roots
 //! hold their grant from `add_root` (or from launch, once restored) until
-//! `remove_root`.
+//! `remove_root`. The last export folder is different: it is only ever
+//! resolved to tell the save panel where to start, and its grant ends
+//! within that call — the panel itself grants the write.
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -32,7 +34,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use store::{BookmarkStore, RecentEntry, RootEntry};
+use store::{BookmarkStore, ExportDirEntry, RecentEntry, RootEntry};
 
 /// The platform's security-scoped bookmark primitives.
 pub trait BookmarkProvider: Send + Sync {
@@ -171,7 +173,18 @@ impl FileAccess {
         let Some(bookmark) = state.store.bookmark_for(path).map(<[u8]>::to_vec) else {
             return Ok(None);
         };
-        let resolved = self.provider.resolve(&bookmark)?;
+        self.resolve_bookmark(state, path, &bookmark).map(Some)
+    }
+
+    /// Resolve `bookmark`, recorded in the store under `path`, re-creating
+    /// it there when the platform reports it stale.
+    fn resolve_bookmark(
+        &self,
+        state: &mut State,
+        path: &str,
+        bookmark: &[u8],
+    ) -> Result<Resolved, String> {
+        let resolved = self.provider.resolve(bookmark)?;
         if resolved.stale {
             match self.provider.create(&resolved.path) {
                 Ok(Some(fresh)) => {
@@ -183,7 +196,7 @@ impl FileAccess {
                 Err(e) => eprintln!("could not refresh the stale bookmark for {path}: {e}"),
             }
         }
-        Ok(Some(resolved))
+        Ok(resolved)
     }
 
     fn restore_roots(&self) {
@@ -402,6 +415,69 @@ impl FileAccess {
         }
     }
 
+    /// Record the folder an export was just written to, so the next save
+    /// panel can start there. Its bookmark is best effort: the panel granted
+    /// the file, not the folder, so creation fails under the sandbox unless
+    /// the folder is readable anyway (inside an open root, say) — the bare
+    /// path is kept then, which is all the panel needs.
+    pub fn remember_export(&self, export_path: &str) {
+        let Some(dir) = Path::new(export_path)
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+        else {
+            return;
+        };
+        let bookmark = match self.provider.create(dir) {
+            Ok(bookmark) => bookmark,
+            Err(e) => {
+                eprintln!("no bookmark for the export folder {}: {e}", dir.display());
+                None
+            }
+        };
+        if let Ok(mut state) = self.lock() {
+            state.store.last_export = Some(ExportDirEntry {
+                path: dir.to_string_lossy().into_owned(),
+                bookmark,
+                exported_at: now_ms(),
+            });
+            self.save_or_log(&state);
+        }
+    }
+
+    /// Where the save panel for an export of `source_path` should start:
+    /// the file's own folder when it lies inside an open workspace root,
+    /// else the folder of the last export, else nowhere in particular. A
+    /// folder that no longer exists is skipped. The last export's bookmark
+    /// is resolved only for the path; no grant outlives this call.
+    pub fn export_default_dir(&self, source_path: &str) -> Option<String> {
+        let mut state = self.lock().ok()?;
+        let source_dir = Path::new(source_path).parent()?;
+        let in_root = state
+            .store
+            .roots
+            .iter()
+            .any(|root| source_dir.starts_with(&root.path));
+        if in_root && source_dir.is_dir() {
+            return Some(source_dir.to_string_lossy().into_owned());
+        }
+        let entry = state.store.last_export.clone()?;
+        let dir = match &entry.bookmark {
+            Some(bookmark) => match self.resolve_bookmark(&mut state, &entry.path, bookmark) {
+                Ok(resolved) => {
+                    let is_dir = resolved.path.is_dir();
+                    // `resolved.token` ends the grant here.
+                    is_dir.then_some(resolved.path)
+                }
+                Err(e) => {
+                    eprintln!("the last export folder {} does not resolve: {e}", entry.path);
+                    Some(PathBuf::from(&entry.path))
+                }
+            },
+            None => Some(PathBuf::from(&entry.path)),
+        }?;
+        dir.is_dir().then(|| dir.to_string_lossy().into_owned())
+    }
+
     pub fn roots(&self) -> Vec<WorkspaceRoot> {
         self.lock()
             .map(|state| {
@@ -438,6 +514,8 @@ pub mod fake {
         pub revoked: HashSet<String>,
         /// Bookmarks for these paths resolve but report themselves stale.
         pub stale: HashSet<String>,
+        /// Bookmarks for these paths cannot be created (no access to them).
+        pub uncreatable: HashSet<String>,
     }
 
     #[derive(Clone, Default)]
@@ -456,7 +534,11 @@ pub mod fake {
     impl BookmarkProvider for FakeBookmarks {
         fn create(&self, path: &Path) -> Result<Option<Vec<u8>>, String> {
             let path = path.to_string_lossy().into_owned();
-            self.0.lock().unwrap().created.push(path.clone());
+            let mut state = self.0.lock().unwrap();
+            if state.uncreatable.contains(&path) {
+                return Err(format!("no access to {path}"));
+            }
+            state.created.push(path.clone());
             Ok(Some(format!("bm:{path}").into_bytes()))
         }
 
@@ -502,6 +584,9 @@ pub mod fake {
         }
         pub fn mark_stale(&self, path: &str) {
             self.0.lock().unwrap().stale.insert(path.to_string());
+        }
+        pub fn make_uncreatable(&self, path: &str) {
+            self.0.lock().unwrap().uncreatable.insert(path.to_string());
         }
     }
 }
@@ -730,6 +815,122 @@ mod tests {
         assert!(FileAccess::load(Box::new(NoopBookmarks), Some(&dir))
             .roots()
             .is_empty());
+    }
+
+    #[test]
+    fn export_default_dir_prefers_the_source_folder_inside_a_root() {
+        let (dir, file) = fixture("export-in-root");
+        let data = s(&dir.join("data"));
+        std::fs::create_dir_all(dir.join("data/sub")).unwrap();
+        std::fs::create_dir_all(dir.join("out")).unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.add_root(&data).unwrap();
+        access.remember_export(&s(&dir.join("out/x.csv")));
+
+        assert_eq!(access.export_default_dir(&file), Some(data.clone()));
+        assert_eq!(
+            access.export_default_dir(&s(&dir.join("data/sub/b.parquet"))),
+            Some(s(&dir.join("data/sub"))),
+            "a subfolder of the root counts"
+        );
+        assert_eq!(
+            access.export_default_dir(&s(&dir.join("elsewhere/c.parquet"))),
+            Some(s(&dir.join("out"))),
+            "outside every root, the last export folder"
+        );
+        assert_eq!(
+            fake.active(),
+            [data.clone()],
+            "only the root's grant is held"
+        );
+    }
+
+    #[test]
+    fn export_default_dir_falls_back_to_the_last_export_folder_then_to_none() {
+        let (dir, file) = fixture("export-fallback");
+        let out = dir.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+
+        assert_eq!(access.export_default_dir(&file), None, "nothing to go on");
+        access.remember_export(&s(&out.join("x.csv")));
+        assert_eq!(access.export_default_dir(&file), Some(s(&out)));
+        assert!(fake.active().is_empty(), "the grant does not outlive the call");
+        assert_eq!(fake.starts(), 1);
+        assert_eq!(fake.stops(), 1);
+
+        std::fs::remove_dir_all(&out).unwrap();
+        assert_eq!(
+            access.export_default_dir(&file),
+            None,
+            "a deleted folder is not offered"
+        );
+
+        access.remember_export("x.csv");
+        assert!(
+            BookmarkStore::load_from(&dir.join("bookmarks.json"))
+                .last_export
+                .is_some(),
+            "a bare file name has no folder to record and leaves the entry alone"
+        );
+    }
+
+    #[test]
+    fn the_last_export_folder_is_bookmarked_best_effort_and_survives_a_relaunch() {
+        let (dir, file) = fixture("export-relaunch");
+        let out = dir.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_export(&s(&out.join("x.csv")));
+        assert_eq!(fake.created(), [s(&out)]);
+        let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
+        assert_eq!(saved.last_export.as_ref().unwrap().path, s(&out));
+        assert!(saved.last_export.as_ref().unwrap().bookmark.is_some());
+
+        let relaunch = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(relaunch.clone()), Some(&dir));
+        assert_eq!(access.export_default_dir(&file), Some(s(&out)));
+        assert_eq!(relaunch.starts(), 1, "resolved from the bookmark");
+        assert_eq!(relaunch.stops(), 1);
+
+        // Under the sandbox the folder is usually not bookmarkable: the
+        // bare path is kept and still offered.
+        let denied = FakeBookmarks::default();
+        denied.make_uncreatable(&s(&out));
+        let access = FileAccess::load(Box::new(denied.clone()), Some(&dir));
+        access.remember_export(&s(&out.join("y.csv")));
+        let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
+        assert_eq!(saved.last_export.as_ref().unwrap().bookmark, None);
+        assert_eq!(access.export_default_dir(&file), Some(s(&out)));
+        assert_eq!(denied.starts(), 0);
+
+        // A bookmark that no longer resolves falls back to the path too.
+        access.remember_export(&s(&out.join("z.csv")));
+        let revoked = FakeBookmarks::default();
+        revoked.revoke(&s(&out));
+        let access = FileAccess::load(Box::new(revoked), Some(&dir));
+        assert_eq!(access.export_default_dir(&file), Some(s(&out)));
+    }
+
+    #[test]
+    fn a_stale_export_bookmark_is_recreated_and_saved() {
+        let (dir, file) = fixture("export-stale");
+        let out = dir.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_export(&s(&out.join("x.csv")));
+
+        fake.mark_stale(&s(&out));
+        assert_eq!(access.export_default_dir(&file), Some(s(&out)));
+        assert_eq!(fake.created(), [s(&out), s(&out)], "re-created from the resolved URL");
+        assert!(fake.active().is_empty());
+        assert!(BookmarkStore::load_from(&dir.join("bookmarks.json"))
+            .last_export
+            .is_some());
     }
 
     #[test]

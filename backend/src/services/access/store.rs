@@ -36,6 +36,22 @@ pub struct RecentEntry {
     pub bookmark: Option<Vec<u8>>,
 }
 
+/// The folder the last export was written to, where the next save panel
+/// starts. The bookmark is best effort: the save panel grants the chosen
+/// file, not its folder, so under the sandbox it usually cannot be created
+/// and the bare path is kept instead (the panel only needs a path, and
+/// `stat` is allowed on it there).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportDirEntry {
+    pub path: String,
+    #[serde(default, with = "base64_bytes")]
+    pub bookmark: Option<Vec<u8>>,
+    pub exported_at: i64,
+}
+
+/// `version` stays at 1 across optional additions such as `last_export`:
+/// an older file reads with the field absent, and an older build ignores
+/// the field it does not know.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BookmarkStore {
     pub version: u32,
@@ -43,6 +59,8 @@ pub struct BookmarkStore {
     pub roots: Vec<RootEntry>,
     #[serde(default)]
     pub recent: Vec<RecentEntry>,
+    #[serde(default)]
+    pub last_export: Option<ExportDirEntry>,
 }
 
 impl Default for BookmarkStore {
@@ -51,6 +69,7 @@ impl Default for BookmarkStore {
             version: CURRENT_VERSION,
             roots: Vec::new(),
             recent: Vec::new(),
+            last_export: None,
         }
     }
 }
@@ -125,6 +144,10 @@ impl BookmarkStore {
         }
         for recent in self.recent.iter_mut().filter(|r| r.path == path) {
             recent.bookmark = Some(bookmark.clone());
+            changed = true;
+        }
+        if let Some(export) = self.last_export.as_mut().filter(|e| e.path == path) {
+            export.bookmark = Some(bookmark);
             changed = true;
         }
         changed
@@ -205,6 +228,11 @@ mod tests {
             added_at: 10,
         });
         store.upsert_recent(recent("/data/a.parquet", 20));
+        store.last_export = Some(ExportDirEntry {
+            path: "/exports".into(),
+            bookmark: Some(vec![4, 5]),
+            exported_at: 30,
+        });
         store.save_to(&file).unwrap();
 
         let text = std::fs::read_to_string(&file).unwrap();
@@ -241,6 +269,10 @@ mod tests {
         assert_eq!(store.roots[0].bookmark, None);
         assert_eq!(store.recent[0].bookmark, None);
         assert_eq!(store.bookmark_for("/d"), None);
+        assert_eq!(
+            store.last_export, None,
+            "a store written before last_export existed reads as none"
+        );
     }
 
     #[test]
@@ -310,6 +342,14 @@ mod tests {
         assert!(store.set_bookmark("/d/a.parquet", vec![9]));
         assert_eq!(store.bookmark_for("/d/a.parquet"), Some(&[9u8][..]));
         assert!(!store.set_bookmark("/elsewhere", vec![9]));
+
+        store.last_export = Some(ExportDirEntry {
+            path: "/exports".into(),
+            bookmark: None,
+            exported_at: 0,
+        });
+        assert!(store.set_bookmark("/exports", vec![7]));
+        assert_eq!(store.last_export.as_ref().unwrap().bookmark, Some(vec![7]));
 
         assert!(store.remove_root("/d"));
         assert!(!store.remove_root("/d"));
