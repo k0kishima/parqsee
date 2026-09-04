@@ -82,18 +82,22 @@ async fn dispatch(
             cache.evict(&s(&args, "path")?).await?;
             Value::Null
         }
-        "export_data" => json!(
-            export_data(
+        "export_data" => {
+            let export_path = s(&args, "exportPath")?;
+            let rows = export_data(
                 cache,
                 s(&args, "sourcePath")?,
-                s(&args, "exportPath")?,
+                export_path.clone(),
                 s(&args, "format")?,
                 opt_u(&args, "offset"),
                 opt_u(&args, "limit"),
                 opt_s(&args, "filter"),
             )
-            .await?
-        ),
+            .await?;
+            access.remember_export(&export_path);
+            json!(rows)
+        }
+        "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
         "execute_sql" => json!(run_query(cache, &s(&args, "filePath")?, &s(&args, "query")?).await?),
         other => return Err(format!("unknown command {other}")),
     };

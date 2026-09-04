@@ -137,6 +137,7 @@ pub fn run() {
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::export_data,
+            commands::data::export_default_dir,
             commands::data::evict_cache,
             commands::query::execute_sql
         ])

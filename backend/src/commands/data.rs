@@ -1,6 +1,8 @@
 use crate::commands::guarded;
+use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
 use crate::services::{export, parquet};
+use std::sync::Arc;
 
 #[tauri::command]
 pub async fn read_parquet_data(
@@ -30,9 +32,12 @@ pub async fn evict_cache(
     cache.evict(&path).await
 }
 
+/// Writes the export and, once it has succeeded, records its folder as
+/// where the next save panel starts (`export_default_dir`).
 #[tauri::command]
 pub async fn export_data(
     cache: tauri::State<'_, ParquetCache>,
+    access: tauri::State<'_, Arc<FileAccess>>,
     source_path: String,
     export_path: String,
     format: String,
@@ -40,9 +45,30 @@ pub async fn export_data(
     limit: Option<usize>,
     filter: Option<String>,
 ) -> Result<usize, String> {
-    guarded(
-        "The export",
-        export::export_data(&cache, source_path, export_path, format, offset, limit, filter),
-    )
+    guarded("The export", async {
+        let rows = export::export_data(
+            &cache,
+            source_path,
+            export_path.clone(),
+            format,
+            offset,
+            limit,
+            filter,
+        )
+        .await?;
+        access.remember_export(&export_path);
+        Ok(rows)
+    })
     .await
+}
+
+/// The folder the save panel for an export of `source_path` should start
+/// in, or `None` for the panel's own default. See
+/// `FileAccess::export_default_dir` for the order.
+#[tauri::command]
+pub async fn export_default_dir(
+    access: tauri::State<'_, Arc<FileAccess>>,
+    source_path: String,
+) -> Result<Option<String>, String> {
+    Ok(access.export_default_dir(&source_path))
 }
