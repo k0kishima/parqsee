@@ -38,12 +38,14 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     )?;
 
     let open = MenuItem::with_id(app, "open-file", "Open…", true, Some("CmdOrCtrl+O"))?;
+    let open_folder =
+        MenuItem::with_id(app, "open-folder", "Open Folder…", true, Some("CmdOrCtrl+Shift+O"))?;
     let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
     let file = Submenu::with_items(
         app,
         "File",
         true,
-        &[&open, &PredefinedMenuItem::separator(app)?, &close_tab],
+        &[&open, &open_folder, &PredefinedMenuItem::separator(app)?, &close_tab],
     )?;
 
     let edit = Submenu::with_items(
@@ -129,6 +131,9 @@ pub fn run() {
             commands::file::list_recent_files,
             commands::file::remove_recent_file,
             commands::file::clear_recent_files,
+            commands::workspace::list_workspace_roots,
+            commands::workspace::add_workspace_root,
+            commands::workspace::remove_workspace_root,
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::export_data,

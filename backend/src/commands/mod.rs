@@ -1,6 +1,7 @@
 pub mod data;
 pub mod file;
 pub mod query;
+pub mod workspace;
 
 use futures::FutureExt;
 use std::future::Future;
