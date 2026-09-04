@@ -1,7 +1,8 @@
 import fs from 'node:fs';
+import path from 'node:path';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { launch, dropFile, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT } from './lib.mjs';
+import { launch, dropFile, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT } from './lib.mjs';
 
 const base = (p) => p.split('/').pop();
 
@@ -490,20 +491,28 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   // Close all -> welcome, recent files
   for (let i = 0; i < 4; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S7.welcome', await page.locator('text=Drop your Parquet file here').isVisible(), 'welcome after closing all tabs');
-  const recent = await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-recent-files')).map(f => f.name));
+  // Recent files live in the bridge's store (bookmarks.json), not localStorage.
+  const recent = (await bridge.call('list_recent_files')).map(f => f.name);
   check('S7.recent', recent[0] === 'inner.parquet' && recent.length === 4, `recent=${recent}`);
+  check('S7.recentNoLocalStorage', (await page.evaluate(() => localStorage.getItem('parqsee-recent-files'))) === null, 'legacy key cleared');
   const recentUi = await page.locator('text=Recent Files').isVisible();
   check('S7.recentUi', recentUi);
   // click a recent file
   await page.click('text=inner.parquet'); await page.waitForTimeout(500); await waitGrid(page);
   check('S7.recentClick', (await visibleGrid(page)).length === 3);
   await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
-  // missing recent file
-  await page.evaluate(() => { const r = JSON.parse(localStorage.getItem('parqsee-recent-files')); r.unshift({ path: '/gone/missing.parquet', name: 'missing.parquet', lastAccessed: 'x', size: 1 }); localStorage.setItem('parqsee-recent-files', JSON.stringify(r)); });
+  // A recent file that has since been deleted: greyed out on reload, an alert and gone on click.
+  const goneDir = `${OUT}/gone`; fs.rmSync(goneDir, { recursive: true, force: true }); fs.mkdirSync(goneDir);
+  fs.copyFileSync(`${FIX}/one_row.parquet`, `${goneDir}/missing.parquet`);
+  await openFile(page, `${goneDir}/missing.parquet`);
+  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
+  fs.rmSync(`${goneDir}/missing.parquet`);
   await page.reload(); await page.waitForSelector('text=missing.parquet');
+  check('S7.unavailableRecent', await page.locator('text=No longer available').isVisible(), 'deleted file marked unavailable after reload');
   await page.click('text=missing.parquet'); await page.waitForTimeout(500);
   const al = await page.evaluate(() => window.__alerts.splice(0));
   check('S7.missingRecent', al.length === 1 && al[0].includes('not found') && !(await page.locator('text=missing.parquet').isVisible()), `alerts=${al} stillListed=${await page.locator('text=missing.parquet').isVisible()}`);
+  check('S7.missingRecentForgotten', !(await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet'), 'removed from the store too');
   // drop non-parquet
   await page.evaluate(() => window.__emit('file-drop', ['/etc/hosts'])); await page.waitForTimeout(200);
   check('S7.dropOther', (await page.evaluate(() => window.__alerts.splice(0)))[0]?.includes('.parquet'), 'alert for non-parquet drop');
@@ -533,7 +542,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
 });
 
 // ---------------------------------------------------------------- S8 settings
-await scenario('S8-settings', async ({ page }) => {
+await scenario('S8-settings', async ({ page, bridge }) => {
   await page.click('[title="Settings"]');
   await page.waitForSelector('h2:has-text("Settings")');
   await page.locator('select').nth(0).selectOption('ja');
@@ -576,20 +585,54 @@ await scenario('S8-settings', async ({ page }) => {
   await page.evaluate(() => { window.confirm = () => true; });
   await page.click('button:has-text("Clear Recent Files")'); await page.waitForTimeout(200);
   await page.click('button:has-text("Save Changes")'); await page.waitForTimeout(200);
-  check('S8.clearRecent', (await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-recent-files')).length)) === 0, 'recent cleared');
+  check('S8.clearRecent', (await bridge.call('list_recent_files')).length === 0, 'recent cleared in the store');
   // corrupt localStorage
-  await page.evaluate(() => { localStorage.setItem('parqsee-recent-files', '{not json'); localStorage.setItem('parqsee-settings', '{"rowsPerPage":"x"}'); });
+  await page.evaluate(() => { localStorage.setItem('parqsee-settings', '{"rowsPerPage":"x"}'); });
   await page.reload(); await page.waitForTimeout(800);
   check('S8.corruptStorage', await page.locator('text=Drop your Parquet file here').isVisible(), `app survives corrupt localStorage; errors=${JSON.stringify(page.__errors.slice(0, 2)).slice(0, 200)}`);
 });
 
-// ---------------------------------------------------------------- S9 file explorer
-await scenario('S9-explorer', async ({ page }) => {
+// A corrupt store on disk must not keep the app from starting.
+const CORRUPT_DATA = path.join(OUT, 'data', 's8-corrupt');
+fs.rmSync(CORRUPT_DATA, { recursive: true, force: true }); fs.mkdirSync(CORRUPT_DATA, { recursive: true });
+fs.writeFileSync(path.join(CORRUPT_DATA, 'bookmarks.json'), '{not json');
+await scenario('S8-corrupt-store', async ({ page, bridge }) => {
+  check('S8.corruptStore', await page.locator('text=Drop your Parquet file here').isVisible() && (await bridge.call('list_workspace_roots')).length === 0, `errors=${JSON.stringify(page.__errors.slice(0, 2)).slice(0, 200)}`);
   await openFile(page, `${FIX}/one_row.parquet`);
-  const names = () => page.evaluate(() => [...document.querySelectorAll('.overflow-y-auto .py-1 > div')].map(d => d.textContent?.trim()).filter(Boolean));
+  check('S8.corruptStoreOverwritten', JSON.parse(fs.readFileSync(path.join(CORRUPT_DATA, 'bookmarks.json'), 'utf8')).recent.length === 1, 'the next change rewrites the store');
+}, { dataDir: CORRUPT_DATA });
+
+// ---------------------------------------------------------------- S9 file explorer
+// The explorer browses workspace roots the user opens (Open Folder); both
+// scenarios share a store directory so the second one acts out a relaunch.
+const S9_DATA = path.join(OUT, 'data', 's9');
+fs.rmSync(S9_DATA, { recursive: true, force: true });
+/** Close the workspace root at `dir` from its row's hover button. */
+async function removeRoot(page, dir) {
+  const row = page.locator(`.py-1 .group[title="${dir}"]`).first();
+  await row.scrollIntoViewIfNeeded(); await row.hover();
+  await row.locator('[title="Remove folder from workspace"]').click();
+  await page.waitForTimeout(300);
+}
+await scenario('S9-explorer', async ({ page, bridge }) => {
+  // Rows of the tree, top to bottom: the root first, then what is expanded under it.
+  const names = () => page.evaluate(() => [...document.querySelectorAll('.overflow-y-auto .py-1 .group')].map(d => d.textContent?.trim()).filter(Boolean));
+  const crumbs = () => page.evaluate(() => [...document.querySelectorAll('nav[aria-label="breadcrumb"] button')].map(b => b.textContent));
+  // No folder open yet: the welcome screen offers Open Folder; a dropped file shows an empty sidebar.
+  await openFile(page, `${FIX}/one_row.parquet`);
+  check('S9.emptyState', await page.locator('text=Open a folder to browse Parquet files').isVisible(), 'sidebar empty state with a file open but no folder');
+  check('S9.noListingOutsideRoots', !bridge.log.some(l => l.cmd === 'list_directory'), `list_directory calls: ${bridge.log.filter(l => l.cmd === 'list_directory').length}`);
+  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
+  check('S9.welcomeOpenFolder', await page.locator('button:has-text("Open Folder")').isVisible(), 'welcome screen has Open Folder');
+  // Open the fixtures folder from the welcome screen.
+  await openFolder(page, FIX);
+  await page.waitForTimeout(400);
+  const roots = await bridge.call('list_workspace_roots');
+  check('S9.rootStored', roots.length === 1 && roots[0].path === FIX && roots[0].name === 'fixtures', JSON.stringify(roots));
+  check('S9.workspaceWithoutTabs', await page.locator('text=Drop your Parquet file here').isVisible() && (await names())[0] === 'fixtures', 'tree next to the welcome content, no tab yet');
   const n1 = await names();
   report('S9.list', n1.length > 10 ? 'PASS' : 'FAIL', `explorer entries: ${n1.slice(0, 6)}… (${n1.length})`);
-  check('S9.dirsFirst', n1[0]?.startsWith('paths'), `first entry ${n1[0]}`);
+  check('S9.dirsFirst', n1[1]?.startsWith('paths'), `first entry under the root ${n1[1]}`);
   // expand paths
   await page.click('.py-1 >> text=paths'); await page.waitForTimeout(400);
   const n2 = await names();
@@ -605,19 +648,21 @@ await scenario('S9-explorer', async ({ page }) => {
   await page.click('.py-1 >> text=broken_link.parquet'); await page.waitForTimeout(500);
   const al = await page.evaluate(() => window.__alerts.splice(0));
   check('S9.brokenLink', al.length === 1, `alerts=${al}`);
-  // after opening paths/UPPER.PARQUET the explorer re-rooted into paths/
-  const crumbTitle = await page.locator('.mt-1[title]').getAttribute('title');
-  report('S9.rerootOnOpen', 'OBSERVE', `after opening a file from the expanded subfolder, explorer currentDir=${crumbTitle?.split('/').slice(-2).join('/')}`);
-  // breadcrumb back to fixtures
-  await page.locator('.mt-1 button', { hasText: 'fixtures' }).click(); await page.waitForTimeout(400);
-  const n4 = await names();
-  check('S9.navigateUp', n4.some(n => n.startsWith('nan.parquet')), `fixtures listing: ${n4.slice(0, 3)}`);
-  // search box
+  // The breadcrumb starts at the root and stops there: no "/" above it.
+  const c1 = await crumbs();
+  check('S9.crumbBounded', c1.join('/') === 'fixtures/paths' && (await page.locator('nav[aria-label="breadcrumb"]').getAttribute('title')) === `${FIX}/paths`, `crumbs=${c1}`);
+  // Collapse paths in the tree, then bring it back from the crumb.
+  await page.click('.py-1 >> text=paths'); await page.waitForTimeout(200);
+  check('S9.collapse', !(await names()).some(n => n.startsWith('UPPER.PARQUET')));
+  await page.locator('nav[aria-label="breadcrumb"] button', { hasText: 'paths' }).click(); await page.waitForTimeout(400);
+  check('S9.crumbReveal', (await names()).some(n => n.startsWith('UPPER.PARQUET')) && (await names()).some(n => n.startsWith('nan.parquet')), `tree after crumb click: ${(await names()).slice(0, 4)}`);
+  // search box: the whole loaded tree, keeping the folders above a match
   await page.fill('input[placeholder="Filter files..."]', 'nan'); await page.waitForTimeout(200);
   const n3 = await names();
-  check('S9.search', n3.length === 1 && n3[0].startsWith('nan.parquet'), `${n3}`);
-  await page.fill('input[placeholder="Filter files..."]', 'NAN'); await page.waitForTimeout(200);
-  check('S9.searchCase', (await names()).length === 1, 'case-insensitive');
+  check('S9.search', n3.length === 2 && n3[0] === 'fixtures' && n3[1].startsWith('nan.parquet'), `${n3}`);
+  await page.fill('input[placeholder="Filter files..."]', 'GLOB'); await page.waitForTimeout(200);
+  const n3b = await names();
+  check('S9.searchDeep', n3b.length === 3 && n3b[1] === 'paths' && n3b[2].startsWith('glob[1]'), `case-insensitive, through the subfolder: ${n3b}`);
   await page.click('[title="Clear search"]');
   // context menu
   await page.click('.py-1 >> text=dict.parquet', { button: 'right' }); await page.waitForTimeout(200);
@@ -628,8 +673,18 @@ await scenario('S9-explorer', async ({ page }) => {
   await page.click('text="Open"'); await page.waitForTimeout(300);
   report('S9.openNewTabDup', 'OBSERVE', `"Open" on an already-open file: tabs=${await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length)}`);
   // selecting a tab highlights the file in the explorer
-  await page.click(`span[title="${FIX}/one_row.parquet"]`); await page.waitForTimeout(300);
-  report('S9.highlight', 'OBSERVE', `selected entry after tab switch: ${await page.evaluate(() => [...document.querySelectorAll('.py-1 div[class*="bg-"]')].map(d => d.textContent?.trim().slice(0, 30)).slice(0, 3))}`);
+  await page.click(`span[title="${FIX}/paths/UPPER.PARQUET"]`); await page.waitForTimeout(300);
+  check('S9.highlight', (await page.evaluate(() => [...document.querySelectorAll('.py-1 .group.bg-selected')].map(d => d.textContent?.trim()))).some(n => n?.startsWith('UPPER.PARQUET')), `selected rows: ${await page.evaluate(() => [...document.querySelectorAll('.py-1 .group.bg-selected')].map(d => d.textContent?.trim().slice(0, 30)))}`);
+  // A second root: the tree keeps the first one as it was.
+  await openFolder(page, `${FIX}/paths/dir with space`);
+  await page.waitForTimeout(300);
+  const n4 = await names();
+  check('S9.secondRoot', n4[0] === 'fixtures' && n4.includes('dir with space') && n4.some(n => n.startsWith('inner.parquet')) && n4.some(n => n.startsWith('UPPER.PARQUET')), `${n4.slice(-4)} (${n4.length})`);
+  check('S9.rootsStored', (await bridge.call('list_workspace_roots')).length === 2);
+  // Remove the second root from its row.
+  await removeRoot(page, `${FIX}/paths/dir with space`);
+  // (paths/dir with space is still listed as a subfolder of the first root; only its root row goes.)
+  check('S9.removeRoot', (await page.locator(`.py-1 .group[title="${FIX}/paths/dir with space"]`).count()) === 0 && (await bridge.call('list_workspace_roots')).length === 1, `roots=${JSON.stringify(await bridge.call('list_workspace_roots'))}`);
   // hide sidebar
   await page.click('[title="Hide sidebar"]');
   // The sidebar collapses to width 0 with overflow hidden; its children keep their own size, so
@@ -640,7 +695,28 @@ await scenario('S9-explorer', async ({ page }) => {
   }, null, { timeout: 2000 }).then(() => true, () => false);
   check('S9.hideSidebar', collapsed);
   await page.screenshot({ path: `${OUT}/shots/S9.png` });
-});
+}, { dataDir: S9_DATA });
+
+// "Relaunch": a fresh browser and bridge on the same store.
+await scenario('S9-restore', async ({ page, bridge }) => {
+  const roots = await bridge.call('list_workspace_roots');
+  check('S9r.rootRestored', roots.length === 1 && roots[0].path === FIX, JSON.stringify(roots));
+  const rootRow = page.locator(`.py-1 .group[title="${FIX}"]`);
+  await rootRow.waitFor({ timeout: 5000 }).catch(() => {});
+  check('S9r.workspaceOnLaunch', await rootRow.isVisible() && await page.locator('text=Drop your Parquet file here').isVisible(), 'the tree is back without a tab');
+  await page.waitForTimeout(400);
+  check('S9r.treeLoaded', (await page.evaluate(() => [...document.querySelectorAll('.overflow-y-auto .py-1 .group')].length)) > 10, 'root expanded and listed');
+  const recent = (await bridge.call('list_recent_files')).map(f => f.name);
+  check('S9r.recentRestored', recent.includes('UPPER.PARQUET') && recent.includes('dict.parquet'), `recent=${recent}`);
+  check('S9r.recentUi', await page.locator('text=UPPER.PARQUET').first().isVisible(), 'recent files listed next to the tree');
+  await page.locator('.py-1 >> text=dict.parquet').click(); await page.waitForTimeout(500); await waitGrid(page);
+  check('S9r.openFromTree', (await activeTabName(page)) === 'dict.parquet');
+  // Removing the last root with a tab open keeps the workspace, with the empty sidebar.
+  await removeRoot(page, FIX);
+  check('S9r.removeLastRoot', await page.locator('text=Open a folder to browse Parquet files').isVisible() && (await activeTabName(page)) === 'dict.parquet', 'empty sidebar, tab stays');
+  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(300);
+  check('S9r.welcomeAgain', await page.locator('text=Drop your Parquet file here').isVisible() && !(await page.locator('[title="Hide sidebar"]').isVisible()), 'no roots, no tabs: the welcome screen');
+}, { dataDir: S9_DATA });
 
 // ---------------------------------------------------------------- S10 the file changes under an open tab
 await scenario('S10-external-change', async ({ page }) => {

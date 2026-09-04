@@ -26,6 +26,14 @@ listeners are kept so `window.__emit('file-drop', [path])` delivers drops,
 and `alert()` are recorded). `window.__delays[cmd] = ms` holds one command's
 responses back, which is how the suite provokes out-of-order responses.
 
+Workspace roots and recent files live in the bridge's store
+(`bookmarks.json` under `PARQSEE_DATA_DIR`). `launch()` gives every run a
+fresh directory under `out/data/`; pass the same `dataDir` to two launches to
+act out a relaunch (S9 does). The bridge is not sandboxed and records no
+security-scoped bookmarks, so the store and the explorer are covered here
+and the grants themselves stay on `docs/MANUAL_QA.md`. `openFolder(page,
+dir)` answers the folder dialog with `dir` and clicks Open Folder.
+
 ## Setup
 
 ```sh
