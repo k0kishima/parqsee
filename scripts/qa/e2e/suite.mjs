@@ -385,16 +385,25 @@ await scenario('S5-sql', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------- S6 export
-await scenario('S6-export', async ({ page }) => {
+// The store is shared with S6-restore, which checks that the last export
+// folder survives a relaunch.
+const S6_DATA = path.join(OUT, 'data', 's6');
+fs.rmSync(S6_DATA, { recursive: true, force: true });
+const S6_OUT = `${OUT}/e2e_exports`;
+await scenario('S6-export', async ({ page, bridge }) => {
   const mr = `${FIX}/multi_rowgroup.parquet`;
-  const outDir = `${OUT}/e2e_exports`; fs.rmSync(outDir, { recursive: true, force: true }); fs.mkdirSync(outDir);
+  const outDir = S6_OUT; fs.rmSync(outDir, { recursive: true, force: true }); fs.mkdirSync(outDir);
   await openFile(page, mr);
+  // Record the defaultPath passed to the save dialog by wrapping invoke.
+  await page.evaluate(() => { const orig = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = async (c, a) => { if (c === 'plugin:dialog|save') window.__lastSave = a; return orig(c, a); }; });
+  const lastSave = () => page.evaluate(() => window.__lastSave?.options?.defaultPath);
   const openModal = async () => { await act(page).locator('button:has-text("Export")').first().click(); await act(page).locator('.fixed h2:has-text("Export Data")').waitFor(); };
   const modal = () => act(page).locator('.fixed').filter({ hasText: 'Export Data' });
   const doExport = async (path) => { await page.evaluate((p) => { window.__dialog.save = p; }, path); await modal().locator('button:has-text("Export")').click(); await page.waitForTimeout(300); await page.waitForFunction(() => !document.querySelector('.fixed h2') || ![...document.querySelectorAll('button')].some(b => b.textContent === 'Exporting...'), null, { timeout: 60000 }); const done = act(page).locator('.fixed').filter({ hasText: 'Export Complete' }); if (await done.count()) { report('S6.doneState', 'OBSERVE', (await done.locator('p').first().textContent())); await done.locator('button:has-text("Close")').click(); await page.waitForTimeout(150); } };
   const lines = (p) => fs.existsSync(p) ? fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).length : -1;
   await openModal();
   await doExport(`${outDir}/all.csv`);
+  check('S6.defaultPath.none', (await lastSave()) === 'multi_rowgroup.csv', `no root, no earlier export: defaultPath=${await lastSave()}`);
   const notes = await page.evaluate(() => window.__notifications.splice(0));
   check('S6.all', lines(`${outDir}/all.csv`) === 100001 && notes.length === 1, `lines=${lines(`${outDir}/all.csv`)} notif=${JSON.stringify(notes)}`);
   // current page (page 3)
@@ -404,6 +413,7 @@ await scenario('S6-export', async ({ page }) => {
   await modal().locator('input[value=current]').check();
   report('S6.currentLabel', 'OBSERVE', await modal().locator('label:has-text("Current page")').textContent());
   await doExport(`${outDir}/page3.csv`);
+  check('S6.defaultPath.lastExport', (await lastSave()) === `${outDir}/multi_rowgroup.csv`, `after an export to ${outDir}: defaultPath=${await lastSave()}`);
   const p3 = fs.readFileSync(`${outDir}/page3.csv`, 'utf8').split('\n');
   check('S6.currentPage', p3.length - 2 === 50 && p3[1].startsWith('100,') && p3[50].startsWith('149,'), `rows=${p3.length - 2} first=${p3[1].slice(0, 10)} last=${p3[50].slice(0, 10)}`);
   // custom range
@@ -434,6 +444,7 @@ await scenario('S6-export', async ({ page }) => {
   // unwritable path
   await doExport('/nonexistent/dir/out.csv');
   check('S6.unwritable', await modal().isVisible() && await modal().locator('.bg-red-50').isVisible(), `error shown: ${await modal().locator('.bg-red-50').textContent().catch(() => 'none')}`);
+  check('S6.defaultPath.failedExportNotRecorded', (await bridge.call('export_default_dir', { sourcePath: mr })) === outDir, `after a failed export: ${await bridge.call('export_default_dir', { sourcePath: mr })}`);
   await modal().locator('button:has-text("Cancel")').click();
   // filtered export + json
   const form = act(page).locator('form').first();
@@ -456,14 +467,24 @@ await scenario('S6-export', async ({ page }) => {
       else report(`S6.${f}.${fmt}`, 'PASS', fs.readFileSync(`${outDir}/${f}.${fmt}`, 'utf8').slice(0, 160).replace(/\n/g, '\\n'));
     }
   }
-  // export a file whose directory has no write permission? skip. Export default filename
+  // A file inside an open workspace root: the panel starts in its own
+  // folder, ahead of the last export folder. The name drops .PARQUET.
+  await openFolder(page, FIX);
   await openFile(page, `${FIX}/paths/UPPER.PARQUET`);
   await openModal();
-  // inspect the defaultPath passed to dialog save by wrapping invoke
-  await page.evaluate(() => { const orig = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = async (c, a) => { if (c === 'plugin:dialog|save') window.__lastSave = a; return orig(c, a); }; });
   await doExport(null);
-  report('S6.defaultName', 'OBSERVE', `save dialog default for UPPER.PARQUET: ${JSON.stringify(await page.evaluate(() => window.__lastSave?.options?.defaultPath))}`);
-});
+  check('S6.defaultPath.sourceInRoot', (await lastSave()) === `${FIX}/paths/UPPER.csv`, `save dialog default for UPPER.PARQUET under the root: ${await lastSave()}`);
+}, { dataDir: S6_DATA });
+
+// "Relaunch" on the same store: the last export folder is still known.
+await scenario('S6-restore', async ({ bridge }) => {
+  const stored = JSON.parse(fs.readFileSync(path.join(S6_DATA, 'bookmarks.json'), 'utf8')).last_export;
+  check('S6r.stored', stored?.path === S6_OUT, `bookmarks.json last_export=${JSON.stringify(stored)}`);
+  check('S6r.lastExportRestored', (await bridge.call('export_default_dir', { sourcePath: '/elsewhere/x.parquet' })) === S6_OUT, 'a file outside every root starts in the last export folder');
+  check('S6r.sourceInRootRestored', (await bridge.call('export_default_dir', { sourcePath: `${FIX}/multi_rowgroup.parquet` })) === FIX, 'a file under the restored root starts in its own folder');
+  fs.rmSync(S6_OUT, { recursive: true, force: true });
+  check('S6r.deletedFolderSkipped', (await bridge.call('export_default_dir', { sourcePath: '/elsewhere/x.parquet' })) === null, 'a deleted last export folder is not offered');
+}, { dataDir: S6_DATA });
 
 // ---------------------------------------------------------------- S7 tabs / workspace / welcome
 await scenario('S7-tabs', async ({ page, bridge }) => {
