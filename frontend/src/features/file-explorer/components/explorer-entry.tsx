@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, ChevronDown, Folder, FileText, File } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FileText, File, X } from 'lucide-react';
 import { FileEntry } from '../api';
 import { formatFileSize } from '../../../lib/format';
 
@@ -12,6 +12,8 @@ interface ExplorerEntryProps {
   expandedDirs: Set<string>;
   onEntryClick: (entry: FileEntry) => void;
   onEntryContextMenu: (e: React.MouseEvent, entry: FileEntry) => void;
+  /** Top-level rows are workspace roots; this closes one. */
+  onRemoveRoot?: (path: string) => void;
 }
 
 /**
@@ -28,17 +30,19 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
   expandedDirs,
   onEntryClick,
   onEntryContextMenu,
+  onRemoveRoot,
 }) {
   const { t } = useTranslation();
   const isExpanded = expandedDirs.has(entry.path);
   const isSelected = selectedFile === entry.path;
   const isDisabled = !entry.is_directory && !entry.is_parquet;
+  const isRoot = level === 0 && onRemoveRoot !== undefined;
 
   return (
     <div>
       <div
         className={`
-          flex items-center px-2 py-1
+          group flex items-center px-2 py-1
           ${isDisabled
             ? 'cursor-not-allowed opacity-50'
             : 'cursor-pointer'
@@ -51,6 +55,7 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
           }
         `}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
+        title={isRoot ? entry.path : undefined}
         onClick={() => onEntryClick(entry)}
         onContextMenu={(e) => onEntryContextMenu(e, entry)}
       >
@@ -80,6 +85,16 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
           <span className="text-xs ml-2 text-tertiary">
             {formatFileSize(entry.size)}
           </span>
+        )}
+        {isRoot && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemoveRoot(entry.path); }}
+            className="ml-2 p-0.5 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-tertiary text-tertiary hover:text-primary"
+            title={t('fileExplorer.removeFolder')}
+            aria-label={t('fileExplorer.removeFolder')}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
       {entry.is_directory && isExpanded && entry.loadError && (
@@ -112,6 +127,7 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
   if (prev.entry !== next.entry || prev.level !== next.level) return false;
   if (prev.expandedDirs !== next.expandedDirs) return false;
   if (prev.onEntryClick !== next.onEntryClick || prev.onEntryContextMenu !== next.onEntryContextMenu) return false;
+  if (prev.onRemoveRoot !== next.onRemoveRoot) return false;
   // Selection only matters to this row (and its subtree, when it has one).
   const selectionTouchesRow = (file: string | null) =>
     file !== null && (file === prev.entry.path || (prev.entry.is_directory && file.startsWith(prev.entry.path + '/')));

@@ -7,12 +7,14 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         'common.fileExplorer': 'File Explorer',
+        'common.openFolder': 'Open Folder',
         'fileExplorer.searchPlaceholder': 'Filter files...',
         'fileExplorer.clearSearch': 'Clear search',
         'fileExplorer.contextMenu.copyPath': 'Copy Path',
         'fileExplorer.contextMenu.revealInFinder': 'Reveal in Finder',
         'fileExplorer.contextMenu.openInNewTab': 'Open',
-        'fileExplorer.breadcrumb.root': '/',
+        'fileExplorer.empty': 'Open a folder to browse Parquet files',
+        'fileExplorer.removeFolder': 'Remove folder from workspace',
         'fileExplorer.loadError': 'Cannot read this folder: {{reason}}',
       };
       const text = translations[key] ?? key;

@@ -6,9 +6,10 @@ import { isParquetPath } from '../../../lib/path';
 interface DropZoneProps {
     onFileSelect: (path: string) => void;
     onBrowse: () => void;
+    onOpenFolder: () => void;
 }
 
-export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) => {
+export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOpenFolder }) => {
     const { t } = useTranslation();
     const [isDragging, setIsDragging] = useState(false);
 
@@ -30,7 +31,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
         setIsDragging(false);
 
         // Check if we have files in dataTransfer
-        // Note: Tauri's native file-drop event is handled globally in App.tsx
+        // Note: Tauri's native file-drop event is handled in WorkspaceContext.
         // This handles browser-style drops if they happen
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
@@ -83,12 +84,20 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse }) =>
                     {t('welcome.dropZone.subtitle')}
                 </p>
 
-                <button
-                    onClick={onBrowse}
-                    className="btn-primary"
-                >
-                    {t('welcome.dropZone.browse')}
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                    <button
+                        onClick={onBrowse}
+                        className="btn-primary"
+                    >
+                        {t('welcome.dropZone.browse')}
+                    </button>
+                    <button
+                        onClick={onOpenFolder}
+                        className="btn-secondary"
+                    >
+                        {t('common.openFolder')}
+                    </button>
+                </div>
 
                 <p className="mt-6 text-xs text-slate-400 dark:text-gray-500">
                     {t('welcome.dropZone.hint')}

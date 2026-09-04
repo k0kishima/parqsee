@@ -1,15 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, X } from 'lucide-react';
+import { Search, X, FolderOpen } from 'lucide-react';
 import { listDirectory, FileEntry } from '../api';
+import type { WorkspaceRoot } from '../../workspace/api';
 import { ContextMenu } from '../components/context-menu';
 import { BreadcrumbNav } from '../components/breadcrumb-nav';
 import { ExplorerEntry } from '../components/explorer-entry';
 import { toErrorMessage } from '../../../lib/tauri';
+import { ancestorsWithin, dirname, isWithin } from '../../../lib/path';
 
 interface FileExplorerProps {
-  currentPath?: string;
+  /** The folders open in the workspace, each the top of its own tree. */
+  roots: readonly WorkspaceRoot[];
+  currentPath?: string | null;
   onFileSelect: (path: string) => void;
+  onOpenFolder: () => void;
+  onRemoveRoot: (path: string) => void;
   className?: string;
 }
 
@@ -19,9 +25,16 @@ interface ContextMenuState {
   entry: FileEntry;
 }
 
-/** True if `path` is one of `entries` or of their loaded descendants. */
-function treeContains(entries: FileEntry[], path: string): boolean {
-  return entries.some(entry => entry.path === path || (entry.children ? treeContains(entry.children, path) : false));
+/** The entry at `path` anywhere in the loaded tree. */
+function findEntry(entries: readonly FileEntry[], path: string): FileEntry | undefined {
+  for (const entry of entries) {
+    if (entry.path === path) return entry;
+    if (entry.children && isWithin(entry.path, path)) {
+      const found = findEntry(entry.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 /** Replace the entry at `path` anywhere in the loaded tree. */
@@ -35,65 +48,106 @@ function updateEntry(entries: FileEntry[], path: string, update: (entry: FileEnt
   });
 }
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileSelect, className }) => {
-  const [entries, setEntries] = useState<FileEntry[]>([]);
+/**
+ * The loaded tree narrowed to `query`: an entry stays when its own name
+ * matches or something below it does, so a match deep in a subfolder is
+ * still reachable through its parents.
+ */
+function filterTree(entries: FileEntry[], query: string): FileEntry[] {
+  return entries.flatMap(entry => {
+    const children = entry.children ? filterTree(entry.children, query) : undefined;
+    const selfMatches = entry.name.toLowerCase().includes(query);
+    if (!selfMatches && !(children && children.length > 0)) return [];
+    return [children ? { ...entry, children } : entry];
+  });
+}
+
+const rootEntry = (root: WorkspaceRoot): FileEntry => ({
+  path: root.path,
+  name: root.name,
+  is_directory: true,
+  is_parquet: false,
+});
+
+export const FileExplorer: React.FC<FileExplorerProps> = ({
+  roots,
+  currentPath,
+  onFileSelect,
+  onOpenFolder,
+  onRemoveRoot,
+  className,
+}) => {
+  // One top-level entry per workspace root; folders below load on expand.
+  const [tree, setTree] = useState<FileEntry[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [currentDir, setCurrentDir] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  /** Why the current directory could not be listed, if it could not. */
-  const [listError, setListError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
-  // The directory and listing currently shown, readable from effects without
-  // retriggering them.
-  const currentDirRef = useRef('');
-  currentDirRef.current = currentDir;
-  const entriesRef = useRef<FileEntry[]>([]);
-  entriesRef.current = entries;
+  // The last rendered tree, readable from callbacks without retriggering them.
+  const treeRef = useRef<FileEntry[]>([]);
+  treeRef.current = tree;
+  // Listings in flight, so two callers wanting the same folder (a root
+  // being added and the active file inside it being revealed) share one.
+  const inflightRef = useRef(new Map<string, Promise<void>>());
 
+  const loadSubDirectory = useCallback((parentPath: string): Promise<void> => {
+    const pending = inflightRef.current.get(parentPath);
+    if (pending) return pending;
+    const task = (async () => {
+      try {
+        const result = await listDirectory(parentPath);
+        setTree(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: result, loadError: undefined })));
+      } catch (error) {
+        console.error('Failed to load directory:', error);
+        // Leave the folder expanded with the reason where its children would
+        // be, instead of an arrow that opens onto nothing.
+        setTree(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: [], loadError: toErrorMessage(error) })));
+      } finally {
+        inflightRef.current.delete(parentPath);
+      }
+    })();
+    inflightRef.current.set(parentPath, task);
+    return task;
+  }, []);
+
+  // Keep one tree per root, preserving what is loaded under roots that stay.
+  // A root that was just opened is expanded straight away.
   useEffect(() => {
-    if (currentPath) {
-      const dir = currentPath.substring(0, currentPath.lastIndexOf('/'));
-      if (dir) {
-        setSelectedFile(currentPath);
-        // Switching tabs within one directory only moves the highlight; skip
-        // the IPC round trip and the full listing re-render. The same goes
-        // for a file inside an expanded subfolder — re-rooting the tree into
-        // that folder threw away the context the user had opened up.
-        if (dir !== currentDirRef.current && !treeContains(entriesRef.current, currentPath)) {
-          setCurrentDir(dir);
-          loadDirectory(dir);
-        }
+    const added = roots.filter(root => !treeRef.current.some(entry => entry.path === root.path));
+    setTree(prev => roots.map(root => prev.find(entry => entry.path === root.path) ?? rootEntry(root)));
+    if (added.length > 0) {
+      setExpandedDirs(prev => new Set([...prev, ...added.map(root => root.path)]));
+      added.forEach(root => loadSubDirectory(root.path));
+    }
+  }, [roots, loadSubDirectory]);
+
+  /** Expand every folder from the root down to `dir`, loading what is not loaded yet. */
+  const reveal = useCallback(async (rootPath: string, dir: string) => {
+    const chain = ancestorsWithin(rootPath, dir);
+    if (chain.length === 0) return;
+    setExpandedDirs(prev => new Set([...prev, ...chain]));
+    for (const path of chain) {
+      // A level not loaded yet is listed before the next one is looked
+      // for; the tree ref may lag a render, which costs at most a re-list.
+      if (!findEntry(treeRef.current, path)?.children) {
+        await loadSubDirectory(path);
       }
     }
-  }, [currentPath]);
+  }, [loadSubDirectory]);
 
-  const loadDirectory = async (path: string) => {
-    try {
-      const result = await listDirectory(path);
-      setEntries(result);
-      setListError(null);
-    } catch (error) {
-      console.error('Failed to load directory:', error);
-      setEntries([]);
-      setListError(toErrorMessage(error));
-    }
-  };
-
-  const loadSubDirectory = useCallback(async (parentPath: string) => {
-    try {
-      const result = await listDirectory(parentPath);
-      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: result, loadError: undefined })));
-    } catch (error) {
-      console.error('Failed to load sub-directory:', error);
-      // Leave the folder expanded with the reason where its children would
-      // be, instead of an arrow that opens onto nothing.
-      setEntries(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: [], loadError: toErrorMessage(error) })));
-    }
-  }, []);
+  // The active tab's file is highlighted and, when it lies in a workspace
+  // root, brought into view. A file outside every root (dropped, or picked
+  // with ⌘O) leaves the tree alone: under the sandbox its folder cannot be
+  // listed anyway.
+  useEffect(() => {
+    if (!currentPath) return;
+    setSelectedFile(currentPath);
+    const root = roots.find(r => isWithin(r.path, currentPath));
+    if (root) reveal(root.path, dirname(currentPath));
+  }, [currentPath, roots, reveal]);
 
   const toggleDirectory = useCallback((entry: FileEntry) => {
     setExpandedDirs(prev => {
@@ -117,13 +171,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     }
   }, [toggleDirectory, onFileSelect]);
 
-  const navigateToDirectory = useCallback((path: string) => {
-    setCurrentDir(path);
-    setExpandedDirs(new Set());
-    setSearchQuery('');
-    loadDirectory(path);
-  }, []);
-
   const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault();
     e.stopPropagation();
@@ -137,11 +184,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
     setContextMenu(null);
   }, []);
 
-  const filteredEntries = useMemo(() => {
-    if (!searchQuery.trim()) return entries;
-    const query = searchQuery.toLowerCase();
-    return entries.filter(entry => entry.name.toLowerCase().includes(query));
-  }, [entries, searchQuery]);
+  const filteredTree = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query ? filterTree(tree, query) : tree;
+  }, [tree, searchQuery]);
+
+  const selectedRoot = useMemo(
+    () => (selectedFile ? roots.find(r => isWithin(r.path, selectedFile)) : undefined),
+    [roots, selectedFile]
+  );
 
   return (
     <div
@@ -149,49 +200,71 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentPath, onFileS
       className={`relative bg-primary border-primary border-r overflow-y-auto ${className}`}
     >
       <div className="p-3 border-b border-primary">
-        <h3 className="text-sm font-semibold text-secondary">{t('common.fileExplorer')}</h3>
-        <BreadcrumbNav currentDir={currentDir} onNavigate={navigateToDirectory} />
-      </div>
-      {/* Search box */}
-      <div className="px-2 py-2 border-b border-primary">
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-tertiary" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('fileExplorer.searchPlaceholder')}
-            className="w-full pl-7 pr-7 py-1 text-xs rounded border border-secondary bg-primary text-primary placeholder:text-tertiary focus:border-blue-500 outline-none"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-tertiary text-tertiary"
-              title={t('fileExplorer.clearSearch')}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-secondary">{t('common.fileExplorer')}</h3>
+          <button
+            onClick={onOpenFolder}
+            className="p-1 rounded hover:bg-tertiary text-tertiary hover:text-primary"
+            title={`${t('common.openFolder')} (⌘⇧O)`}
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
         </div>
-      </div>
-      {listError && (
-        <p className="px-3 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
-          {t('fileExplorer.loadError', { reason: listError })}
-        </p>
-      )}
-      <div className="py-1">
-        {filteredEntries.map(entry => (
-          <ExplorerEntry
-            key={entry.path}
-            entry={entry}
-            level={0}
-            selectedFile={selectedFile}
-            expandedDirs={expandedDirs}
-            onEntryClick={handleFileClick}
-            onEntryContextMenu={handleContextMenu}
+        {selectedRoot && selectedFile && (
+          <BreadcrumbNav
+            root={selectedRoot}
+            dir={dirname(selectedFile)}
+            onNavigate={dir => reveal(selectedRoot.path, dir)}
           />
-        ))}
+        )}
       </div>
+      {roots.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-xs text-tertiary mb-3">{t('fileExplorer.empty')}</p>
+          <button onClick={onOpenFolder} className="btn-primary text-xs">
+            {t('common.openFolder')}
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Search box */}
+          <div className="px-2 py-2 border-b border-primary">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-tertiary" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('fileExplorer.searchPlaceholder')}
+                className="w-full pl-7 pr-7 py-1 text-xs rounded border border-secondary bg-primary text-primary placeholder:text-tertiary focus:border-blue-500 outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-tertiary text-tertiary"
+                  title={t('fileExplorer.clearSearch')}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="py-1">
+            {filteredTree.map(entry => (
+              <ExplorerEntry
+                key={entry.path}
+                entry={entry}
+                level={0}
+                selectedFile={selectedFile}
+                expandedDirs={expandedDirs}
+                onEntryClick={handleFileClick}
+                onEntryContextMenu={handleContextMenu}
+                onRemoveRoot={onRemoveRoot}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {contextMenu && (
         <ContextMenu

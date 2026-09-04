@@ -1,28 +1,27 @@
 import React, { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
+import type { WorkspaceRoot } from '../../workspace/api';
+import { ancestorsWithin, getFileName } from '../../../lib/path';
 
 interface BreadcrumbNavProps {
-  currentDir: string;
+  /** The workspace root `dir` lies in; the trail starts and stops here. */
+  root: WorkspaceRoot;
+  dir: string;
   onNavigate: (path: string) => void;
 }
 
 const MAX_VISIBLE_SEGMENTS = 3;
 
-export function BreadcrumbNav({ currentDir, onNavigate }: BreadcrumbNavProps) {
-  const { t } = useTranslation();
-
+/**
+ * Where the selected file's folder sits within its workspace root. The trail
+ * never climbs above the root: under the sandbox nothing above it is
+ * readable, and outside it nobody browses from `/`.
+ */
+export function BreadcrumbNav({ root, dir, onNavigate }: BreadcrumbNavProps) {
   const breadcrumbSegments = useMemo(() => {
-    if (!currentDir) return [];
-    const parts = currentDir.split('/').filter(Boolean);
-    return [
-      { name: t('fileExplorer.breadcrumb.root'), path: '/' },
-      ...parts.map((name, index) => ({
-        name,
-        path: '/' + parts.slice(0, index + 1).join('/'),
-      })),
-    ];
-  }, [currentDir, t]);
+    const chain = ancestorsWithin(root.path, dir);
+    return chain.map((path, index) => ({ path, name: index === 0 ? root.name : getFileName(path) }));
+  }, [root, dir]);
 
   const visibleBreadcrumbs = useMemo(() => {
     if (breadcrumbSegments.length <= MAX_VISIBLE_SEGMENTS + 1) {
@@ -33,10 +32,10 @@ export function BreadcrumbNav({ currentDir, onNavigate }: BreadcrumbNavProps) {
     return { segments: [first, ...lastSegments], truncated: true };
   }, [breadcrumbSegments]);
 
-  if (!currentDir) return null;
+  if (breadcrumbSegments.length === 0) return null;
 
   return (
-    <div className="flex items-center mt-1 text-xs overflow-hidden" title={currentDir}>
+    <nav aria-label="breadcrumb" className="flex items-center mt-1 text-xs overflow-hidden" title={dir}>
       {visibleBreadcrumbs.segments.map((segment, index) => {
         const isLast = index === visibleBreadcrumbs.segments.length - 1;
         const showEllipsis = visibleBreadcrumbs.truncated && index === 0;
@@ -62,6 +61,6 @@ export function BreadcrumbNav({ currentDir, onNavigate }: BreadcrumbNavProps) {
           </React.Fragment>
         );
       })}
-    </div>
+    </nav>
   );
 }

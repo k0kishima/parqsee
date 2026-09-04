@@ -2,6 +2,7 @@
     "common": {
         "fileExplorer": "File Explorer",
         "openFile": "Open File",
+        "openFolder": "Open Folder",
         "recentFiles": "Recent Files",
         "cancel": "Cancel",
         "saveChanges": "Save Changes",
@@ -21,11 +22,12 @@
             "title": "Drop your Parquet file here",
             "subtitle": "or click the button below to browse",
             "browse": "Browse Files",
-            "hint": "Supports .parquet files • Press ⌘+O to open"
+            "hint": "Supports .parquet files • ⌘O opens a file, ⌘⇧O a folder"
         },
         "recentFiles": {
             "empty": "No recent files yet. Open a Parquet file to see it here.",
-            "remove": "Remove from recent files"
+            "remove": "Remove from recent files",
+            "unavailable": "No longer available"
         },
         "features": {
             "performance": {
@@ -111,10 +113,9 @@
             "revealInFinder": "Reveal in Finder",
             "openInNewTab": "Open"
         },
-        "breadcrumb": {
-            "root": "/"
-        },
-        "loadError": "Cannot read this folder: {{reason}}"
+        "loadError": "Cannot read this folder: {{reason}}",
+        "empty": "Open a folder to browse Parquet files",
+        "removeFolder": "Remove folder from workspace"
     },
     "export": {
         "title": "Export Data",
