@@ -70,9 +70,9 @@ around ten items or nobody will run it.
 | | |
 |---|---|
 | Fixture | `multi_rowgroup.parquet` |
-| Steps | Export → CSV, accept the save dialog. When the modal switches to the completed state, click **Copy Path** and ⌘V into any text field, then click **Reveal in Finder**. Repeat once with a row range (e.g. 100–200). |
-| Expected | The modal shows the row count and destination path; the button reads **Copied** briefly and the full path is pasted; Finder opens with the file selected. A system notification is a bonus, not a requirement (the first export may prompt for permission). |
-| Why manual | `plugin-opener`'s `revealItemInDir` and the notification permission prompt only exist in the real shell; `navigator.clipboard` availability differs between WKWebView and the Playwright build of WebKit. |
+| Steps | Open the fixtures folder (⌘⇧O) and the fixture from the tree. Export → CSV: note where the save panel opens, save into a different folder (say `~/Downloads`). When the modal switches to the completed state, click **Copy Path** and ⌘V into any text field, then click **Reveal in Finder**. Repeat once with a row range (e.g. 100–200). Then drop a file from outside the fixtures folder on the window and start an export. |
+| Expected | The first save panel opens in the fixtures folder with `multi_rowgroup.csv` filled in; the modal shows the row count and destination path; the button reads **Copied** briefly and the full path is pasted; Finder opens with the file selected. The second export from the fixtures folder still starts there (its own folder wins); the export of the dropped file starts in the folder you saved into. A system notification is a bonus, not a requirement (the first export may prompt for permission). |
+| Why manual | `plugin-opener`'s `revealItemInDir`, the save panel's start folder and the notification permission prompt only exist in the real shell; `navigator.clipboard` availability differs between WKWebView and the Playwright build of WebKit. |
 
 ### MQ-5 · Explorer context menu
 
@@ -106,8 +106,8 @@ around ten items or nobody will run it.
 | | |
 |---|---|
 | Fixture | the fixtures folder; `one_row.parquet` and `numeric.parquet`; a copy of `dict.parquet` somewhere outside the fixtures folder |
-| Steps | Open the fixtures folder (⌘⇧O) and, from the tree, `one_row.parquet`. Drop the `dict.parquet` copy on the window; pick `numeric.parquet` with ⌘O. Quit with ⌘Q, relaunch. Expand a subfolder in the tree, open a file from it, open each Recent Files entry. Quit, move the `dict.parquet` copy to another folder in Finder, delete `numeric.parquet`'s copy if you made one (or move it too), relaunch. |
-| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. After the move the moved entry still opens (the bookmark follows the file); a deleted one shows *No longer available* and, on click, an alert and then disappears. `ls ~/Library/Containers/com.parqsee.app/Data/Library/Application\ Support/com.parqsee.app/bookmarks.json` exists and its entries carry a `bookmark`. |
+| Steps | Open the fixtures folder (⌘⇧O) and, from the tree, `one_row.parquet`. Drop the `dict.parquet` copy on the window; pick `numeric.parquet` with ⌘O. Export the dropped copy to CSV into a folder outside the fixtures folder (say `~/Downloads`). Quit with ⌘Q, relaunch. Expand a subfolder in the tree, open a file from it, open each Recent Files entry; start an export of the dropped copy and cancel the panel. Quit, move the `dict.parquet` copy to another folder in Finder, delete `numeric.parquet`'s copy if you made one (or move it too), relaunch. |
+| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The save panel opens in the folder you exported into before quitting. After the move the moved entry still opens (the bookmark follows the file); a deleted one shows *No longer available* and, on click, an alert and then disappears. `ls ~/Library/Containers/com.parqsee.app/Data/Library/Application\ Support/com.parqsee.app/bookmarks.json` exists, its root and recent entries carry a `bookmark`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
 | Why manual | Security-scoped bookmarks and their grants only exist under the App Sandbox, which only the signed release bundle runs in; the harness's bridge is unsandboxed and records none. |
 
 ### MQ-9 · Opening from Finder (known gap)

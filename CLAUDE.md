@@ -137,7 +137,8 @@ Argument names are camelCase on the JS side.
 | `remove_workspace_root` | `(path)` → `void` | Close a root and release its access grant |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
-| `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result |
+| `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
+| `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
 
@@ -227,6 +228,13 @@ because a native key equivalent beats the webview's keydown handler.
     later. The ObjC calls sit behind the `BookmarkProvider` trait
     (`access/macos.rs`); the store and the lifecycle are unit-tested with a
     fake on any OS.
+    `bookmarks.json` also records the last export folder (`last_export`),
+    which only decides where the next save panel starts — the panel grants
+    the write. Its bookmark is best effort: the save panel grants the chosen
+    file, not its folder, so under the sandbox creating one usually fails
+    and the bare path is kept, which works because the sandbox allows
+    `stat` on paths it cannot read. It is resolved for the path only and no
+    grant outlives the call.
 
 ## Testing
 
