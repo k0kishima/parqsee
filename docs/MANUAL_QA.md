@@ -65,14 +65,14 @@ around ten items or nobody will run it.
 | Expected | Every file opens in a tab with rows in the grid; the three-file drop opens three tabs; dropping the directory does nothing harmful. |
 | Why manual | The harness emits synthetic `file-drop` events; only Finder exercises the real drag source and the window's drop regions. |
 
-### MQ-4 · Export completion and Reveal in Finder
+### MQ-4 · Export completion, Copy Path and Reveal in Finder
 
 | | |
 |---|---|
 | Fixture | `multi_rowgroup.parquet` |
-| Steps | Export → CSV, accept the save dialog. When the modal switches to the completed state, click **Reveal in Finder**. Repeat once with a row range (e.g. 100–200). |
-| Expected | The modal shows the row count and destination path; Finder opens with the file selected. A system notification is a bonus, not a requirement (the first export may prompt for permission). |
-| Why manual | `plugin-opener`'s `revealItemInDir` and the notification permission prompt only exist in the real shell. |
+| Steps | Export → CSV, accept the save dialog. When the modal switches to the completed state, click **Copy Path** and ⌘V into any text field, then click **Reveal in Finder**. Repeat once with a row range (e.g. 100–200). |
+| Expected | The modal shows the row count and destination path; the button reads **Copied** briefly and the full path is pasted; Finder opens with the file selected. A system notification is a bonus, not a requirement (the first export may prompt for permission). |
+| Why manual | `plugin-opener`'s `revealItemInDir` and the notification permission prompt only exist in the real shell; `navigator.clipboard` availability differs between WKWebView and the Playwright build of WebKit. |
 
 ### MQ-5 · Explorer context menu
 
@@ -144,7 +144,7 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-1 Native menu and shortcuts
 - [ ] MQ-2 Failed opens show an alert
 - [ ] MQ-3 Drag and drop from Finder
-- [ ] MQ-4 Export completion and Reveal in Finder
+- [ ] MQ-4 Export completion, Copy Path and Reveal in Finder
 - [ ] MQ-5 Explorer context menu
 - [ ] MQ-6 Large file
 - [ ] MQ-7 Window and appearance
