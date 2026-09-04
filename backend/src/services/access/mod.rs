@@ -56,15 +56,17 @@ pub struct Resolved {
 
 /// An open security-scoped grant; dropping it calls `stopAccessing…`. Opaque
 /// so the store never depends on a platform type.
-pub struct AccessToken(Option<Box<dyn Any + Send + Sync>>);
+pub struct AccessToken {
+    _guard: Option<Box<dyn Any + Send + Sync>>,
+}
 
 impl AccessToken {
     pub fn none() -> Self {
-        Self(None)
+        Self { _guard: None }
     }
 
     pub fn new<T: Any + Send + Sync>(guard: T) -> Self {
-        Self(Some(Box::new(guard)))
+        Self { _guard: Some(Box::new(guard)) }
     }
 }
 

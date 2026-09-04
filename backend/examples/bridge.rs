@@ -11,11 +11,18 @@
 //!
 //! `delayMs` holds the response back, which is how the harness provokes the
 //! stale-response races the frontend guards against.
-use parqsee_lib::commands::file::{check_file_exists, get_file_info, list_directory};
+//!
+//! Workspace roots and recent files persist under `PARQSEE_DATA_DIR` (default:
+//! a fresh directory under the temp dir), with no security-scoped bookmarks —
+//! the bridge is not sandboxed, so the harness covers the store and the
+//! explorer, not the grants.
+use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
+use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
 use serde_json::{json, Value};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
@@ -33,9 +40,30 @@ fn opt_u(args: &Value, key: &str) -> Option<usize> {
     args.get(key).and_then(|v| v.as_u64()).map(|v| v as usize)
 }
 
-async fn dispatch(cache: &ParquetCache, cmd: &str, args: Value) -> Result<Value, String> {
+async fn dispatch(
+    cache: &ParquetCache,
+    access: &FileAccess,
+    cmd: &str,
+    args: Value,
+) -> Result<Value, String> {
     let v = match cmd {
-        "check_file_exists" => json!(check_file_exists(s(&args, "path")?).await?),
+        "check_file_exists" => json!(access.file_exists(&s(&args, "path")?)),
+        "remember_file" => json!(access.remember_file(&s(&args, "path")?)?),
+        "list_recent_files" => json!(access.recent_files()),
+        "remove_recent_file" => {
+            access.forget_file(&s(&args, "path")?);
+            Value::Null
+        }
+        "clear_recent_files" => {
+            access.clear_recent();
+            Value::Null
+        }
+        "list_workspace_roots" => json!(access.roots()),
+        "add_workspace_root" => json!(access.add_root(&s(&args, "path")?)?),
+        "remove_workspace_root" => {
+            access.remove_root(&s(&args, "path")?);
+            Value::Null
+        }
         "open_parquet_file" => json!(cache.get_or_create_metadata(&s(&args, "path")?).await?),
         "get_file_info" => json!(get_file_info(s(&args, "path")?).await?),
         "list_directory" => json!(list_directory(s(&args, "path")?).await?),
@@ -74,7 +102,11 @@ async fn dispatch(cache: &ParquetCache, cmd: &str, args: Value) -> Result<Value,
 
 #[tokio::main]
 async fn main() {
-    let cache = Arc::new(ParquetCache::new());
+    let data_dir = std::env::var_os("PARQSEE_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join(format!("parqsee-bridge-{}", std::process::id())));
+    let access = Arc::new(FileAccess::load(Box::new(NoopBookmarks), Some(&data_dir)));
+    let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
     let out = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut tasks = Vec::new();
@@ -90,6 +122,7 @@ async fn main() {
             }
         };
         let cache = cache.clone();
+        let access = access.clone();
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -99,7 +132,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &cmd, args).await {
+            let resp = match dispatch(&cache, &access, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };

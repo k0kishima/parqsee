@@ -2,8 +2,10 @@ pub mod commands;
 pub mod models;
 pub mod services;
 
+use services::access::FileAccess;
 use services::parquet::ParquetCache;
-use tauri::{DragDropEvent, Emitter};
+use std::sync::Arc;
+use tauri::{DragDropEvent, Emitter, Manager};
 
 /// The application menu.
 ///
@@ -37,7 +39,12 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
 
     let open = MenuItem::with_id(app, "open-file", "Open…", true, Some("CmdOrCtrl+O"))?;
     let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
-    let file = Submenu::with_items(app, "File", true, &[&open, &PredefinedMenuItem::separator(app)?, &close_tab])?;
+    let file = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&open, &PredefinedMenuItem::separator(app)?, &close_tab],
+    )?;
 
     let edit = Submenu::with_items(
         app,
@@ -69,14 +76,39 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])
 }
 
+/// The platform's security-scoped bookmarks; see `services::access`.
+fn bookmark_provider() -> Box<dyn services::access::BookmarkProvider> {
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(services::access::macos::MacBookmarks)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Box::new(services::access::NoopBookmarks)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(ParquetCache::new())
         .setup(|app| {
+            // Workspace roots and recent files persist in the app data
+            // directory (inside the sandbox container on macOS). A directory
+            // that cannot be created leaves them in memory for this session
+            // rather than refusing to start.
+            let data_dir = app.path().app_data_dir().ok().and_then(|dir| {
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| eprintln!("could not create {}: {}", dir.display(), e))
+                    .ok()
+                    .map(|_| dir)
+            });
+            let access = Arc::new(FileAccess::load(bookmark_provider(), data_dir.as_deref()));
+            app.manage(Arc::clone(&access));
+            app.manage(ParquetCache::with_access(access));
+
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(build_menu(app)?)?;
@@ -93,6 +125,10 @@ pub fn run() {
             commands::file::get_file_info,
             commands::file::check_file_exists,
             commands::file::list_directory,
+            commands::file::remember_file,
+            commands::file::list_recent_files,
+            commands::file::remove_recent_file,
+            commands::file::clear_recent_files,
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::export_data,
