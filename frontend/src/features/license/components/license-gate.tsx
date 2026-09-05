@@ -101,23 +101,25 @@ export function LicenseGate({ mode }: LicenseGateProps) {
                     {busy && <p role="status" className="text-tertiary">{t('license.working')}</p>}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 px-6 py-4 border-t border-primary">
-                    {mode === 'pretrial' && (
-                        <button onClick={startTrial} disabled={busy !== null} className="btn-primary disabled:opacity-50">
-                            {t('license.startTrial')}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-primary">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {mode === 'pretrial' && (
+                            <button onClick={startTrial} disabled={busy !== null} className="btn-primary disabled:opacity-50">
+                                {t('license.startTrial')}
+                            </button>
+                        )}
+                        <button
+                            onClick={buy}
+                            disabled={busy !== null}
+                            className={`${mode === 'pretrial' ? 'btn-secondary' : 'btn-primary'} disabled:opacity-50`}
+                        >
+                            {full ? t('license.buyFor', { price: full.display_price }) : t('license.buy')}
                         </button>
-                    )}
-                    <button
-                        onClick={buy}
-                        disabled={busy !== null}
-                        className={`${mode === 'pretrial' ? 'btn-secondary' : 'btn-primary'} disabled:opacity-50`}
-                    >
-                        {full ? t('license.buyFor', { price: full.display_price }) : t('license.buy')}
-                    </button>
-                    <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
-                        {t('license.restore')}
-                    </button>
-                    <button onClick={quit} className="ml-auto text-sm text-tertiary hover:text-primary transition-colors">
+                        <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
+                            {t('license.restore')}
+                        </button>
+                    </div>
+                    <button onClick={quit} className="text-sm text-tertiary hover:text-primary transition-colors">
                         {t('license.quit')}
                     </button>
                 </div>
