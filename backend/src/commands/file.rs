@@ -1,6 +1,7 @@
 use crate::commands::guarded;
 use crate::models::{FileEntry, FileInfo, ParquetMetadata, RecentFile};
 use crate::services::access::FileAccess;
+use crate::services::opened::PendingOpen;
 use crate::services::parquet::ParquetCache;
 use std::cmp::Ordering;
 use std::fs::{metadata, read_dir, DirEntry};
@@ -82,6 +83,16 @@ pub async fn remove_recent_file(
 pub async fn clear_recent_files(access: tauri::State<'_, Arc<FileAccess>>) -> Result<(), String> {
     access.clear_recent();
     Ok(())
+}
+
+/// The files Finder, the Dock or `open -a` handed the app before the webview
+/// was listening. Called once at startup; from then on `RunEvent::Opened`
+/// emits them as `file-drop` (see `services::opened` and `lib.rs`).
+#[tauri::command]
+pub async fn take_pending_files(
+    pending: tauri::State<'_, Arc<PendingOpen>>,
+) -> Result<Vec<String>, String> {
+    guarded("Reading the files to open", async { Ok(pending.take()) }).await
 }
 
 /// Describe one directory entry for the explorer.
