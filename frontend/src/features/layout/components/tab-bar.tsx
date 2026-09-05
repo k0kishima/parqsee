@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileText } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
-import { SidebarToggle, HeaderActions } from './header-controls';
+import { SidebarToggle, HeaderActions, TOP_ROW_HEIGHT } from './header-controls';
 
 interface TabBarProps {
   tabs: readonly Tab[];
@@ -34,7 +34,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
   }
 
   return (
-    <div className="flex items-stretch border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700">
+    <div className={`flex items-stretch border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700 ${TOP_ROW_HEIGHT}`}>
       <div className="flex items-center px-2">
         <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
       </div>

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { SidebarToggle, HeaderActions } from '../../layout';
+import { SidebarToggle, HeaderActions, TOP_ROW_HEIGHT } from '../../layout';
 
 interface HeaderProps {
     isSidebarOpen: boolean;
@@ -16,7 +16,7 @@ interface HeaderProps {
 export const Header = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }: HeaderProps) => {
     const { t } = useTranslation();
     return (
-        <div className="px-2 py-2 flex items-center border-b bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+        <div className={`px-2 flex items-center border-b bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 ${TOP_ROW_HEIGHT}`}>
             <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
             {/* The app name, not a label for what is below: with tabs this
                 spot is the tab strip, and the sidebar carries its own
