@@ -32,6 +32,18 @@ do not re-check those by hand.
 3. Copy the [results template](#results-template) into the release PR or
    issue and tick items off there. Do not record results in this file.
 
+The release app keeps everything it remembers (workspace roots, Recent
+Files, the session tabs, the last export folder — `bookmarks.json` — and
+the `localStorage` settings) inside its sandbox container,
+`~/Library/Containers/llc.fuji.parqsee/`. To run the checks below from a
+clean slate, quit the app and delete that folder; macOS recreates it at
+the next launch. The bundle identifier was `com.parqsee.app` before the
+release hardening (#3): a Mac that ran those builds still has their data
+under `~/Library/Containers/com.parqsee.app/` (release) and, from
+`pnpm tauri dev`, under `~/Library/Application Support/com.parqsee.app/`,
+`~/Library/WebKit/com.parqsee.app/` and `~/Library/Caches/com.parqsee.app/`.
+Nothing reads them any more; delete them.
+
 Each item lists why it cannot be automated. An item that loses that reason
 should be moved into the harness and removed from this list; keep the list
 around ten items or nobody will run it.
@@ -107,7 +119,7 @@ around ten items or nobody will run it.
 |---|---|
 | Fixture | the fixtures folder; `one_row.parquet`, `numeric.parquet` and `multi_rowgroup.parquet`; a copy of `dict.parquet` somewhere outside the fixtures folder |
 | Steps | Open the fixtures folder (⌘⇧O) and, from the tree, `one_row.parquet`. Drop the `dict.parquet` copy on the window; pick `numeric.parquet` with ⌘O; open `multi_rowgroup.parquet` from the tree and go to its page 2; switch `one_row.parquet` to the Query view; click the `dict.parquet` tab so it is the active one. Export the dropped copy to CSV into a folder outside the fixtures folder (say `~/Downloads`). Quit with ⌘Q, relaunch. Expand a subfolder in the tree, open a file from it, open each Recent Files entry; start an export of the dropped copy and cancel the panel. Quit, move the `dict.parquet` copy to another folder in Finder and delete `numeric.parquet` (regenerate the fixtures afterwards with `uv run scripts/qa/gen_fixtures.py`), relaunch. Then turn *Restore tabs from the last session* off in Settings, quit, relaunch. |
-| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The tabs are back in the same order with `dict.parquet` active, `multi_rowgroup.parquet` on page 2 and `one_row.parquet` in the Query view, and Recent Files is in the same order as before the quit (a restore does not count as an open). The save panel opens in the folder you exported into before quitting. After the move and the delete, the moved `dict.parquet` copy still opens from Recent Files (the bookmark follows the file) and its tab is back; `numeric.parquet` shows *No longer available* in Recent Files (on click, an alert and then it disappears) and its tab is not restored: a one-line notice at the bottom names the file (*1 file from the last session could not be reopened*), goes away on ✕, and does not come back on the next relaunch. With the setting off the app launches on the welcome screen (the folder is still restored, so the tree is there). `ls ~/Library/Containers/com.parqsee.app/Data/Library/Application\ Support/com.parqsee.app/bookmarks.json` exists, its root and recent entries carry a `bookmark`, `session.tabs[*]` carry one each (the same bytes as the recent entry for the same file) with their `state`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
+| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The tabs are back in the same order with `dict.parquet` active, `multi_rowgroup.parquet` on page 2 and `one_row.parquet` in the Query view, and Recent Files is in the same order as before the quit (a restore does not count as an open). The save panel opens in the folder you exported into before quitting. After the move and the delete, the moved `dict.parquet` copy still opens from Recent Files (the bookmark follows the file) and its tab is back; `numeric.parquet` shows *No longer available* in Recent Files (on click, an alert and then it disappears) and its tab is not restored: a one-line notice at the bottom names the file (*1 file from the last session could not be reopened*), goes away on ✕, and does not come back on the next relaunch. With the setting off the app launches on the welcome screen (the folder is still restored, so the tree is there). `ls ~/Library/Containers/llc.fuji.parqsee/Data/Library/Application\ Support/llc.fuji.parqsee/bookmarks.json` exists, its root and recent entries carry a `bookmark`, `session.tabs[*]` carry one each (the same bytes as the recent entry for the same file) with their `state`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
 | Why manual | Security-scoped bookmarks and their grants only exist under the App Sandbox, which only the signed release bundle runs in; the harness's bridge is unsandboxed and records none. |
 
 ### MQ-9 · Opening from Finder (known gap)
