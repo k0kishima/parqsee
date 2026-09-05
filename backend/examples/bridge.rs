@@ -12,12 +12,13 @@
 //! `delayMs` holds the response back, which is how the harness provokes the
 //! stale-response races the frontend guards against.
 //!
-//! Workspace roots and recent files persist under `PARQSEE_DATA_DIR` (default:
+//! Workspace roots, recent files and the session persist under `PARQSEE_DATA_DIR` (default:
 //! a fresh directory under the temp dir), with no security-scoped bookmarks —
 //! the bridge is not sandboxed, so the harness covers the store and the
 //! explorer, not the grants.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
+use parqsee_lib::models::SessionTabInput;
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
@@ -62,6 +63,17 @@ async fn dispatch(
         "add_workspace_root" => json!(access.add_root(&s(&args, "path")?)?),
         "remove_workspace_root" => {
             access.remove_root(&s(&args, "path")?);
+            Value::Null
+        }
+        "list_session_tabs" => json!(access.session_tabs()),
+        "save_session" => {
+            let tabs: Vec<SessionTabInput> =
+                serde_json::from_value(args.get("tabs").cloned().unwrap_or(Value::Null))
+                    .map_err(|e| format!("bad tabs: {e}"))?;
+            access.save_session(
+                tabs.into_iter().map(|t| (t.path, t.state)).collect(),
+                opt_s(&args, "active"),
+            )?;
             Value::Null
         }
         "open_parquet_file" => json!(cache.get_or_create_metadata(&s(&args, "path")?).await?),

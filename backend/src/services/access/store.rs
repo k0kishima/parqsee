@@ -7,6 +7,7 @@
 //! and the entries are keyed by path), so a change of identifier only moves
 //! the file, it does not invalidate the format.
 
+use crate::models::SessionTabState;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -14,6 +15,10 @@ use std::path::Path;
 
 /// How many recent files are kept, newest first.
 pub const MAX_RECENT: usize = 5;
+
+/// How many tabs a session keeps, from the first; a bound on the store, not
+/// a limit anyone is expected to reach.
+pub const MAX_SESSION_TABS: usize = 50;
 
 const CURRENT_VERSION: u32 = 1;
 
@@ -49,9 +54,34 @@ pub struct ExportDirEntry {
     pub exported_at: i64,
 }
 
-/// `version` stays at 1 across optional additions such as `last_export`:
-/// an older file reads with the field absent, and an older build ignores
-/// the field it does not know.
+/// One tab of the last session. Carries its own bookmark rather than
+/// pointing at the recent entry's: Recent Files is capped and can be
+/// cleared, and a tab must reopen either way. The bytes are shared with the
+/// recent entry when there is one (see `FileAccess::save_session`), so a
+/// file never gets a second bookmark created for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionTabEntry {
+    pub path: String,
+    pub name: String,
+    #[serde(default, with = "base64_bytes")]
+    pub bookmark: Option<Vec<u8>>,
+    #[serde(default)]
+    pub state: SessionTabState,
+}
+
+/// The tabs open when the session was last saved, in tab order, and which
+/// one was active (by path; a path not in `tabs` means the first one).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEntry {
+    pub tabs: Vec<SessionTabEntry>,
+    #[serde(default)]
+    pub active: Option<String>,
+    pub saved_at: i64,
+}
+
+/// `version` stays at 1 across optional additions such as `last_export`
+/// and `session`: an older file reads with the field absent, and an older
+/// build ignores the field it does not know.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BookmarkStore {
     pub version: u32,
@@ -61,6 +91,10 @@ pub struct BookmarkStore {
     pub recent: Vec<RecentEntry>,
     #[serde(default)]
     pub last_export: Option<ExportDirEntry>,
+    /// `None` in a store written before sessions were kept, and until the
+    /// first save: nothing to restore, so the app starts empty.
+    #[serde(default)]
+    pub session: Option<SessionEntry>,
 }
 
 impl Default for BookmarkStore {
@@ -70,6 +104,7 @@ impl Default for BookmarkStore {
             roots: Vec::new(),
             recent: Vec::new(),
             last_export: None,
+            session: None,
         }
     }
 }
@@ -120,7 +155,8 @@ impl BookmarkStore {
             .map_err(|e| format!("could not replace {}: {}", path.display(), e))
     }
 
-    /// The bookmark recorded for `path`, whether it is a root or a recent file.
+    /// The bookmark recorded for `path`, whether it is a root, a recent
+    /// file or a tab of the last session.
     pub fn bookmark_for(&self, path: &str) -> Option<&[u8]> {
         self.roots
             .iter()
@@ -132,6 +168,47 @@ impl BookmarkStore {
                     .find(|r| r.path == path)
                     .and_then(|r| r.bookmark.as_deref())
             })
+            .or_else(|| {
+                self.session_tabs()
+                    .iter()
+                    .find(|t| t.path == path)
+                    .and_then(|t| t.bookmark.as_deref())
+            })
+    }
+
+    /// The tabs of the last session, empty when none was saved.
+    pub fn session_tabs(&self) -> &[SessionTabEntry] {
+        self.session
+            .as_ref()
+            .map(|s| s.tabs.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Replace the session with `tabs`, in order, `active` naming the
+    /// active one by path. A path listed twice keeps its first entry; the
+    /// list is cut at `MAX_SESSION_TABS`, and an `active` that is not among
+    /// the kept tabs is dropped (the first tab is activated then).
+    pub fn set_session(
+        &mut self,
+        tabs: Vec<SessionTabEntry>,
+        active: Option<String>,
+        saved_at: i64,
+    ) {
+        let mut kept: Vec<SessionTabEntry> = Vec::with_capacity(tabs.len().min(MAX_SESSION_TABS));
+        for tab in tabs {
+            if kept.len() == MAX_SESSION_TABS {
+                break;
+            }
+            if !kept.iter().any(|t| t.path == tab.path) {
+                kept.push(tab);
+            }
+        }
+        let active = active.filter(|a| kept.iter().any(|t| &t.path == a));
+        self.session = Some(SessionEntry {
+            tabs: kept,
+            active,
+            saved_at,
+        });
     }
 
     /// Replace the bookmark for `path` wherever it is recorded. Returns
@@ -147,8 +224,14 @@ impl BookmarkStore {
             changed = true;
         }
         if let Some(export) = self.last_export.as_mut().filter(|e| e.path == path) {
-            export.bookmark = Some(bookmark);
+            export.bookmark = Some(bookmark.clone());
             changed = true;
+        }
+        if let Some(session) = self.session.as_mut() {
+            for tab in session.tabs.iter_mut().filter(|t| t.path == path) {
+                tab.bookmark = Some(bookmark.clone());
+                changed = true;
+            }
         }
         changed
     }
@@ -353,5 +436,116 @@ mod tests {
 
         assert!(store.remove_root("/d"));
         assert!(!store.remove_root("/d"));
+    }
+
+    fn session_tab(path: &str) -> SessionTabEntry {
+        SessionTabEntry {
+            path: path.to_string(),
+            name: path.rsplit('/').next().unwrap().to_string(),
+            bookmark: Some(format!("bm:{path}").into_bytes()),
+            state: SessionTabState {
+                view_mode: Some("query".into()),
+                current_page: Some(3),
+                active_filter: Some("x > 1".into()),
+            },
+        }
+    }
+
+    #[test]
+    fn the_session_round_trips_and_an_older_store_reads_without_one() {
+        let file = temp_path("access-store", "session/bookmarks.json");
+        let mut store = BookmarkStore::default();
+        store.set_session(
+            vec![session_tab("/d/a.parquet"), session_tab("/d/b.parquet")],
+            Some("/d/b.parquet".into()),
+            40,
+        );
+        store.save_to(&file).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains("\"view_mode\": \"query\""), "{text}");
+        assert!(text.contains("\"current_page\": 3"), "{text}");
+        assert_eq!(BookmarkStore::load_from(&file), store);
+
+        let older: BookmarkStore =
+            serde_json::from_str(r#"{"version":1,"roots":[],"recent":[]}"#).unwrap();
+        assert_eq!(older.session, None, "no session to restore, nothing to say");
+        assert!(older.session_tabs().is_empty());
+
+        // A tab saved without any state, or by a build that knew fewer
+        // fields, reads with the defaults.
+        let sparse: BookmarkStore = serde_json::from_str(
+            r#"{"version":1,"session":{"tabs":[{"path":"/d/a.parquet","name":"a.parquet"}],"saved_at":1}}"#,
+        )
+        .unwrap();
+        let tabs = sparse.session_tabs();
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].bookmark, None);
+        assert_eq!(tabs[0].state, SessionTabState::default());
+        assert_eq!(sparse.session.as_ref().unwrap().active, None);
+    }
+
+    #[test]
+    fn set_session_deduplicates_truncates_and_checks_the_active_path() {
+        let mut store = BookmarkStore::default();
+        let mut tabs: Vec<SessionTabEntry> = (0..MAX_SESSION_TABS + 5)
+            .map(|i| session_tab(&format!("/f{i}.parquet")))
+            .collect();
+        tabs.insert(1, session_tab("/f0.parquet"));
+        store.set_session(
+            tabs,
+            Some(&format!("/f{}.parquet", MAX_SESSION_TABS + 2)).cloned(),
+            1,
+        );
+
+        let session = store.session.as_ref().unwrap();
+        assert_eq!(session.tabs.len(), MAX_SESSION_TABS);
+        assert_eq!(session.tabs[0].path, "/f0.parquet");
+        assert_eq!(
+            session.tabs[1].path, "/f1.parquet",
+            "the duplicate is dropped"
+        );
+        assert_eq!(
+            session.tabs.last().unwrap().path,
+            format!("/f{}.parquet", MAX_SESSION_TABS - 1)
+        );
+        assert_eq!(session.active, None, "the active tab fell off the end");
+
+        store.set_session(
+            vec![session_tab("/a.parquet")],
+            Some("/a.parquet".into()),
+            2,
+        );
+        assert_eq!(
+            store.session.as_ref().unwrap().active.as_deref(),
+            Some("/a.parquet")
+        );
+        assert_eq!(store.session.as_ref().unwrap().saved_at, 2);
+
+        store.set_session(Vec::new(), None, 3);
+        assert!(
+            store.session_tabs().is_empty(),
+            "closing every tab saves an empty session"
+        );
+    }
+
+    #[test]
+    fn a_session_tab_bookmark_is_found_and_replaced_after_the_recent_entry() {
+        let mut store = BookmarkStore::default();
+        store.set_session(vec![session_tab("/d/a.parquet")], None, 0);
+        assert_eq!(
+            store.bookmark_for("/d/a.parquet"),
+            Some(&b"bm:/d/a.parquet"[..])
+        );
+
+        store.upsert_recent(recent("/d/a.parquet", 0));
+        assert_eq!(
+            store.bookmark_for("/d/a.parquet"),
+            Some(&[0u8, 255, 7][..]),
+            "the recent entry's bookmark comes first"
+        );
+
+        assert!(store.set_bookmark("/d/a.parquet", vec![9]));
+        assert_eq!(store.session_tabs()[0].bookmark, Some(vec![9]));
+        assert_eq!(store.recent[0].bookmark, Some(vec![9]));
     }
 }

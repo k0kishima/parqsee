@@ -76,3 +76,49 @@ pub struct RecentFile {
     /// bookmark no longer resolves); the list shows it greyed out.
     pub available: bool,
 }
+
+/// The part of a tab's view state worth restoring after a relaunch. Every
+/// field is optional: the webview sends what the tab has set, and reads
+/// back what was saved with the tab's own defaults for the rest.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct SessionTabState {
+    /// `browse` or `query`.
+    #[serde(default)]
+    pub view_mode: Option<String>,
+    /// 1-based page of the browse grid.
+    #[serde(default)]
+    pub current_page: Option<u32>,
+    /// The SQL `WHERE` fragment the browse grid applies.
+    #[serde(default)]
+    pub active_filter: Option<String>,
+}
+
+/// A tab from the last session, as the webview reopens it at launch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct SessionTab {
+    pub path: String,
+    pub name: String,
+    pub state: SessionTabState,
+    /// False when the file cannot be reached any more (deleted, or the
+    /// bookmark no longer resolves); the webview skips it and says so.
+    pub available: bool,
+}
+
+/// The tabs of the last session, in their order, and the active one's path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct SessionTabs {
+    pub tabs: Vec<SessionTab>,
+    pub active: Option<String>,
+}
+
+/// What the webview sends to `save_session` for each open tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct SessionTabInput {
+    pub path: String,
+    #[serde(default)]
+    pub state: SessionTabState,
+}

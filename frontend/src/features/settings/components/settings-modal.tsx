@@ -231,6 +231,38 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </p>
             </div>
 
+            {/* Startup */}
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-2">
+                {t('settings.startup')}
+              </label>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-primary">{t('settings.restoreTabs')}</span>
+                  <button
+                    onClick={() => setLocalSettings({ ...localSettings, restoreTabs: !localSettings.restoreTabs })}
+                    role="switch"
+                    aria-checked={localSettings.restoreTabs}
+                    aria-label={t('settings.restoreTabs')}
+                    className={`
+                      relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${localSettings.restoreTabs ? 'bg-blue-600' : 'bg-gray-300'}
+                    `}
+                  >
+                    <span
+                      className={`
+                        inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                        ${localSettings.restoreTabs ? 'translate-x-6' : 'translate-x-1'}
+                      `}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-tertiary">
+                  {t('settings.restoreTabsDesc')}
+                </p>
+              </div>
+            </div>
+
             {/* Recent Files Settings */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">

@@ -17,6 +17,7 @@ const footer = (page) => act(page).locator('text=/Showing .* entries/').first().
 const summary = (page) => act(page).locator('h1 + p').first().textContent().catch(() => null);
 const dataError = (page) => act(page).locator('text=The condition could not be run').isVisible().catch(() => false);
 const activeTabName = (page) => act(page).locator('h1').first().textContent().catch(() => null);
+const tabNames = (page) => page.evaluate(() => [...document.querySelectorAll('[title="Close tab"]')].map(b => b.parentElement?.querySelector('span')?.textContent));
 const visibleGrid = async (page) => page.evaluate(() => {
   const tables = [...document.querySelectorAll('table')].filter(t => t.offsetParent !== null);
   const tb = tables[0]?.querySelector('tbody');
@@ -718,13 +719,15 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   await page.screenshot({ path: `${OUT}/shots/S9.png` });
 }, { dataDir: S9_DATA });
 
-// "Relaunch": a fresh browser and bridge on the same store.
+// "Relaunch": a fresh browser and bridge on the same store. The tabs open
+// at the end of S9-explorer come back too (S11 covers that in depth).
 await scenario('S9-restore', async ({ page, bridge }) => {
   const roots = await bridge.call('list_workspace_roots');
   check('S9r.rootRestored', roots.length === 1 && roots[0].path === FIX, JSON.stringify(roots));
   const rootRow = page.locator(`.py-1 .group[title="${FIX}"]`);
   await rootRow.waitFor({ timeout: 5000 }).catch(() => {});
-  check('S9r.workspaceOnLaunch', await rootRow.isVisible() && await page.locator('text=Drop your Parquet file here').isVisible(), 'the tree is back without a tab');
+  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  check('S9r.workspaceOnLaunch', await rootRow.isVisible() && (await tabNames(page)).join(',') === 'UPPER.PARQUET,dict.parquet', `the tree is back, and so are the tabs: ${await tabNames(page)}`);
   await page.waitForTimeout(400);
   check('S9r.treeLoaded', (await page.evaluate(() => [...document.querySelectorAll('.overflow-y-auto .py-1 .group')].length)) > 10, 'root expanded and listed');
   const recent = (await bridge.call('list_recent_files')).map(f => f.name);
@@ -735,7 +738,9 @@ await scenario('S9-restore', async ({ page, bridge }) => {
   // Removing the last root with a tab open keeps the workspace, with the empty sidebar.
   await removeRoot(page, FIX);
   check('S9r.removeLastRoot', await page.locator('text=Open a folder to browse Parquet files').isVisible() && (await activeTabName(page)) === 'dict.parquet', 'empty sidebar, tab stays');
-  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(300);
+  while (await page.locator('[title="Close tab"]').count()) {
+    await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(300);
+  }
   check('S9r.welcomeAgain', await page.locator('text=Drop your Parquet file here').isVisible() && !(await page.locator('[title="Hide sidebar"]').isVisible()), 'no roots, no tabs: the welcome screen');
 }, { dataDir: S9_DATA });
 
@@ -763,6 +768,67 @@ await scenario('S10-external-change', async ({ page }) => {
   await act(page).locator('button:has-text("Close")').first().click(); await page.waitForTimeout(300);
   check('S10.closeAfterError', await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length) === 0, 'tab gone after Close');
 });
+
+// ---------------------------------------------------------------- S11 session restore
+// Three tabs — one on its second page, one in the query view — with the
+// middle one active; the relaunch below shares the store. The middle file
+// is a copy that is deleted between the launches.
+const S11_DATA = path.join(OUT, 'data', 's11');
+fs.rmSync(S11_DATA, { recursive: true, force: true });
+const S11_DIR = `${OUT}/session`; fs.rmSync(S11_DIR, { recursive: true, force: true }); fs.mkdirSync(S11_DIR);
+const S11_GONE = `${S11_DIR}/gone.parquet`;
+fs.copyFileSync(`${FIX}/dict.parquet`, S11_GONE);
+const queryViewShown = (page) => act(page).locator('button:has-text("Run")').isVisible().catch(() => false);
+const sessionPaths = (s) => s.tabs.map(t => `${t.path.split('/').pop()}${t.available ? '' : '(gone)'}`);
+
+await scenario('S11-session', async ({ page, bridge }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Next")').first().click(); await waitGrid(page);
+  check('S11.page2', (await footer(page))?.startsWith('Showing 51 to 100'), await footer(page));
+  await openFile(page, S11_GONE);
+  await openFile(page, `${FIX}/one_row.parquet`);
+  await act(page).locator('button:has-text("Query")').first().click(); await page.waitForTimeout(200);
+  check('S11.queryView', await queryViewShown(page), 'one_row.parquet switched to the query view');
+  await page.locator(`span[title="${S11_GONE}"]`).click(); await page.waitForTimeout(300);
+  check('S11.activeMiddle', (await activeTabName(page)) === 'gone.parquet', `active=${await activeTabName(page)}`);
+  // Saved a moment after the last change.
+  await page.waitForTimeout(600);
+  const saved = await bridge.call('list_session_tabs');
+  check('S11.saved', sessionPaths(saved).join(',') === 'multi_rowgroup.parquet,gone.parquet,one_row.parquet' && saved.active === S11_GONE, `${sessionPaths(saved)} active=${saved.active}`);
+  check('S11.savedState', saved.tabs[0].state.current_page === 2 && saved.tabs[2].state.view_mode === 'query', JSON.stringify(saved.tabs.map(t => t.state)));
+  check('S11.recentUntouched', (await bridge.call('list_recent_files')).map(f => f.name).join(',') === 'one_row.parquet,gone.parquet,multi_rowgroup.parquet', 'recent files are the opens, newest first');
+}, { dataDir: S11_DATA });
+
+fs.rmSync(S11_GONE);
+
+// "Relaunch": the two surviving tabs come back as they were; the deleted
+// file's tab does not, and the notice says so.
+await scenario('S11-session-restore', async ({ page, bridge }) => {
+  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await waitGrid(page);
+  check('S11r.tabs', (await tabNames(page)).join(',') === 'multi_rowgroup.parquet,one_row.parquet', `tabs=${await tabNames(page)}`);
+  check('S11r.activeFallsBackToFirst', (await activeTabName(page)) === 'multi_rowgroup.parquet', `active=${await activeTabName(page)} (the active tab's file is gone)`);
+  check('S11r.page2', (await footer(page))?.startsWith('Showing 51 to 100'), await footer(page));
+  const notice = page.locator('[data-testid="restore-notice"]');
+  check('S11r.notice', await notice.isVisible() && (await notice.textContent())?.includes('1 file from the last session could not be reopened') && (await notice.textContent())?.includes('gone.parquet'), `notice=${await notice.textContent().catch(() => null)}`);
+  check('S11r.recentUntouched', (await bridge.call('list_recent_files')).map(f => f.name).join(',') === 'one_row.parquet,gone.parquet,multi_rowgroup.parquet' && !bridge.log.some(l => l.cmd === 'remember_file'), `remember_file calls: ${bridge.log.filter(l => l.cmd === 'remember_file').length}`);
+  await page.locator(`span[title="${FIX}/one_row.parquet"]`).click(); await page.waitForTimeout(300);
+  check('S11r.queryView', (await activeTabName(page)) === 'one_row.parquet' && await queryViewShown(page), 'one_row.parquet is back in the query view');
+  await notice.locator('button[aria-label="Dismiss"]').click();
+  check('S11r.dismiss', !(await notice.isVisible()));
+  // The first save after the restore drops the missing file.
+  await page.waitForTimeout(600);
+  const saved = await bridge.call('list_session_tabs');
+  check('S11r.pruned', sessionPaths(saved).join(',') === 'multi_rowgroup.parquet,one_row.parquet' && saved.active === `${FIX}/one_row.parquet`, `${sessionPaths(saved)} active=${saved.active}`);
+  await page.screenshot({ path: `${OUT}/shots/S11.png` });
+}, { dataDir: S11_DATA });
+
+// With the setting off nothing is restored, and nothing is even asked for.
+await scenario('S11-session-off', async ({ page, bridge }) => {
+  await page.waitForTimeout(800);
+  check('S11o.welcome', await page.locator('text=Drop your Parquet file here').isVisible() && (await tabNames(page)).length === 0, 'the welcome screen, no tabs');
+  check('S11o.notAsked', !bridge.log.some(l => l.cmd === 'list_session_tabs'), `commands: ${[...new Set(bridge.log.map(l => l.cmd))]}`);
+}, { dataDir: S11_DATA, localStorage: { 'parqsee-settings': JSON.stringify({ restoreTabs: false }) } });
 
 console.log('\n\n===== SUMMARY =====');
 for (const r of results) console.log(`${r.status.padEnd(7)} ${r.id}  ${r.note ?? ''}`);

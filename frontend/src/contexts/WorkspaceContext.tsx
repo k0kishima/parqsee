@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
+import { useSettings } from './SettingsContext';
 import { isTauri } from '../lib/tauri';
 import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
@@ -14,19 +15,37 @@ import {
     listWorkspaceRoots,
     addWorkspaceRoot as apiAddWorkspaceRoot,
     removeWorkspaceRoot as apiRemoveWorkspaceRoot,
+    listSessionTabs,
+    saveSession,
 } from '../features/workspace/api';
 import {
     Tab,
     WorkspaceTabs,
+    RestoredTab,
+    SessionSnapshot,
     EMPTY_WORKSPACE_TABS,
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
     activeTab as activeTabOf,
     adjacentTabId,
     nthTabId,
+    sessionSnapshot,
+    restoredTabState,
 } from './workspace-tabs';
 
 export type { Tab, WorkspaceRoot };
+
+/** The files of the last session that could not be reopened at launch. */
+export interface RestoreNotice {
+    skipped: string[];
+}
+
+/**
+ * How long a change to the session waits before it is written. Page
+ * changes and filter edits come in bursts; tab opens and closes are rare
+ * enough that the delay is not felt, and `pagehide` flushes what is pending.
+ */
+const SESSION_SAVE_DELAY_MS = 250;
 
 interface WorkspaceContextType {
     currentFile: string | null;
@@ -51,6 +70,9 @@ interface WorkspaceContextType {
     /** Merge `patch` into the tab's state; send only the fields you own. */
     setTabState: (tabId: string, patch: Partial<TabState>) => void;
     activeTab: Tab | undefined;
+    /** Set once the launch-time restore skipped a file; cleared by `dismissRestoreNotice`. */
+    restoreNotice: RestoreNotice | null;
+    dismissRestoreNotice: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -73,6 +95,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [isPending, startTransition] = useTransition();
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
+    const { settings } = useSettings();
+    // Read once: the setting decides what happens at launch, not later.
+    const restoreOnLaunch = useRef(settings.restoreTabs);
+    const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
+    // Saving starts once the restore has finished (or was skipped): the
+    // empty workspace of the first render must not overwrite the store.
+    const [sessionReady, setSessionReady] = useState(!isTauri());
 
     // The roots the backend restored from its store (and re-acquired access
     // to, under the sandbox).
@@ -82,6 +111,81 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             .then(setRoots)
             .catch(error => console.error('Failed to list workspace roots:', error));
     }, []);
+
+    // The tabs of the last session. Each available one is opened through the
+    // same command a manual open uses, so the cache and the access grants
+    // behave as usual; `rememberFile` is not called, so Recent Files keeps
+    // its order. A file that is gone, or fails to open, is skipped and named
+    // in the notice; the next save drops it from the store.
+    useEffect(() => {
+        if (!isTauri()) return;
+        // StrictMode runs this effect twice in development; only the run
+        // that survives may touch the workspace.
+        let cancelled = false;
+        (async () => {
+            const skipped: string[] = [];
+            if (restoreOnLaunch.current) {
+                try {
+                    const session = await listSessionTabs();
+                    const restored: RestoredTab[] = [];
+                    for (const tab of session.tabs) {
+                        if (!tab.available) {
+                            skipped.push(tab.path);
+                            continue;
+                        }
+                        try {
+                            await apiOpenParquetFile(tab.path);
+                        } catch (error) {
+                            console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                            skipped.push(tab.path);
+                            continue;
+                        }
+                        restored.push({
+                            tab: { id: newTabId(), path: tab.path, name: tab.name },
+                            state: restoredTabState(tab.state),
+                        });
+                    }
+                    if (cancelled) return;
+                    dispatch({ type: 'restore', tabs: restored, activePath: session.active });
+                } catch (error) {
+                    console.error('Failed to restore the last session:', error);
+                }
+            }
+            if (cancelled) return;
+            if (skipped.length > 0) setRestoreNotice({ skipped });
+            setSessionReady(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Persist the session on every change worth keeping, after a short
+    // delay; a snapshot equal to the last one written is not written again.
+    const lastSavedSession = useRef<string | null>(null);
+    const pendingSession = useRef<{ snapshot: SessionSnapshot; timer: ReturnType<typeof setTimeout> } | null>(null);
+    const flushSession = useCallback(() => {
+        const pending = pendingSession.current;
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pendingSession.current = null;
+        saveSession(pending.snapshot.tabs, pending.snapshot.active)
+            .catch(error => console.error('Failed to save the session:', error));
+    }, []);
+    useEffect(() => {
+        if (!isTauri() || !sessionReady) return;
+        const snapshot = sessionSnapshot(workspaceTabs);
+        const key = JSON.stringify(snapshot);
+        if (key === lastSavedSession.current) return;
+        lastSavedSession.current = key;
+        if (pendingSession.current) clearTimeout(pendingSession.current.timer);
+        pendingSession.current = { snapshot, timer: setTimeout(flushSession, SESSION_SAVE_DELAY_MS) };
+    }, [workspaceTabs, sessionReady, flushSession]);
+    // The window going away is the one change that cannot wait.
+    useEffect(() => {
+        window.addEventListener('pagehide', flushSession);
+        return () => window.removeEventListener('pagehide', flushSession);
+    }, [flushSession]);
 
 
     const handleTabSelect = useCallback((tabId: string) => {
@@ -271,7 +375,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),
         toggleSettings: setIsSettingsOpen,
         setTabState: (tabId: string, patch: Partial<TabState>) => dispatch({ type: 'patchState', tabId, patch }),
-        activeTab
+        activeTab,
+        restoreNotice,
+        dismissRestoreNotice: () => setRestoreNotice(null),
     };
 
     return (

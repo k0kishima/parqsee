@@ -101,13 +101,13 @@ around ten items or nobody will run it.
 | Expected | Sidebar and header controls remain usable at minimum size; the layout survives full screen; the theme follows the system immediately. |
 | Why manual | Window management and the appearance change are delivered by the OS. |
 
-### MQ-8 · Sandbox: folders and recent files survive a restart
+### MQ-8 · Sandbox: folders, recent files and tabs survive a restart
 
 | | |
 |---|---|
-| Fixture | the fixtures folder; `one_row.parquet` and `numeric.parquet`; a copy of `dict.parquet` somewhere outside the fixtures folder |
-| Steps | Open the fixtures folder (⌘⇧O) and, from the tree, `one_row.parquet`. Drop the `dict.parquet` copy on the window; pick `numeric.parquet` with ⌘O. Export the dropped copy to CSV into a folder outside the fixtures folder (say `~/Downloads`). Quit with ⌘Q, relaunch. Expand a subfolder in the tree, open a file from it, open each Recent Files entry; start an export of the dropped copy and cancel the panel. Quit, move the `dict.parquet` copy to another folder in Finder, delete `numeric.parquet`'s copy if you made one (or move it too), relaunch. |
-| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The save panel opens in the folder you exported into before quitting. After the move the moved entry still opens (the bookmark follows the file); a deleted one shows *No longer available* and, on click, an alert and then disappears. `ls ~/Library/Containers/com.parqsee.app/Data/Library/Application\ Support/com.parqsee.app/bookmarks.json` exists, its root and recent entries carry a `bookmark`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
+| Fixture | the fixtures folder; `one_row.parquet`, `numeric.parquet` and `multi_rowgroup.parquet`; a copy of `dict.parquet` somewhere outside the fixtures folder |
+| Steps | Open the fixtures folder (⌘⇧O) and, from the tree, `one_row.parquet`. Drop the `dict.parquet` copy on the window; pick `numeric.parquet` with ⌘O; open `multi_rowgroup.parquet` from the tree and go to its page 2; switch `one_row.parquet` to the Query view; click the `dict.parquet` tab so it is the active one. Export the dropped copy to CSV into a folder outside the fixtures folder (say `~/Downloads`). Quit with ⌘Q, relaunch. Expand a subfolder in the tree, open a file from it, open each Recent Files entry; start an export of the dropped copy and cancel the panel. Quit, move the `dict.parquet` copy to another folder in Finder and delete `numeric.parquet` (regenerate the fixtures afterwards with `uv run scripts/qa/gen_fixtures.py`), relaunch. Then turn *Restore tabs from the last session* off in Settings, quit, relaunch. |
+| Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The tabs are back in the same order with `dict.parquet` active, `multi_rowgroup.parquet` on page 2 and `one_row.parquet` in the Query view, and Recent Files is in the same order as before the quit (a restore does not count as an open). The save panel opens in the folder you exported into before quitting. After the move and the delete, the moved `dict.parquet` copy still opens from Recent Files (the bookmark follows the file) and its tab is back; `numeric.parquet` shows *No longer available* in Recent Files (on click, an alert and then it disappears) and its tab is not restored: a one-line notice at the bottom names the file (*1 file from the last session could not be reopened*), goes away on ✕, and does not come back on the next relaunch. With the setting off the app launches on the welcome screen (the folder is still restored, so the tree is there). `ls ~/Library/Containers/com.parqsee.app/Data/Library/Application\ Support/com.parqsee.app/bookmarks.json` exists, its root and recent entries carry a `bookmark`, `session.tabs[*]` carry one each (the same bytes as the recent entry for the same file) with their `state`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
 | Why manual | Security-scoped bookmarks and their grants only exist under the App Sandbox, which only the signed release bundle runs in; the harness's bridge is unsandboxed and records none. |
 
 ### MQ-9 · Opening from Finder (known gap)
@@ -148,7 +148,7 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-5 Explorer context menu
 - [ ] MQ-6 Large file
 - [ ] MQ-7 Window and appearance
-- [ ] MQ-8 Sandbox: folders and recent files survive a restart
+- [ ] MQ-8 Sandbox: folders, recent files and tabs survive a restart
 - [ ] MQ-9 Opening from Finder (known gap)
 - [ ] MQ-10 Gatekeeper on another Mac
 - [ ] MQ-11 Sandbox entitlements and file access
