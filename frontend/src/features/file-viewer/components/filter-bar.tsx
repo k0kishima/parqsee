@@ -265,7 +265,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             <select
                                 value={filter.column}
                                 onChange={(e) => handleChange(filter.id, { column: e.target.value })}
-                                className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
                             >
                                 {columns.map(col => (
                                     <option key={col.name} value={col.name}>{col.name}</option>
@@ -279,7 +279,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                                     const operator = e.target.value;
                                     if (isFilterOperator(operator)) handleChange(filter.id, { operator });
                                 }}
-                                className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
                             >
                                 {FILTER_OPERATORS.map(op => (
                                     <option key={op} value={op}>{op}</option>
@@ -293,7 +293,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                                 onChange={(e) => handleChange(filter.id, { value: e.target.value })}
                                 disabled={!needsValue}
                                 placeholder={!needsValue ? "" : t('viewer.filterValuePlaceholder', { defaultValue: 'Value' })}
-                                className={`w-full px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
 
                             <div className="flex items-center gap-1">
