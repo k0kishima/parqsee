@@ -140,6 +140,7 @@ Argument names are camelCase on the JS side.
 | `list_directory` | `(path)` → `FileEntry[]` | Directory listing, directories first. Under the sandbox only readable inside an open workspace root |
 | `remember_file` | `(path)` → `RecentFile` | Record a just-opened file in Recent Files and create its security-scoped bookmark |
 | `list_recent_files` | `()` → `RecentFile[]` | Newest first; `available` is false when the file cannot be reached any more |
+| `take_pending_files` | `()` → `string[]` | The files Finder / the Dock handed the app before the webview was listening; asked for once at launch, and empty afterwards |
 | `remove_recent_file` / `clear_recent_files` | `(path)` / `()` → `void` | Edit the Recent Files list |
 | `list_workspace_roots` | `()` → `WorkspaceRoot[]` | The folders open in the explorer, restored at launch |
 | `add_workspace_root` | `(path)` → `WorkspaceRoot` | Open a folder (chosen in the folder dialog) as a root; bookmarked for the next launch |
@@ -159,7 +160,9 @@ Argument names are camelCase on the JS side.
 | `quit_app` | `()` → `void` | Exit; backs Escape / ✕ on the pre-trial screen and the paywall |
 
 The frontend also listens for a `file-drop` event emitted from
-`lib.rs`'s window drag-drop handler, for a `menu` event carrying the id
+`lib.rs`'s window drag-drop handler — and from its `RunEvent::Opened`
+handler, which is how a file opened from Finder, the Dock or `open -a`
+arrives — for a `menu` event carrying the id
 of the native menu item that was chosen (`open-file`, `open-folder`,
 `close-tab`, `settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘⇧O / ⌘W / ⌘,
 because a native key equivalent beats the webview's keydown handler — and
@@ -327,6 +330,25 @@ store (a purchase approved elsewhere, a refund).
     a web font. The policy is only applied to the built assets (the dev
     server sends none), so check with `scripts/qa/e2e/csp-server.mjs`
     (see its README) and then on the release `.app` (MQ-11).
+14. Opening a `.parquet` from Finder (#2). `bundle.fileAssociations` in
+    `tauri.conf.json` becomes `CFBundleDocumentTypes`; macOS then delivers
+    the file as `tauri::RunEvent::Opened`, which is why `run()` builds the
+    app and drives the event loop itself. `deliver_opened` converts the
+    `file://` URLs with `Url::to_file_path` (never by trimming the string:
+    spaces, `%`, `#` and non-ASCII names arrive percent-encoded) and hands
+    them to the webview as the same `file-drop` event a drag and drop uses,
+    so a Finder open is an ordinary open — `remember_file` included, and
+    `services::access` stays the only owner of what is readable under the
+    sandbox. On a cold start the event arrives before the webview has its
+    listener, so `services::opened::PendingOpen` buffers the paths until
+    `take_pending_files`; one mutex covers buffering and draining, so a file
+    arriving in between is neither lost nor opened twice. Two orderings are
+    load-bearing: `PendingOpen` is managed on the built app rather than in
+    `setup`, because `Opened` is delivered before `Ready` and a panic in
+    that Objective-C callback aborts the process instead of surfacing; and
+    the webview only asks after its listener is registered and the session
+    restore has finished, or the restored tabs take the active tab back from
+    the file the user just double-clicked.
 
 ## Testing
 
@@ -339,7 +361,8 @@ purchases), `lib/path`, `lib/column-widths` and
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN, the read-only SQL view, result truncation, export,
-the bookmark store, the session entries and the access-grant lifecycle in
+the bookmark store, the URL-to-path conversion and the launch handover in
+`services::opened`, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
 macOS-only test), and the trial / purchase state machine in
 `services/store` (with a fake store and a fixed clock;
@@ -353,7 +376,8 @@ service functions the commands call, over an unsandboxed store under
 `PARQSEE_DATA_DIR`). Run it after backend or frontend changes that touch
 paging, filters, export, the explorer, workspace roots, recent files, the
 session (S11: tabs back across a relaunch, a deleted file's tab skipped and
-named) or the SQL view — see its README for setup (`cargo build --example bridge`,
+named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
+warm start through the `file-drop` event) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
@@ -361,6 +385,7 @@ window/appearance, the sandbox (entitlements, bookmarks surviving a
 relaunch), Gatekeeper — is listed in `docs/MANUAL_QA.md` with steps,
 expected results and a results template; run it on the release `.app`
 before tagging a release and after touching the menu, entitlements,
-`services/access`, capabilities, plugins or the Tauri version. The fixtures it refers to
+`services/access`, the file association or the `RunEvent::Opened` handler,
+capabilities, plugins or the Tauri version. The fixtures it refers to
 are generated by `uv run scripts/qa/gen_fixtures.py` and
 `uv run scripts/qa/gen_huge.py` into the git-ignored `scripts/qa/fixtures/`.
