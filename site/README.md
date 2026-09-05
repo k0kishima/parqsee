@@ -29,10 +29,15 @@ its own pair of URLs:
 ## Deploying
 
 `.github/workflows/pages.yml` publishes this folder on every push to `main`
-that touches it. It needs one manual step, once: **Settings → Pages → Source =
-"GitHub Actions"**. The result is served at
-`https://k0kishima.github.io/parqsee/` until a domain is bought (#7 mentions
-`parqsee.dev`; a `CNAME` file here is all that would change).
+that touches it. It needs two manual steps, once: **Settings → Pages → Source =
+"GitHub Actions"**, and **Custom domain = `parqsee.fuji.llc`**. The result is
+served at
+`https://parqsee.fuji.llc/`: `site/CNAME` names the subdomain, and the DNS
+side is one `CNAME` record at the registrar (`parqsee` -> `k0kishima.github.io.`).
+Without it the repository's Pages would be served under the user site's own
+custom domain, at `https://www.fuji.llc/parqsee/` — setting the subdomain
+replaces that path. Leave **Enforce HTTPS** off until GitHub has issued the
+certificate for the subdomain.
 
 ## Preview locally
 
@@ -61,3 +66,6 @@ done
   app's page. The badge artwork has to come from Apple's marketing resources;
   it may not be redrawn.
 - Add the same badge to the top of the repository `README.md`.
+- Swap the *Coming Soon…* label on the Parqsee card in the corporate site
+  (`k0kishima/k0kishima.github.io`, the Products section of `index.html`) for
+  the App Store link.

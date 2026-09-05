@@ -5,9 +5,9 @@ on macOS. Open a file, page through the rows, filter and search them, run SQL
 over the file, export what you found — on your machine, with no notebook, no
 cluster and no upload.
 
-**[parqsee site](https://k0kishima.github.io/parqsee/)** ·
-[Privacy](https://k0kishima.github.io/parqsee/privacy.html) ·
-[Support](https://k0kishima.github.io/parqsee/support.html)
+**[parqsee site](https://parqsee.fuji.llc/)** ·
+[Privacy](https://parqsee.fuji.llc/privacy.html) ·
+[Support](https://parqsee.fuji.llc/support.html)
 
 ![Parqsee showing a Parquet file: a folder of files in the sidebar, the rows in a table with their column types, a filter bar and pagination](site/img/screenshot-en-light.png)
 
