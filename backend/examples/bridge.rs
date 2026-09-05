@@ -15,13 +15,17 @@
 //! Workspace roots, recent files and the session persist under `PARQSEE_DATA_DIR` (default:
 //! a fresh directory under the temp dir), with no security-scoped bookmarks —
 //! the bridge is not sandboxed, so the harness covers the store and the
-//! explorer, not the grants.
+//! explorer, not the grants. There is no App Store either: `iap_status`
+//! answers `unlocked` (the `AlwaysUnlocked` provider, as in every build
+//! without the `app-store` feature), so the trial screens never show and
+//! the row commands are never refused.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
 use parqsee_lib::models::SessionTabInput;
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
+use parqsee_lib::services::store::{AlwaysUnlocked, License};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,10 +48,15 @@ fn opt_u(args: &Value, key: &str) -> Option<usize> {
 async fn dispatch(
     cache: &ParquetCache,
     access: &FileAccess,
+    license: &License,
     cmd: &str,
     args: Value,
 ) -> Result<Value, String> {
     let v = match cmd {
+        "iap_status" => json!(license.status().await),
+        "iap_products" => json!(license.products().await?),
+        "iap_restore" => json!(license.restore().await?),
+        "iap_purchase" => json!(license.purchase(&s(&args, "productId")?).await?),
         "check_file_exists" => json!(access.file_exists(&s(&args, "path")?)),
         "remember_file" => json!(access.remember_file(&s(&args, "path")?)?),
         "list_recent_files" => json!(access.recent_files()),
@@ -123,6 +132,8 @@ async fn main() {
         .unwrap_or_else(|| std::env::temp_dir().join(format!("parqsee-bridge-{}", std::process::id())));
     let access = Arc::new(FileAccess::load(Box::new(NoopBookmarks), Some(&data_dir)));
     let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
+    let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
+    license.init().await;
     let out = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut tasks = Vec::new();
@@ -139,6 +150,7 @@ async fn main() {
         };
         let cache = cache.clone();
         let access = access.clone();
+        let license = license.clone();
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -148,7 +160,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &access, &cmd, args).await {
+            let resp = match dispatch(&cache, &access, &license, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };
