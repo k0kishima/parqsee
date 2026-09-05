@@ -16,7 +16,7 @@ export const SidebarToggle = ({ isOpen, onToggle }: SidebarToggleProps) => {
         <button
             onClick={onToggle}
             className={iconButton}
-            title={isOpen ? t('common.hideSidebar') : t('common.showSidebar')}
+            title={`${isOpen ? t('common.hideSidebar') : t('common.showSidebar')} (⌘B)`}
         >
             <Menu className="w-5 h-5" />
         </button>

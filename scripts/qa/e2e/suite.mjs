@@ -708,7 +708,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   // (paths/dir with space is still listed as a subfolder of the first root; only its root row goes.)
   check('S9.removeRoot', (await page.locator(`.py-1 .group[title="${FIX}/paths/dir with space"]`).count()) === 0 && (await bridge.call('list_workspace_roots')).length === 1, `roots=${JSON.stringify(await bridge.call('list_workspace_roots'))}`);
   // hide sidebar
-  await page.click('[title="Hide sidebar"]');
+  await page.click('[title^="Hide sidebar"]');
   // The sidebar collapses to width 0 with overflow hidden; its children keep their own size, so
   // Playwright still reports them "visible" — assert on the collapsed container instead.
   const collapsed = await page.waitForFunction(() => {
@@ -741,7 +741,7 @@ await scenario('S9-restore', async ({ page, bridge }) => {
   while (await page.locator('[title="Close tab"]').count()) {
     await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(300);
   }
-  check('S9r.welcomeAgain', await page.locator('text=Drop your Parquet file here').isVisible() && !(await page.locator('[title="Hide sidebar"]').isVisible()), 'no roots, no tabs: the welcome screen');
+  check('S9r.welcomeAgain', await page.locator('text=Drop your Parquet file here').isVisible() && !(await page.locator('[title^="Hide sidebar"]').isVisible()), 'no roots, no tabs: the welcome screen');
 }, { dataDir: S9_DATA });
 
 // ---------------------------------------------------------------- S10 the file changes under an open tab
