@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "cd ../backend && tauri"
+    "tauri": "cd ../backend && tauri",
+    "tauri:store": "cd ../backend && tauri build --config tauri.appstore.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
