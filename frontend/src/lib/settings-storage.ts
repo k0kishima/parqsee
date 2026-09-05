@@ -8,6 +8,8 @@ export interface Settings {
   showRecentFiles: boolean;
   typeDisplay: TypeDisplay;
   language: Language;
+  /** Reopen the tabs of the last session at launch. */
+  restoreTabs: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -15,7 +17,8 @@ export const defaultSettings: Settings = {
   rowsPerPage: 50,  // Reduced default for better performance
   showRecentFiles: true,
   typeDisplay: 'logical',
-  language: 'en'
+  language: 'en',
+  restoreTabs: true,
 };
 
 const SETTINGS_STORAGE_KEY = 'parqsee-settings';

@@ -9,6 +9,9 @@ import {
   adjacentTabId,
   nthTabId,
   reduceWorkspaceTabs,
+  restoreTabs,
+  sessionSnapshot,
+  restoredTabState,
 } from '../workspace-tabs';
 
 const tab = (id: string, path = `/data/${id}.parquet`) => ({ id, path, name: `${id}.parquet` });
@@ -112,6 +115,75 @@ describe('nthTabId', () => {
   });
 });
 
+describe('restoreTabs', () => {
+  const restored = [
+    { tab: tab('r1'), state: { viewMode: 'query' as const } },
+    { tab: tab('r2'), state: { currentPage: 3 } },
+  ];
+
+  it('appends the tabs with their state and activates the named one', () => {
+    const next = restoreTabs(EMPTY_WORKSPACE_TABS, restored, '/data/r2.parquet');
+    expect(next.tabs.map(t => t.id)).toEqual(['r1', 'r2']);
+    expect(next.activeTabId).toBe('r2');
+    expect(next.tabStates).toEqual({ r1: { viewMode: 'query' }, r2: { currentPage: 3 } });
+  });
+
+  it('falls back to the first restored tab when the active path is not among them', () => {
+    expect(restoreTabs(EMPTY_WORKSPACE_TABS, restored, '/data/gone.parquet').activeTabId).toBe('r1');
+    expect(restoreTabs(EMPTY_WORKSPACE_TABS, restored, null).activeTabId).toBe('r1');
+    expect(restoreTabs(EMPTY_WORKSPACE_TABS, [], null)).toEqual(EMPTY_WORKSPACE_TABS);
+  });
+
+  it('keeps a tab the user opened meanwhile, with its state, and the active tab when none is named', () => {
+    // The same file was dropped during the restore: its tab and state win.
+    const next = restoreTabs(three, [...restored, { tab: tab('x', '/data/a.parquet'), state: { currentPage: 9 } }], null);
+    expect(next.tabs.map(t => t.id)).toEqual(['a', 'b', 'c', 'r1', 'r2']);
+    expect(next.activeTabId).toBe('b');
+    expect(next.tabStates.a).toEqual({ currentPage: 2 });
+    expect(next.tabStates.x).toBeUndefined();
+  });
+});
+
+describe('sessionSnapshot', () => {
+  it('lists the tabs in order with the persisted part of their state and the active path', () => {
+    const state: WorkspaceTabs = {
+      ...three,
+      tabStates: {
+        a: { currentPage: 2, activeFilter: 'x > 1', searchTerm: 'needle', selectedRow: 4, isSearchOpen: true, scrollPosition: 100 },
+        b: { viewMode: 'query', activeFilter: '' },
+      },
+    };
+    expect(sessionSnapshot(state)).toEqual({
+      tabs: [
+        { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: 'x > 1' } },
+        { path: '/data/b.parquet', state: { view_mode: 'query', current_page: null, active_filter: null } },
+        { path: '/data/c.parquet', state: { view_mode: null, current_page: null, active_filter: null } },
+      ],
+      active: '/data/b.parquet',
+    });
+  });
+
+  it('is the same for changes that are not persisted', () => {
+    const before = JSON.stringify(sessionSnapshot(three));
+    const after = JSON.stringify(sessionSnapshot(patchTabState(three, 'a', { searchTerm: 'x', selectedRow: 1, scrollPosition: 50 })));
+    expect(after).toBe(before);
+    expect(sessionSnapshot(EMPTY_WORKSPACE_TABS)).toEqual({ tabs: [], active: null });
+  });
+});
+
+describe('restoredTabState', () => {
+  it('maps the saved fields back and leaves the rest to the tab', () => {
+    expect(restoredTabState({ view_mode: 'query', current_page: 3, active_filter: 'x > 1' }))
+      .toEqual({ viewMode: 'query', currentPage: 3, activeFilter: 'x > 1' });
+    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null })).toEqual({});
+  });
+
+  it('drops values the store could not have meant', () => {
+    expect(restoredTabState({ view_mode: 'chart', current_page: 0, active_filter: '' })).toEqual({});
+    expect(restoredTabState({ view_mode: 'browse', current_page: 1.5, active_filter: null })).toEqual({ viewMode: 'browse' });
+  });
+});
+
 describe('reduceWorkspaceTabs', () => {
   it('routes every action to its transition', () => {
     let state = reduceWorkspaceTabs(EMPTY_WORKSPACE_TABS, { type: 'open', tab: tab('a') });
@@ -119,6 +191,7 @@ describe('reduceWorkspaceTabs', () => {
     state = reduceWorkspaceTabs(state, { type: 'patchState', tabId: 'a', patch: { currentPage: 4 } });
     state = reduceWorkspaceTabs(state, { type: 'select', tabId: 'a' });
     state = reduceWorkspaceTabs(state, { type: 'close', tabId: 'b' });
-    expect(state).toEqual({ tabs: [tab('a')], activeTabId: 'a', tabStates: { a: { currentPage: 4 } } });
+    state = reduceWorkspaceTabs(state, { type: 'restore', tabs: [{ tab: tab('r'), state: { viewMode: 'query' } }], activePath: '/data/r.parquet' });
+    expect(state).toEqual({ tabs: [tab('a'), tab('r')], activeTabId: 'r', tabStates: { a: { currentPage: 4 }, r: { viewMode: 'query' } } });
   });
 });
