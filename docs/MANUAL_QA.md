@@ -135,7 +135,7 @@ around ten items or nobody will run it.
 
 | | |
 |---|---|
-| Fixture | `backend/target/release/bundle/dmg/Parqsee_*.dmg` |
+| Fixture | `backend/target/release/bundle/dmg/Parqsee_*.dmg` from `pnpm tauri build --bundles dmg` (the default build makes only the `.app`) |
 | Steps | Copy the dmg to a Mac that has never run Parqsee, open it, launch the app. |
 | Expected | **Currently blocked** with "cannot verify the developer" (ad-hoc signature, not notarized). Update this expectation once signing and notarization are set up. |
 | Why manual | Gatekeeper's verdict depends on the signing identity and notarization ticket of the actual artifact. |
