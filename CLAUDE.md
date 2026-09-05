@@ -74,6 +74,7 @@ parqsee/
 │   ├── build.rs                  # tauri-build, plus the Swift build and link under `app-store`
 │   ├── Cargo.toml
 │   ├── Entitlements.plist        # App Sandbox entitlements (applied to signed release builds)
+│   ├── Info.plist                # Merged into the bundle's Info.plist: App Store Connect keys Tauri has no config for
 │   ├── tauri.conf.json           # Tauri config (window, bundle, build hooks)
 │   └── tauri.appstore.conf.json  # Overlay for the store build: turns the `app-store` feature on
 ├── docs/
@@ -82,10 +83,14 @@ parqsee/
 └── scripts/
     ├── apply_squircle.py         # Icon post-processing
     ├── gen_sample.py             # Writes backend/resources/sample.parquet (uv run; the result is committed)
+    ├── release/
+    │   ├── appstore.sh           # Build → sign → .pkg → App Store Connect (universal; --unsigned is the dry run)
+    │   ├── sign_app.sh           # Embed a provisioning profile and sign with Entitlements.plist + the identifiers
+    │   └── test_appstore.py      # unittest over appstore.sh with stubbed tools (python3 scripts/release/test_appstore.py)
     └── qa/
         ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
         ├── gen_huge.py
-        ├── sign_for_storekit.sh  # Re-sign the store build with a development profile for MQ-12
+        ├── sign_for_storekit.sh  # MQ-12: sign_app.sh with a development profile
         └── e2e/                  # Playwright WebKit suite against the real backend (see README)
 ```
 
@@ -125,6 +130,15 @@ pnpm tauri:store  # The Mac App Store variant: `app-store` feature, StoreKit bri
 ```
 
 Installers land in `backend/target/release/bundle/`.
+
+The submission itself is `scripts/release/appstore.sh`: the store variant
+as a universal binary (`--target universal-apple-darwin`; needs
+`rustup target add x86_64-apple-darwin` once), signed with the Mac App
+Store profile and the Apple Distribution identity, wrapped into a `.pkg`
+with `productbuild`, validated and uploaded with `xcrun altool` on
+`--upload`. `--unsigned` is the dry run without certificates. It lands in
+`backend/target/universal-apple-darwin/release/bundle/macos/`; see the
+script's header for the flags and the `APPLE_*` variables it reads.
 
 ### Testing
 ```bash
@@ -243,7 +257,16 @@ store (a purchase approved elsewhere, a refund).
     and leaves the grid on its spinner.
 11. The release build runs under the App Sandbox (`backend/Entitlements.plist`,
     applied because `tauri.conf.json` signs ad-hoc; `APPLE_SIGNING_IDENTITY`
-    overrides the identity). `pnpm tauri dev` and the e2e bridge are not
+    overrides the identity). The store submission is not signed by Tauri
+    at all: this Tauri version has no config key for a provisioning
+    profile and does not add the application / team identifiers to the
+    entitlements, and an identity plus an API key in the environment would
+    make it notarize, which a store build must not be. So
+    `scripts/release/appstore.sh` builds with every `APPLE_*` variable
+    unset and `scripts/release/sign_app.sh` embeds the profile and signs
+    with `Entitlements.plist` plus the two identifiers read from the
+    profile — the same routine `scripts/qa/sign_for_storekit.sh` runs with
+    a development profile for MQ-12. `pnpm tauri dev` and the e2e bridge are not
     sandboxed, so sandbox behaviour is only visible on the release `.app`.
     The entitlements include `com.apple.security.network.client` even though
     the app never talks to the network: WKWebView's GPU/Networking helpers
@@ -392,6 +415,11 @@ macOS-only test), and the free / unlocked state in `services/store` (with a
 fake store; `cargo test --lib --features app-store` adds two round trips
 through the Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
+`python3 scripts/release/test_appstore.py` runs `scripts/release/appstore.sh`
+against a fake checkout with stubs of pnpm / codesign / productbuild /
+altool on PATH (argument handling, artifact paths, the build's scrubbed
+environment, the signed and unsigned sequences) plus one run through the
+real `productbuild`.
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through
 `backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same

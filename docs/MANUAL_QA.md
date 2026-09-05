@@ -13,7 +13,8 @@ do not re-check those by hand.
 - After touching `build_menu` in `backend/src/lib.rs`, `backend/capabilities/`,
   `backend/Entitlements.plist`, `backend/src/services/access/`,
   `backend/storekit/`, `backend/src/services/store/`,
-  `bundle.fileAssociations` or `bundle.resources` in `backend/tauri.conf.json`, the
+  `bundle.fileAssociations` or `bundle.resources` in `backend/tauri.conf.json`,
+  `backend/Info.plist`, `scripts/release/`, the
   `RunEvent::Opened` handler in `backend/src/lib.rs`, any
   `tauri-plugin-*` dependency, or the Tauri version — those are the things
   that silently break the items below.
@@ -87,6 +88,16 @@ section shows who is signed in and lets you sign out.
 The pitfalls of driving the release app from a terminal apply here too:
 `open` reuses a running instance of the same app (quit it first), and a
 locked screen makes every screenshot black.
+
+The submission itself is `scripts/release/appstore.sh` (build → sign with
+the Mac App Store profile and the Apple Distribution identity → `.pkg` →
+`xcrun altool` on `--upload`; the `APPLE_*` variables are in its header).
+Its dry run, `scripts/release/appstore.sh --unsigned`, is what MQ-11
+installs: the same universal `.pkg` around the ad-hoc signed `.app`. A
+package signed for the store cannot be checked here — an app signed with
+an Apple Distribution certificate only runs when the App Store or
+TestFlight installed it — so the signed build is checked through
+TestFlight for Mac (#16), not on this list.
 
 Each item lists why it cannot be automated. An item that loses that reason
 should be moved into the harness and removed from this list; keep the list
@@ -189,9 +200,9 @@ around ten items or nobody will run it.
 
 | | |
 |---|---|
-| Fixture | the release `.app`; `multi_rowgroup.parquet` |
-| Steps | Run `codesign -d --entitlements - backend/target/release/bundle/macos/Parqsee.app` and `ls backend/target/release/bundle/macos/Parqsee.app/Contents/Resources/sample.parquet`. Delete the container (see [How to run](#how-to-run)), launch the app and keep Console.app open filtered on `Parqsee`. On the Welcome screen click **Open the sample file**; ⌘Q, relaunch. Close the tab. Open a folder, browse it, open a file, export it to CSV into a folder you choose in the save dialog (not the workspace folder), then **Reveal in Finder**. Right-click a file → **Reveal in Finder**. Run `pnpm tauri dev` once and click **Open the sample file** there too. |
-| Expected | The entitlements list exactly `com.apple.security.app-sandbox`, `com.apple.security.files.user-selected.read-write`, `com.apple.security.files.bookmarks.app-scope` and `com.apple.security.network.client` (the last one is for WKWebView's helper processes; without it the window stays blank). The sample file is in the bundle's `Resources/`. The window renders the Welcome screen with the logo — a blank white window means the sandbox is blocking the webview. The sample opens in a tab `sample.parquet` with 1,500 rows × 14 columns (the bundle is readable under the sandbox without a bookmark; a `File not found` alert here means `resource_dir()` resolved somewhere else), the tab is back after the relaunch, and Recent Files stays empty — the sample is never recorded there. Everything else works and Console shows no `deny` lines from `sandboxd` for Parqsee. The dev build starts and behaves as before (it is unsandboxed; that is expected), and opens the sample too — `tauri-build` copies it next to the debug binary. The release webview also runs under the CSP from `tauri.conf.json`, which the dev build does not: the grid's columns keep their widths and the logo shows (a violation would drop them), and a page read is as fast as it was — if the CSP blocked the IPC, Tauri would silently fall back to `postMessage` and every `invoke` would get slower. Release builds have no Web Inspector, so the violation list itself comes from the harness: `scripts/qa/e2e/csp-server.mjs` (see its README) before this check. |
+| Fixture | the package from `scripts/release/appstore.sh --unsigned` (`backend/target/universal-apple-darwin/release/bundle/macos/Parqsee-<version>.pkg`), installed with `sudo installer -pkg <that .pkg> -target /`; `multi_rowgroup.parquet` |
+| Steps | Run `pkgutil --expand <the .pkg> /tmp/parqsee-pkg` and read `/tmp/parqsee-pkg/*.pkg/PackageInfo`; then `lipo -info /Applications/Parqsee.app/Contents/MacOS/parqsee`, `codesign -d --entitlements - /Applications/Parqsee.app`, `plutil -p /Applications/Parqsee.app/Contents/Info.plist` and `ls /Applications/Parqsee.app/Contents/Resources/sample.parquet`. Delete the container (see [How to run](#how-to-run)), launch `/Applications/Parqsee.app` and keep Console.app open filtered on `Parqsee`. On the Welcome screen click **Open the sample file**; ⌘Q, relaunch. Close the tab. Open a folder, browse it, open a file, export it to CSV into a folder you choose in the save dialog (not the workspace folder), then **Reveal in Finder**. Right-click a file → **Reveal in Finder**. Run `pnpm tauri dev` once and click **Open the sample file** there too. |
+| Expected | `PackageInfo` names `llc.fuji.parqsee` with `install-location="/Applications"`, and the app is at `/Applications/Parqsee.app` afterwards. The binary is universal (`x86_64 arm64`). `Info.plist` carries `LSApplicationCategoryType` = `public.app-category.developer-tools`, `LSMinimumSystemVersion` = `12.0` and `ITSAppUsesNonExemptEncryption` = false — App Store Connect rejects an upload without the first. The entitlements list exactly `com.apple.security.app-sandbox`, `com.apple.security.files.user-selected.read-write`, `com.apple.security.files.bookmarks.app-scope` and `com.apple.security.network.client` (the last one is for WKWebView's helper processes; without it the window stays blank). The sample file is in the bundle's `Resources/`. The window renders the Welcome screen with the logo — a blank white window means the sandbox is blocking the webview. The sample opens in a tab `sample.parquet` with 1,500 rows × 14 columns (the bundle is readable under the sandbox without a bookmark; a `File not found` alert here means `resource_dir()` resolved somewhere else), the tab is back after the relaunch, and Recent Files stays empty — the sample is never recorded there. Everything else works and Console shows no `deny` lines from `sandboxd` for Parqsee. The dev build starts and behaves as before (it is unsandboxed; that is expected), and opens the sample too — `tauri-build` copies it next to the debug binary. The release webview also runs under the CSP from `tauri.conf.json`, which the dev build does not: the grid's columns keep their widths and the logo shows (a violation would drop them), and a page read is as fast as it was — if the CSP blocked the IPC, Tauri would silently fall back to `postMessage` and every `invoke` would get slower. Release builds have no Web Inspector, so the violation list itself comes from the harness: `scripts/qa/e2e/csp-server.mjs` (see its README) before this check. |
 | Why manual | Whether the sandbox is actually applied depends on the signature of the built artifact; every automated suite runs an unsandboxed binary, and only the real webview sends the IPC through `ipc://localhost`. |
 
 ### MQ-12 · StoreKit sandbox: the free tier and the purchase

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Merged into the bundle's Info.plist by Tauri (bundle.macOS.infoPlist
+      in tauri.conf.json). Keys App Store Connect asks about that Tauri
+      has no config for.
+
+      The app makes no network requests and uses no encryption of its own,
+      so it is exempt from export compliance; declaring it here answers
+      the question App Store Connect would otherwise ask on every upload.
+    -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+</dict>
+</plist>

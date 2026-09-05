@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "category": "DeveloperTool",
     "resources": {
       "resources/sample.parquet": "sample.parquet"
     },
@@ -46,6 +47,7 @@
     "macOS": {
       "minimumSystemVersion": "12.0",
       "entitlements": "./Entitlements.plist",
+      "infoPlist": "./Info.plist",
       "signingIdentity": "-"
     }
   }
