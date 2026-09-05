@@ -24,14 +24,18 @@ export const DEV_URL = process.env.DEV_URL ?? 'http://localhost:1420/';
 for (const dir of [OUT, path.join(OUT, 'shots')]) mkdirSync(dir, { recursive: true });
 
 export class Bridge {
-  /** `dataDir` is where the bridge keeps workspace roots and recent files (bookmarks.json). */
-  constructor(dataDir) {
+  /**
+   * `dataDir` is where the bridge keeps workspace roots and recent files
+   * (bookmarks.json); `pendingFiles` are the paths a cold start from Finder
+   * hands over (drained once by `take_pending_files`).
+   */
+  constructor(dataDir, pendingFiles = []) {
     if (!existsSync(BRIDGE_BIN)) {
       throw new Error(`bridge binary not found at ${BRIDGE_BIN} — run \`cargo build --example bridge\` in backend/`);
     }
     this.proc = spawn(BRIDGE_BIN, [], {
       stdio: ['pipe', 'pipe', process.env.BRIDGE_QUIET ? 'ignore' : 'inherit'],
-      env: { ...process.env, PARQSEE_DATA_DIR: dataDir },
+      env: { ...process.env, PARQSEE_DATA_DIR: dataDir, PARQSEE_PENDING_FILES: pendingFiles.join('\n') },
     });
     this.pending = new Map();
     this.seq = 0;
@@ -116,15 +120,17 @@ let launches = 0;
  * A browser and a bridge. `dataDir` is the bridge's store directory: by
  * default a fresh one per launch, so scenarios start with no workspace roots
  * and no recent files; pass the same one twice to act out a relaunch.
+ * `pendingFiles` launches the app the way a double-click in Finder does:
+ * the backend is holding those paths before the webview loads.
  */
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir } = {}) {
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [] } = {}) {
   await assertDevServer();
   if (!dataDir) {
     dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
     rmSync(dataDir, { recursive: true, force: true });
   }
   mkdirSync(dataDir, { recursive: true });
-  const bridge = new Bridge(dataDir);
+  const bridge = new Bridge(dataDir, pendingFiles);
   const engine = browser === 'chromium' ? chromium : webkit;
   const b = await engine.launch({ headless });
   const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
@@ -147,6 +153,15 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
 /** Deliver a file-drop the way lib.rs's drag-drop handler does. */
 export async function dropFile(page, path) {
   await page.evaluate((p) => window.__emit('file-drop', [p]), path);
+}
+
+/**
+ * Open files from Finder / the Dock / `open -a` while the window is up:
+ * `deliver_opened` in lib.rs emits the same `file-drop` event once the
+ * webview is listening (the cold start is `launch({ pendingFiles })`).
+ */
+export async function finderOpen(page, paths) {
+  await page.evaluate((p) => window.__emit('file-drop', p), paths);
 }
 
 /**

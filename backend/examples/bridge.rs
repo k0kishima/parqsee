@@ -12,6 +12,11 @@
 //! `delayMs` holds the response back, which is how the harness provokes the
 //! stale-response races the frontend guards against.
 //!
+//! `PARQSEE_PENDING_FILES` (newline-separated paths) acts out a cold start
+//! from Finder: the harness has no Tauri event loop to raise
+//! `RunEvent::Opened`, so the paths are seeded into the same `PendingOpen`
+//! the app uses and `take_pending_files` drains them once.
+//!
 //! Workspace roots, recent files and the session persist under `PARQSEE_DATA_DIR` (default:
 //! a fresh directory under the temp dir), with no security-scoped bookmarks —
 //! the bridge is not sandboxed, so the harness covers the store and the
@@ -23,6 +28,7 @@ use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
 use parqsee_lib::models::SessionTabInput;
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
+use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
 use parqsee_lib::services::store::{AlwaysUnlocked, License};
@@ -49,6 +55,7 @@ async fn dispatch(
     cache: &ParquetCache,
     access: &FileAccess,
     license: &License,
+    pending: &PendingOpen,
     cmd: &str,
     args: Value,
 ) -> Result<Value, String> {
@@ -60,6 +67,7 @@ async fn dispatch(
         "check_file_exists" => json!(access.file_exists(&s(&args, "path")?)),
         "remember_file" => json!(access.remember_file(&s(&args, "path")?)?),
         "list_recent_files" => json!(access.recent_files()),
+        "take_pending_files" => json!(pending.take()),
         "remove_recent_file" => {
             access.forget_file(&s(&args, "path")?);
             Value::Null
@@ -134,6 +142,14 @@ async fn main() {
     let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
     let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
     license.init().await;
+    let pending = Arc::new(PendingOpen::seeded(
+        std::env::var("PARQSEE_PENDING_FILES")
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect(),
+    ));
     let out = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut tasks = Vec::new();
@@ -151,6 +167,7 @@ async fn main() {
         let cache = cache.clone();
         let access = access.clone();
         let license = license.clone();
+        let pending = pending.clone();
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -160,7 +177,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &access, &license, &cmd, args).await {
+            let resp = match dispatch(&cache, &access, &license, &pending, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };

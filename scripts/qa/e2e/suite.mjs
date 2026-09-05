@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { launch, dropFile, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT } from './lib.mjs';
+import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT } from './lib.mjs';
 
 const base = (p) => p.split('/').pop();
 
@@ -829,6 +829,50 @@ await scenario('S11-session-off', async ({ page, bridge }) => {
   check('S11o.welcome', await page.locator('text=Drop your Parquet file here').isVisible() && (await tabNames(page)).length === 0, 'the welcome screen, no tabs');
   check('S11o.notAsked', !bridge.log.some(l => l.cmd === 'list_session_tabs'), `commands: ${[...new Set(bridge.log.map(l => l.cmd))]}`);
 }, { dataDir: S11_DATA, localStorage: { 'parqsee-settings': JSON.stringify({ restoreTabs: false }) } });
+
+// ---------------------------------------------------------------- S12 opening from Finder
+// Double-click / Dock drop / `open -a` reach the webview as the same
+// `file-drop` event a drag and drop does (`deliver_opened` in lib.rs). Cold
+// start — the event arrives before the webview listens — is acted out by
+// seeding the bridge's PendingOpen; warm start is the event itself.
+const S12_DATA = path.join(OUT, 'data', 's12');
+fs.rmSync(S12_DATA, { recursive: true, force: true });
+const S12_JA = `${FIX}/paths/日本語ファイル.parquet`;
+const S12_HASH = `${FIX}/paths/hash#1.parquet`;
+
+// One tab, so the relaunch below has a session to restore first.
+await scenario('S12-finder-seed', async ({ page }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await page.waitForTimeout(600);
+}, { dataDir: S12_DATA });
+
+await scenario('S12-finder', async ({ page, bridge }) => {
+  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await waitGrid(page);
+  check('S12.coldTabs', (await tabNames(page)).join(',') === 'multi_rowgroup.parquet,日本語ファイル.parquet', `tabs=${await tabNames(page)}`);
+  check('S12.coldActive', (await activeTabName(page)) === '日本語ファイル.parquet', `active=${await activeTabName(page)} (the file must not be pushed behind the restored tabs)`);
+  check('S12.coldGrid', (await footer(page))?.startsWith('Showing 1 to 3'), await footer(page));
+  const cmds = bridge.log.map(l => l.cmd);
+  check('S12.askedOnceAfterRestore',
+    cmds.filter(c => c === 'take_pending_files').length === 1 && cmds.indexOf('take_pending_files') > cmds.indexOf('list_session_tabs'),
+    `command order: ${cmds.join(',')}`);
+  // The same path a manual open takes: under the sandbox this is what makes
+  // the bookmark, so Recent Files can reopen it after a relaunch.
+  check('S12.recorded', (await bridge.call('list_recent_files'))[0]?.path === S12_JA, `recent=${(await bridge.call('list_recent_files')).map(f => f.name)}`);
+
+  // Warm start: the window is already up.
+  await finderOpen(page, [S12_HASH]);
+  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 3, null, { timeout: 15000 }).catch(() => {});
+  await waitGrid(page);
+  check('S12.warm', (await activeTabName(page)) === 'hash#1.parquet' && (await footer(page))?.startsWith('Showing 1 to 3'), `active=${await activeTabName(page)} footer=${await footer(page)}`);
+
+  // `open -a Parqsee notes.csv` reaches the same handler.
+  await finderOpen(page, [`${OUT}/notes.csv`]);
+  await page.waitForTimeout(300);
+  const alerts = await page.evaluate(() => window.__alerts);
+  check('S12.notParquet', (await tabNames(page)).length === 3 && alerts.includes('Parqsee can only open .parquet files'), `tabs=${(await tabNames(page)).length} alerts=${JSON.stringify(alerts)}`);
+  await page.screenshot({ path: `${OUT}/shots/S12.png` });
+}, { dataDir: S12_DATA, pendingFiles: [S12_JA] });
 
 console.log('\n\n===== SUMMARY =====');
 for (const r of results) console.log(`${r.status.padEnd(7)} ${r.id}  ${r.note ?? ''}`);
