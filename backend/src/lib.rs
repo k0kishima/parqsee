@@ -88,11 +88,22 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
 /// and `take_pending_files` hands the buffered ones over.
 ///
 /// Runs in the event loop, outside `commands::guarded`, so nothing here may
-/// panic: a failure is reported and dropped, as in the drag-drop handler.
+/// panic — and a panic here is not even an error the webview could show: it
+/// happens inside an Objective-C callback, cannot unwind through it, and
+/// aborts the process. That is what a cold start did while `PendingOpen`
+/// was managed from the setup hook: macOS delivers `application:openURLs:`
+/// before `applicationDidFinishLaunching`, so this runs before
+/// `RunEvent::Ready` — which is where Tauri runs `setup` — and `state()`
+/// panicked on a store that had nothing in it yet. `PendingOpen` is managed
+/// before the event loop starts for that reason, and this asks for it
+/// without insisting.
 #[cfg(target_os = "macos")]
 fn deliver_opened(app: &tauri::AppHandle, urls: &[tauri::Url]) {
     let paths = services::opened::file_paths(urls);
-    let pending = app.state::<Arc<PendingOpen>>();
+    let Some(pending) = app.try_state::<Arc<PendingOpen>>() else {
+        eprintln!("no place to keep the files to open: {:?}", paths);
+        return;
+    };
     let Some(paths) = pending.deliver(paths) else { return };
     if let Err(e) = app.emit("file-drop", &paths) {
         eprintln!("failed to forward the files to open: {}", e);
@@ -133,7 +144,7 @@ fn store_provider() -> Box<dyn StoreProvider> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -156,10 +167,6 @@ pub fn run() {
             // that need it wait for the first read (`License::status`).
             // A transaction update from the store reaches the webview as
             // the `iap-status` event.
-            // Files handed over by Finder / the Dock. Filled by
-            // `RunEvent::Opened` below, drained by `take_pending_files`.
-            app.manage(Arc::new(PendingOpen::new()));
-
             let license = Arc::new(License::new(store_provider()));
             let handle = app.handle().clone();
             license.set_on_change(Box::new(move |status| {
@@ -218,14 +225,19 @@ pub fn run() {
                 }
             }
         })
-        .build(tauri::generate_context!())
-        .expect("error while running tauri application")
         // Built rather than run so the event loop is ours: `RunEvent::Opened`
         // is the only way to hear about a file opened from Finder.
-        .run(|_app, _event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = &_event {
-                deliver_opened(_app, urls);
-            }
-        });
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application");
+
+    // Not in `setup`: a file passed at launch reaches `deliver_opened`
+    // before Tauri runs the setup hook (see its comment).
+    app.manage(Arc::new(PendingOpen::new()));
+
+    app.run(|_app, _event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = &_event {
+            deliver_opened(_app, urls);
+        }
+    });
 }
