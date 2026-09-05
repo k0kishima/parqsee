@@ -17,6 +17,10 @@
 //! `RunEvent::Opened`, so the paths are seeded into the same `PendingOpen`
 //! the app uses and `take_pending_files` drains them once.
 //!
+//! The bridge has no Tauri resource directory, so `sample_file_path` answers
+//! with the committed `resources/sample.parquet` of this checkout (the same
+//! bytes the bundle carries), or with `PARQSEE_SAMPLE_FILE` when set.
+//!
 //! Workspace roots, recent files and the session persist under `PARQSEE_DATA_DIR` (default:
 //! a fresh directory under the temp dir), with no security-scoped bookmarks —
 //! the bridge is not sandboxed, so the harness covers the store and the
@@ -30,12 +34,23 @@ use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
+use parqsee_lib::services::sample::sample_path;
 use parqsee_lib::services::store::{AlwaysUnlocked, License};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
+
+/// The sample file, as `commands::file::sample_file_path` would answer in
+/// the app: `PARQSEE_SAMPLE_FILE`, else the committed one.
+fn sample_file_path() -> Result<String, String> {
+    let resource_dir = std::env::var_os("PARQSEE_SAMPLE_FILE")
+        .map(PathBuf::from)
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/resources")));
+    Ok(sample_path(&resource_dir)?.to_string_lossy().into_owned())
+}
 
 fn s(args: &Value, key: &str) -> Result<String, String> {
     args.get(key)
@@ -67,6 +82,7 @@ async fn dispatch(
         "remember_file" => json!(access.remember_file(&s(&args, "path")?)?),
         "list_recent_files" => json!(access.recent_files()),
         "take_pending_files" => json!(pending.take()),
+        "sample_file_path" => json!(sample_file_path()?),
         "remove_recent_file" => {
             access.forget_file(&s(&args, "path")?);
             Value::Null
