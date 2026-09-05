@@ -241,7 +241,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     // e2e suite included.
     return (
         <div className="px-6 py-2 bg-slate-50 dark:bg-gray-800/50">
-            <form onSubmit={handleSubmit} className="grid grid-cols-[5rem_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
+            <form onSubmit={handleSubmit} className="grid grid-cols-[auto_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
                     const isLast = index === filters.length - 1;
@@ -251,7 +251,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             {index === 0 ? (
                                 <div className="flex items-center gap-2">
                                     <Filter size={14} className="text-slate-400 dark:text-gray-400" />
-                                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-gray-500">
+                                    <span className="text-xs font-semibold uppercase tracking-wider whitespace-nowrap text-slate-500 dark:text-gray-500">
                                         {t('viewer.filter')}:
                                     </span>
                                 </div>
@@ -340,7 +340,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                 })}
 
                 {invalid && (
-                    <p className="col-span-full pl-[5.5rem] text-xs text-red-600 dark:text-red-400" role="alert">
+                    <p className="col-start-2 col-span-4 text-xs text-red-600 dark:text-red-400" role="alert">
                         {t(EXPECTS_MESSAGE_KEY[invalid.expects], {
                             column: invalid.column,
                             value: invalid.value,

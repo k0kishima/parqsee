@@ -179,6 +179,53 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </p>
             </div>
 
+            {/* Row Density */}
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-2">
+                {t('settings.rowDensity')}
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, rowDensity: 'comfortable' })}
+                  className={`
+                    flex flex-col items-center p-4 rounded-lg border-2 transition-all
+                    ${localSettings.rowDensity === 'comfortable'
+                      ? 'border-blue-500 bg-selected'
+                      : 'border-primary hover:border-secondary'
+                    }
+                  `}
+                >
+                  <span className="flex flex-col gap-1.5 mb-2" aria-hidden="true">
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                  </span>
+                  <span className="text-sm font-medium text-primary">{t('settings.rowDensityOptions.comfortable')}</span>
+                </button>
+
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, rowDensity: 'compact' })}
+                  className={`
+                    flex flex-col items-center p-4 rounded-lg border-2 transition-all
+                    ${localSettings.rowDensity === 'compact'
+                      ? 'border-blue-500 bg-selected'
+                      : 'border-primary hover:border-secondary'
+                    }
+                  `}
+                >
+                  <span className="flex flex-col gap-0.5 mb-2" aria-hidden="true">
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                    <span className="w-8 h-0.5 rounded bg-current text-primary" />
+                  </span>
+                  <span className="text-sm font-medium text-primary">{t('settings.rowDensityOptions.compact')}</span>
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-tertiary">
+                {t('settings.rowDensityDesc')}
+              </p>
+            </div>
+
             {/* Type Display Setting */}
             <div>
               <label className="block text-sm font-medium text-secondary mb-2">

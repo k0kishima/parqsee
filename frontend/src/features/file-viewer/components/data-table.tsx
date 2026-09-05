@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
 import type { ColumnInfo } from '../api';
-import type { TypeDisplay } from '../../../lib/settings-storage';
+import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
@@ -16,6 +16,7 @@ interface DataTableProps {
   searchMatches: SearchMatch[];
   currentMatchIndex: number;
   typeDisplay: TypeDisplay;
+  density: RowDensity;
   /** The horizontally/vertically scrolling container; owned by the parent. */
   scrollerRef: RefObject<HTMLDivElement>;
 }
@@ -65,6 +66,8 @@ interface DataRowProps {
   searchTerm: string;
   /** Column index of the current search match if it is on this row, else -1. */
   activeMatchCol: number;
+  /** The vertical padding class of the density in force. */
+  cellPadding: string;
   onSelect: (rowIndex: number) => void;
 }
 
@@ -77,6 +80,7 @@ const DataRow = React.memo(function DataRow({
   selected,
   searchTerm,
   activeMatchCol,
+  cellPadding,
   onSelect,
 }: DataRowProps) {
   return (
@@ -100,7 +104,7 @@ const DataRow = React.memo(function DataRow({
           <td
             key={index}
             title={mayTruncate && cellValueStr !== null ? cellValueStr : undefined}
-            className={`px-4 py-2.5 text-sm border-r whitespace-nowrap overflow-hidden text-ellipsis border-slate-100 dark:border-gray-700 ${activeMatchCol === index
+            className={`px-4 ${cellPadding} text-sm border-r whitespace-nowrap overflow-hidden text-ellipsis border-slate-100 dark:border-gray-700 ${activeMatchCol === index
               ? 'bg-orange-200'
               : hasSearchMatch
                 ? 'bg-yellow-100'
@@ -135,6 +139,7 @@ export const DataTable = React.memo(function DataTable({
   searchMatches,
   currentMatchIndex,
   typeDisplay,
+  density,
   scrollerRef,
 }: DataTableProps) {
   const typeLabels = useMemo(
@@ -218,7 +223,7 @@ export const DataTable = React.memo(function DataTable({
               <th
                 key={index}
                 title={name}
-                className={`px-4 py-3 text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : ''
+                className={`px-4 ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : ''
                   }`}
               >
                 <div className="font-semibold">
@@ -244,6 +249,7 @@ export const DataTable = React.memo(function DataTable({
               selected={selectedRow === rowIndex}
               searchTerm={searchTerm}
               activeMatchCol={activeMatch && activeMatch.rowIndex === rowIndex ? activeMatch.colIndex : -1}
+              cellPadding={ROW_DENSITY_CLASSES[density].cell}
               onSelect={onSelectRow}
             />
           ))}

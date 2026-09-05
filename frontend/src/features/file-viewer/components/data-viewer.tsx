@@ -434,6 +434,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
               searchMatches={searchMatches}
               currentMatchIndex={currentMatchIndex}
               typeDisplay={settings.typeDisplay || 'logical'}
+              density={settings.rowDensity}
               scrollerRef={tableContainerRef}
             />
 
