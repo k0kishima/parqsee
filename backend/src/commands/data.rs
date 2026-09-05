@@ -1,24 +1,21 @@
 use crate::commands::guarded;
 use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
-use crate::services::store::License;
 use crate::services::{export, parquet};
 use std::sync::Arc;
 
-// The commands that hand out rows check the license first (see
-// `services::store`): the webview renders the lock but cannot lift it.
+// No license check here: the free tier reads rows like the full version
+// (see `services::store`); what it limits is enforced in the webview.
 
 #[tauri::command]
 pub async fn read_parquet_data(
     cache: tauri::State<'_, ParquetCache>,
-    license: tauri::State<'_, Arc<License>>,
     path: String,
     offset: usize,
     limit: usize,
     filter: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
     guarded("Reading the page", async {
-        license.require_unlocked().await?;
         parquet::read_data(&cache, &path, offset, limit, filter).await
     })
     .await
@@ -27,12 +24,10 @@ pub async fn read_parquet_data(
 #[tauri::command]
 pub async fn count_parquet_data(
     cache: tauri::State<'_, ParquetCache>,
-    license: tauri::State<'_, Arc<License>>,
     path: String,
     filter: Option<String>,
 ) -> Result<usize, String> {
     guarded("Counting rows", async {
-        license.require_unlocked().await?;
         parquet::count_data(&cache, &path, filter).await
     })
     .await
@@ -52,7 +47,6 @@ pub async fn evict_cache(
 pub async fn export_data(
     cache: tauri::State<'_, ParquetCache>,
     access: tauri::State<'_, Arc<FileAccess>>,
-    license: tauri::State<'_, Arc<License>>,
     source_path: String,
     export_path: String,
     format: String,
@@ -61,7 +55,6 @@ pub async fn export_data(
     filter: Option<String>,
 ) -> Result<usize, String> {
     guarded("The export", async {
-        license.require_unlocked().await?;
         let rows = export::export_data(
             &cache,
             source_path,

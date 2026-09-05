@@ -163,8 +163,8 @@ pub fn run() {
             app.manage(Arc::clone(&access));
             app.manage(ParquetCache::with_access(access));
 
-            // The trial / purchase state. Read in the background; commands
-            // that need it wait for the first read (`License::status`).
+            // The purchase state. Read in the background; `iap_status` waits
+            // for the first read (`License::status`).
             // A transaction update from the store reaches the webview as
             // the `iap-status` event.
             let license = Arc::new(License::new(store_provider()));
@@ -212,8 +212,7 @@ pub fn run() {
             commands::iap::iap_status,
             commands::iap::iap_products,
             commands::iap::iap_purchase,
-            commands::iap::iap_restore,
-            commands::iap::quit_app
+            commands::iap::iap_restore
         ])
         .on_window_event(|window, event| {
             // Forward the drop to the frontend. This callback runs outside

@@ -3,17 +3,7 @@ import type { IapState } from "./IapState";
 
 export type IapStatus = { state: IapState, 
 /**
- * Unix time in milliseconds when the trial ends (or ended), once one
- * was started; the banner and the paywall count down from it.
- */
-trial_ends_at: number | null, 
-/**
- * The trial length the backend enforces, so the screens quote the
- * same number.
- */
-trial_days: number, 
-/**
- * Set when the entitlements could not be read from the App Store;
- * the app is locked until they can be.
+ * Set when the entitlements could not be read from the App Store; the
+ * app is then on the free tier and the screens can say why.
  */
 store_error: string | null, };
