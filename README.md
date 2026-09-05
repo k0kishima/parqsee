@@ -1,170 +1,143 @@
 # Parqsee
 
-A fast and simple Parquet file viewer built with Tauri v2, React, and TypeScript.
+A fast, native viewer for [Apache Parquet](https://parquet.apache.org/) files
+on macOS. Open a file, page through the rows, filter and search them, run SQL
+over the file, export what you found — on your machine, with no notebook, no
+cluster and no upload.
 
-## Features
+**[parqsee site](https://k0kishima.github.io/parqsee/)** ·
+[Privacy](https://k0kishima.github.io/parqsee/privacy.html) ·
+[Support](https://k0kishima.github.io/parqsee/support.html)
 
-- 🚀 **Fast Performance** - Native Rust backend for blazing fast file processing
-- 📁 **File Explorer** - VSCode-style sidebar with directory navigation
-- 📑 **Multi-Tab Support** - Open multiple Parquet files simultaneously
-- 🔍 **Search & Filter** - Full-text search across data with highlighting
-- 📊 **Column Sorting** - Sort data by any column (ascending/descending)
-- 🎨 **Dark Mode** - Full dark/light theme support
-- 🔄 **Pagination** - Efficient handling of large datasets
-- 📋 **Recent Files** - Quick access to recently opened files
-- ⌨️ **Keyboard Shortcuts** - Cmd+F for search, Cmd+W to close tabs
-- 🎯 **Drag & Drop** - Simple file opening by dragging files to the window
+![Parqsee showing a Parquet file: a folder of files in the sidebar, the rows in a table with their column types, a filter bar and pagination](site/img/screenshot-en-light.png)
 
-## Quick Start
+- **Fast on large files** — a Rust backend on Arrow and Parquet reads a page by
+  skipping the row groups before it, so tens of millions of rows page as
+  quickly as a small file.
+- **Real types** — every column shows its Parquet type; decimals, 64-bit
+  integers and non-finite floats are rendered as stored, not rounded through a
+  JavaScript number.
+- **Filter and search** — conditions over any column, or a search across the
+  page you are looking at. Adding a filter never reorders the rows.
+- **SQL over the file** — the open file is table `t`; run a read-only
+  DataFusion query and read the result in the same grid.
+- **Export** — the whole file, the current page or the filtered rows to CSV or
+  JSON, streamed at constant memory.
+- **Tabs and a file explorer** — open a folder and browse its Parquet files;
+  the open tabs come back at the next launch with their page and filter.
+- **Opens from Finder** — double-click a `.parquet` file, or drop it on the
+  window or the Dock icon.
+- **Dark mode, English and Japanese**, following the system appearance.
+- **Offline by construction** — no network requests, no account, no telemetry.
 
-### Prerequisites
+## Install
 
-- [Node.js](https://nodejs.org/) (version 18 or higher)
-- [pnpm](https://pnpm.io/) (package manager)
-- [Rust](https://rustup.rs/) (latest stable version)
+Parqsee is coming to the Mac App Store; until then, build it from source (see
+[Development](#development)). It requires **macOS 12 or later** and runs on
+Apple silicon and Intel.
 
-#### Installing pnpm
-
-If you don't have pnpm installed:
-
-```bash
-npm install -g pnpm
-```
-
-#### Installing Rust
-
-If you don't have Rust installed, run the following command:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/k0kishima/parqsee.git
-   cd parqsee
-   ```
-
-2. **Install dependencies**
-   Navigate to the frontend directory and install dependencies:
-   ```bash
-   cd frontend
-   pnpm install
-   ```
-
-3. **Run the application**
-   From the `frontend` directory:
-   ```bash
-   pnpm tauri dev
-   ```
-
-The application will start in development mode and open automatically.
-
-### Building for Production
-
-From the `frontend` directory:
-
-```bash
-pnpm tauri build
-```
-
-This produces `backend/target/release/bundle/macos/Parqsee.app` (note: backend artifacts are stored in `backend/target`, not `src-tauri`). A disk image for direct distribution is not built by default — `pnpm tauri build --bundles dmg` makes one.
-
-The Mac App Store submission is `scripts/release/appstore.sh`: it builds the store variant (`pnpm tauri:store`, StoreKit linked) as a universal binary — run `rustup target add x86_64-apple-darwin` once — signs it with the Mac App Store profile and the Apple Distribution identity from the `APPLE_*` variables in its header, wraps it into a `.pkg` with `productbuild`, and with `--upload` validates and uploads it through `xcrun altool`. `scripts/release/appstore.sh --unsigned` makes the same package without any certificate, for a look at what the store gets.
+On the App Store it is free to download, with at most **3 files open at a
+time**; everything else — paging, filters, search, the SQL view, export — has
+no limit. A one-time in-app purchase removes the tab limit for good. There is
+no subscription and no license key.
 
 ## Usage
 
-### Opening Files
+### Opening files
 
-1. **Drag & Drop**: Drag a `.parquet` file onto the application window
-2. **File Browser**: Click "Open File" button or use Cmd+O
-3. **File Explorer**: Use the left sidebar to navigate and open files from directories
+- Drag a `.parquet` file onto the window, or double-click one in Finder.
+- ⌘O opens the file dialog, ⌘⇧O opens a folder in the explorer sidebar.
+- Recent files are on the start screen; so is a bundled sample file, for when
+  you have no Parquet file at hand.
 
-### Navigation
+### Around the window
 
-- **File Explorer**: Toggle with the hamburger menu (☰) button
-- **Tabs**: Click on tabs to switch between open files
-- **Search**: Press Cmd+F (Mac) or Ctrl+F (Windows/Linux) to search within data
-- **Sorting**: Click column headers to sort data (click again to reverse)
+- **File explorer** — toggle the sidebar with the hamburger menu (☰); the tree
+  is bounded by the folders you opened.
+- **Tabs** — one file per tab; ⌘W closes the active one.
+- **Content / Query** — the grid and the SQL view over the same file.
+- **Search** — ⌘F searches the page in view and highlights the hits.
 
-### Keyboard Shortcuts
+### Keyboard shortcuts
 
-- `Cmd+O` / `Ctrl+O` - Open file dialog
-- `Cmd+F` / `Ctrl+F` - Open search
-- `Cmd+W` / `Ctrl+W` - Close current tab
-- `Esc` - Close search or modals
-
-## Tech Stack
-
-### Frontend
-- **React 18.3** - UI framework
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS v4** - Utility-first CSS framework
-- **Vite** - Build tool and dev server
-- **Lucide React** - Modern icon library
-- **pnpm** - Fast, disk space efficient package manager
-
-### Backend
-- **Tauri v2** - Desktop app framework
-- **Rust** - Systems programming language
-- **Apache Arrow/Parquet** - For reading Parquet files
-
-## Project Structure
-
-This project follows a "Bulletproof React" architecture with a clear separation of frontend and backend.
-
-```
-parqsee/
-├── frontend/                 # React frontend source
-│   ├── src/
-│   │   ├── features/         # Feature-based groupings
-│   │   │   ├── file-viewer/  # Core viewer components & API
-│   │   │   ├── file-explorer/# File navigation components & API
-│   │   │   ├── settings/     # Settings components & API
-│   │   │   ├── welcome/      # Welcome screen
-│   │   │   └── layout/       # Shared layout components (TabBar etc.)
-│   │   ├── contexts/         # Global state (Settings, RecentFiles)
-│   │   ├── App.tsx           # Application shell & routing
-│   │   └── main.tsx          # Entry point
-│   ├── package.json          # Frontend dependencies
-│   └── vite.config.ts        # Vite config
-├── backend/                  # Rust backend source (formerly src-tauri)
-│   ├── src/
-│   │   ├── lib.rs            # Tauri command handlers
-│   │   └── main.rs           # Application entry point
-│   ├── Cargo.toml            # Rust dependencies
-│   └── tauri.conf.json       # Tauri configuration
-└── README.md
-```
+| | |
+|---|---|
+| ⌘O | Open a file |
+| ⌘⇧O | Open a folder in the explorer |
+| ⌘F | Search within the page |
+| ⌘W | Close the current tab |
+| ⌘, | Settings |
+| Esc | Close the search bar or a modal |
 
 ## Development
 
-### Available Scripts (in `frontend/` directory)
+### Prerequisites
 
-- `pnpm dev` - Start Vite dev server (web only)
-- `pnpm tauri dev` - Start Tauri development mode (full app)
-- `pnpm build` - Build frontend assets
-- `pnpm tauri build` - Build production desktop app
-- `tsc` - Run TypeScript compiler
+- [Node.js](https://nodejs.org/) 18 or later
+- [pnpm](https://pnpm.io/) — `npm install -g pnpm`
+- [Rust](https://rustup.rs/), latest stable —
+  `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
-### Adding Features
+### Run it
 
-1. **Frontend**: Create a new feature folder in `frontend/src/features/` with `components/`, `api/`, `hooks/`.
-2. **Backend**: Add Tauri commands in `backend/src/lib.rs`.
-3. **Integration**: Create wrapper functions in your feature's `api/index.ts` to call Tauri commands.
+```bash
+git clone https://github.com/k0kishima/parqsee.git
+cd parqsee/frontend
+pnpm install
+pnpm tauri dev
+```
 
-### Tauri Commands
+There is no root `package.json`: every npm script lives in `frontend/`, and
+the Rust side is `backend/` (its build artifacts land in `backend/target`, not
+`src-tauri`).
 
-The following commands are exposed from Rust to the frontend:
+### Building
 
-- `open_parquet_file(path: string)` - Opens and validates a Parquet file
-- `get_file_info(path: string)` - Returns file metadata
-- `read_parquet_data(path, offset, limit, sort_column?, sort_direction?)` - Reads paginated/sorted data
-- `list_directory(path: string)` - Lists files and directories for file explorer
-- `check_file_exists(path: string)` - Verifies file existence
-- `export_data(...)` - Exports Parquet data to CSV/JSON
+```bash
+cd frontend
+pnpm build         # the frontend alone
+pnpm tauri build   # -> backend/target/release/bundle/macos/Parqsee.app
+```
+
+`pnpm tauri build` produces the `.app` only; `pnpm tauri build --bundles dmg`
+makes a disk image for direct distribution.
+
+The Mac App Store submission is `scripts/release/appstore.sh`: it builds the
+store variant (`pnpm tauri:store`, StoreKit linked) as a universal binary —
+run `rustup target add x86_64-apple-darwin` once — signs it with the Mac App
+Store profile and the Apple Distribution identity from the `APPLE_*` variables
+in its header, wraps it into a `.pkg` with `productbuild`, and with `--upload`
+validates and uploads it through `xcrun altool`.
+`scripts/release/appstore.sh --unsigned` makes the same package without any
+certificate, for a look at what the store gets.
+
+### Tests
+
+```bash
+cd frontend && pnpm test        # Vitest
+cd backend  && cargo test --lib # Rust unit tests
+```
+
+`scripts/qa/e2e/` drives the real backend through Playwright WebKit (see its
+README), `docs/MANUAL_QA.md` holds what only the macOS shell can show, and
+`site/` is the product page published to GitHub Pages.
+
+## How it is put together
+
+- `frontend/` — React 18 + TypeScript + Tailwind v4 on Vite, one folder per
+  feature under `src/features/` (welcome, workspace, file-explorer,
+  file-viewer, query, layout, settings, license).
+- `backend/` — Tauri v2 and Rust: Arrow / Parquet and DataFusion behind
+  `src/commands/` and `src/services/`. All file I/O lives here; the webview
+  never touches the filesystem.
+- `scripts/` — the sample-file generator, the release and QA scripts, and the
+  end-to-end harness.
+- `site/` — the product page published to GitHub Pages.
+
+`CLAUDE.md` in the repository root is the maintained description of the
+architecture: the Tauri command table, the caching and paging design, the
+sandbox and bookmark rules, the free tier, and what each test suite covers.
+Read it before changing the backend.
 
 ## Troubleshooting
 
@@ -179,15 +152,20 @@ The following commands are exposed from Rust to the frontend:
    - Clear Cargo cache: `cargo clean` (inside `backend` directory)
 
 3. **File not opening**
-   - Ensure the file has `.parquet` extension
-   - Check file permissions
-   - Verify the file is not corrupted
+   - Ensure the file has a `.parquet` extension
+   - Check file permissions, and — on a sandboxed build — that the file was
+     opened or its folder added rather than reached by path
+   - The error shown is the one the Parquet reader returned; a file that fails
+     here is worth filing
 
 ### Performance Tips
 
-- For very large files (>1GB), consider using pagination settings
-- Use search to find specific data instead of scroll through all rows
-- Close unused tabs to free up memory
+- A release build is the one to judge speed by: `pnpm tauri dev` is a debug
+  build and scans roughly twenty times slower.
+- An unfiltered page is read by skipping row groups; a filter turns the page
+  into a DataFusion query, so a filter over a huge file is the slow case.
+- Close tabs you are done with: each one keeps a session and the file's
+  metadata cached.
 
 ## Contributing
 
