@@ -26,7 +26,7 @@
             "openSample": "Open the sample file"
         },
         "recentFiles": {
-            "empty": "No recent files yet. Open a Parquet file to see it here.",
+            "empty": "No recent files yet.",
             "remove": "Remove from recent files",
             "unavailable": "No longer available"
         },

@@ -26,7 +26,7 @@
       "openSample": "サンプルファイルを開く"
     },
     "recentFiles": {
-      "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
+      "empty": "最近開いたファイルはありません。",
       "remove": "履歴から削除",
       "unavailable": "見つかりません"
     },
