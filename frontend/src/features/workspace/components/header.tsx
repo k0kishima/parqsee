@@ -18,7 +18,13 @@ export const Header = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolde
     return (
         <div className="px-2 py-2 flex items-center border-b bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700">
             <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
-            <span className="ml-3 text-sm text-gray-500 dark:text-gray-400">{t('common.fileExplorer')}</span>
+            {/* The app name, not a label for what is below: with tabs this
+                spot is the tab strip, and the sidebar carries its own
+                "File Explorer" heading. Matches the Welcome screen's header. */}
+            <div className="ml-2 flex items-center gap-2">
+                <img src="/logo.png" alt="" className="w-5 h-5 rounded" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('common.appName')}</span>
+            </div>
             <div className="ml-auto">
                 <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
             </div>
