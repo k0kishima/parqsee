@@ -24,17 +24,23 @@
 //! `remove_root`. The last export folder is different: it is only ever
 //! resolved to tell the save panel where to start, and its grant ends
 //! within that call — the panel itself grants the write.
+//!
+//! The tabs of the last session ([`FileAccess::save_session`],
+//! [`FileAccess::session_tabs`]) add no lifecycle of their own: a restored
+//! tab is reopened through `ParquetCache` like any other, and `acquire`
+//! finds the tab's bookmark in the store when Recent Files no longer holds
+//! one for it.
 
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod store;
 
-use crate::models::{RecentFile, WorkspaceRoot};
+use crate::models::{RecentFile, SessionTab, SessionTabState, SessionTabs, WorkspaceRoot};
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use store::{BookmarkStore, ExportDirEntry, RecentEntry, RootEntry};
+use store::{BookmarkStore, ExportDirEntry, RecentEntry, RootEntry, SessionTabEntry};
 
 /// The platform's security-scoped bookmark primitives.
 pub trait BookmarkProvider: Send + Sync {
@@ -328,6 +334,22 @@ impl FileAccess {
         Ok(recent)
     }
 
+    /// Whether the file at `path` can be reached: its bookmark, when one is
+    /// recorded and not held, must resolve to the same path, and the file
+    /// must exist. Under the sandbox `exists` alone says nothing — `stat`
+    /// succeeds on paths the app cannot open — so the bookmark decides. A
+    /// grant taken for the probe ends with it.
+    fn probe(&self, state: &mut State, path: &str) -> bool {
+        if state.held.contains_key(path) {
+            return Path::new(path).exists();
+        }
+        match self.resolve_recorded(state, path) {
+            Ok(Some(resolved)) => resolved.path == Path::new(path) && resolved.path.exists(),
+            Ok(None) => Path::new(path).exists(),
+            Err(_) => false,
+        }
+    }
+
     /// Recent Files, newest first, each probed for availability.
     pub fn recent_files(&self) -> Vec<RecentFile> {
         let Ok(mut state) = self.lock() else {
@@ -337,17 +359,7 @@ impl FileAccess {
         entries
             .into_iter()
             .map(|entry| {
-                let available = if state.held.contains_key(&entry.path) {
-                    Path::new(&entry.path).exists()
-                } else {
-                    match self.resolve_recorded(&mut state, &entry.path) {
-                        Ok(Some(resolved)) => {
-                            resolved.path == Path::new(&entry.path) && resolved.path.exists()
-                        }
-                        Ok(None) => Path::new(&entry.path).exists(),
-                        Err(_) => false,
-                    }
-                };
+                let available = self.probe(&mut state, &entry.path);
                 RecentFile {
                     path: entry.path,
                     name: entry.name,
@@ -476,6 +488,79 @@ impl FileAccess {
             None => Some(PathBuf::from(&entry.path)),
         }?;
         dir.is_dir().then(|| dir.to_string_lossy().into_owned())
+    }
+
+    /// Record the open tabs, in order, and the active one, replacing the
+    /// last session. Each tab keeps a bookmark of its own so it reopens even
+    /// once Recent Files has forgotten the file — but never a second one
+    /// created for the same file: the bytes come from the recent entry, or
+    /// from the tab's previous session entry, and only a file recorded
+    /// nowhere gets one created (it is readable now, being open).
+    pub fn save_session(
+        &self,
+        tabs: Vec<(String, SessionTabState)>,
+        active: Option<String>,
+    ) -> Result<(), String> {
+        let mut state = self.lock()?;
+        let entries = tabs
+            .into_iter()
+            .map(|(path, tab_state)| {
+                let bookmark = match state.store.bookmark_for(&path) {
+                    Some(bytes) => Some(bytes.to_vec()),
+                    None => match self.provider.create(Path::new(&path)) {
+                        Ok(bookmark) => bookmark,
+                        Err(e) => {
+                            eprintln!("could not create a bookmark for the tab {path}: {e}");
+                            None
+                        }
+                    },
+                };
+                SessionTabEntry {
+                    name: display_name(&path),
+                    path,
+                    bookmark,
+                    state: tab_state,
+                }
+            })
+            .collect();
+        state.store.set_session(entries, active, now_ms());
+        self.save(&state)
+    }
+
+    /// The tabs of the last session, each probed for availability the way
+    /// Recent Files are; the webview reopens the available ones and names
+    /// the rest. The store is left as it is — the next `save_session`, once
+    /// the tabs are open again, is what drops the missing ones.
+    pub fn session_tabs(&self) -> SessionTabs {
+        let Ok(mut state) = self.lock() else {
+            return SessionTabs {
+                tabs: Vec::new(),
+                active: None,
+            };
+        };
+        let Some(session) = state.store.session.clone() else {
+            return SessionTabs {
+                tabs: Vec::new(),
+                active: None,
+            };
+        };
+        let tabs = session
+            .tabs
+            .into_iter()
+            .map(|entry| {
+                let available = self.probe(&mut state, &entry.path);
+                SessionTab {
+                    path: entry.path,
+                    name: entry.name,
+                    state: entry.state,
+                    available,
+                }
+            })
+            .collect();
+        SessionTabs {
+            tabs,
+            active: session.active,
+        }
     }
 
     pub fn roots(&self) -> Vec<WorkspaceRoot> {
@@ -956,5 +1041,161 @@ mod tests {
         assert_eq!(access.recent_files().len(), 1);
         access.clear_recent();
         assert!(access.recent_files().is_empty());
+    }
+
+    fn tab_state(page: u32) -> SessionTabState {
+        SessionTabState {
+            view_mode: Some("browse".into()),
+            current_page: Some(page),
+            active_filter: None,
+        }
+    }
+
+    #[test]
+    fn a_saved_session_reuses_the_recent_bookmark_and_comes_back_after_a_relaunch() {
+        let (dir, file) = fixture("session");
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_file(&file).unwrap();
+        access
+            .save_session(vec![(file.clone(), tab_state(3))], Some(file.clone()))
+            .unwrap();
+        assert_eq!(
+            fake.created(),
+            [file.clone()],
+            "the tab shares the recent entry's bookmark"
+        );
+        let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
+        assert_eq!(saved.session_tabs()[0].bookmark, saved.recent[0].bookmark);
+        assert_eq!(saved.session_tabs()[0].name, "a.parquet");
+
+        let relaunch = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(relaunch.clone()), Some(&dir));
+        let session = access.session_tabs();
+        assert_eq!(session.active.as_deref(), Some(file.as_str()));
+        assert_eq!(session.tabs.len(), 1);
+        assert_eq!(session.tabs[0].path, file);
+        assert_eq!(session.tabs[0].state, tab_state(3));
+        assert!(session.tabs[0].available);
+        assert_eq!(relaunch.starts(), 1, "probed through the bookmark");
+        assert_eq!(relaunch.stops(), 1, "the probe's grant ends with it");
+
+        // Reopened through the cache's normal path: the grant is held.
+        access.acquire(&file).unwrap();
+        assert_eq!(relaunch.active(), [file.clone()]);
+    }
+
+    #[test]
+    fn a_tab_forgotten_by_recent_files_reopens_from_its_own_bookmark() {
+        let (dir, file) = fixture("session-own-bookmark");
+        let other = s(&dir.join("data").join("b.parquet"));
+        std::fs::write(&other, b"parquet").unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_file(&file).unwrap();
+        // `other` was never remembered (say the recording failed): the save
+        // creates its bookmark, once.
+        access
+            .save_session(
+                vec![(file.clone(), tab_state(1)), (other.clone(), tab_state(1))],
+                None,
+            )
+            .unwrap();
+        access
+            .save_session(
+                vec![(other.clone(), tab_state(2)), (file.clone(), tab_state(1))],
+                Some(other.clone()),
+            )
+            .unwrap();
+        assert_eq!(fake.created(), [file.clone(), other.clone()]);
+        access.clear_recent();
+
+        let relaunch = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(relaunch.clone()), Some(&dir));
+        assert!(access.recent_files().is_empty());
+        let session = access.session_tabs();
+        assert_eq!(
+            session.tabs.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
+            [other.as_str(), file.as_str()],
+            "the last save's order"
+        );
+        assert!(session.tabs.iter().all(|t| t.available));
+        assert_eq!(session.active.as_deref(), Some(other.as_str()));
+        access.acquire(&file).unwrap();
+        access.acquire(&other).unwrap();
+        assert_eq!(relaunch.active(), {
+            let mut both = vec![file.clone(), other.clone()];
+            both.sort();
+            both
+        });
+    }
+
+    #[test]
+    fn a_session_tab_whose_bookmark_is_dead_or_whose_file_is_gone_is_unavailable() {
+        let (dir, file) = fixture("session-missing");
+        let other = s(&dir.join("data").join("b.parquet"));
+        std::fs::write(&other, b"parquet").unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_file(&file).unwrap();
+        access.remember_file(&other).unwrap();
+        access
+            .save_session(
+                vec![(file.clone(), tab_state(1)), (other.clone(), tab_state(1))],
+                Some(file.clone()),
+            )
+            .unwrap();
+
+        let relaunch = FakeBookmarks::default();
+        relaunch.revoke(&file);
+        let access = FileAccess::load(Box::new(relaunch.clone()), Some(&dir));
+        let session = access.session_tabs();
+        assert_eq!(
+            session.tabs.iter().map(|t| t.available).collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert_eq!(
+            session.active.as_deref(),
+            Some(file.as_str()),
+            "the store is reported as it is; the webview picks another tab"
+        );
+        assert_eq!(relaunch.stops(), relaunch.starts(), "probes hold nothing");
+        assert_eq!(
+            BookmarkStore::load_from(&dir.join("bookmarks.json"))
+                .session_tabs()
+                .len(),
+            2,
+            "listing does not prune"
+        );
+
+        // The webview reopens what it could and saves that.
+        access
+            .save_session(vec![(other.clone(), tab_state(1))], Some(other.clone()))
+            .unwrap();
+        let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
+        assert_eq!(saved.session_tabs().len(), 1);
+        assert_eq!(saved.session_tabs()[0].path, other);
+
+        // The bookmark resolves but the file itself is gone.
+        std::fs::remove_file(&other).unwrap();
+        let access = FileAccess::load(Box::new(FakeBookmarks::default()), Some(&dir));
+        assert!(!access.session_tabs().tabs[0].available);
+    }
+
+    #[test]
+    fn without_bookmarks_the_session_is_kept_by_path_alone() {
+        let (dir, file) = fixture("session-noop");
+        let access = FileAccess::load(Box::new(NoopBookmarks), Some(&dir));
+        access
+            .save_session(vec![(file.clone(), tab_state(1))], Some(file.clone()))
+            .unwrap();
+        let access = FileAccess::load(Box::new(NoopBookmarks), Some(&dir));
+        assert!(access.session_tabs().tabs[0].available);
+        std::fs::remove_file(&file).unwrap();
+        assert!(!access.session_tabs().tabs[0].available);
+
+        let disabled = FileAccess::disabled();
+        disabled.save_session(Vec::new(), None).unwrap();
+        assert!(disabled.session_tabs().tabs.is_empty());
     }
 }
