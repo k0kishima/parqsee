@@ -70,7 +70,9 @@ From the `frontend` directory:
 pnpm tauri build
 ```
 
-This produces `backend/target/release/bundle/macos/Parqsee.app` (note: backend artifacts are stored in `backend/target`, not `src-tauri`). The App Store submission wraps that `.app` in a `.pkg` with `productbuild`; a disk image for direct distribution is not built by default — `pnpm tauri build --bundles dmg` makes one.
+This produces `backend/target/release/bundle/macos/Parqsee.app` (note: backend artifacts are stored in `backend/target`, not `src-tauri`). A disk image for direct distribution is not built by default — `pnpm tauri build --bundles dmg` makes one.
+
+The Mac App Store submission is `scripts/release/appstore.sh`: it builds the store variant (`pnpm tauri:store`, StoreKit linked) as a universal binary — run `rustup target add x86_64-apple-darwin` once — signs it with the Mac App Store profile and the Apple Distribution identity from the `APPLE_*` variables in its header, wraps it into a `.pkg` with `productbuild`, and with `--upload` validates and uploads it through `xcrun altool`. `scripts/release/appstore.sh --unsigned` makes the same package without any certificate, for a look at what the store gets.
 
 ## Usage
 
