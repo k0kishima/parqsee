@@ -6,7 +6,7 @@ import { RecentFilesProvider } from '../RecentFilesContext';
 import { SettingsProvider } from '../SettingsContext';
 import { evictCacheQuietly, openParquetFile } from '../../features/file-viewer/api';
 import { open } from '@tauri-apps/plugin-dialog';
-import { addWorkspaceRoot, listWorkspaceRoots, removeWorkspaceRoot, listSessionTabs, saveSession } from '../../features/workspace/api';
+import { addWorkspaceRoot, listWorkspaceRoots, removeWorkspaceRoot, listSessionTabs, saveSession, takePendingFiles } from '../../features/workspace/api';
 import type { SessionTab } from '../../features/workspace/api';
 import { rememberFile, removeRecentFile } from '../../features/welcome/api';
 import { checkFileExists } from '../../features/file-viewer/api';
@@ -22,6 +22,7 @@ vi.mock('../../features/workspace/api', () => ({
   removeWorkspaceRoot: vi.fn(async () => undefined),
   listSessionTabs: vi.fn(async () => ({ tabs: [], active: null })),
   saveSession: vi.fn(async () => undefined),
+  takePendingFiles: vi.fn(async () => [] as string[]),
 }));
 // The license gates the restore; here the app is always unlocked.
 vi.mock('../LicenseContext', () => ({ useLicense: () => ({ usable: true }) }));
@@ -400,5 +401,100 @@ describe('WorkspaceProvider session', () => {
       [{ path: '/data/b.parquet', state: { view_mode: null, current_page: null, active_filter: null } }],
       '/data/b.parquet',
     );
+  });
+});
+
+// Files opened from Finder, the Dock or `open -a`: the backend buffers them
+// until the webview asks, and hands over later ones as `file-drop` events
+// (see `services::opened` and `deliver_opened` in lib.rs).
+describe('WorkspaceProvider files handed over at launch', () => {
+  const sessionTab = (path: string): SessionTab => ({
+    path,
+    name: path.split('/').pop()!,
+    state: { view_mode: null, current_page: null, active_filter: null },
+    available: true,
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.useFakeTimers();
+    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    vi.mocked(takePendingFiles).mockReset().mockResolvedValue([]);
+    vi.mocked(openParquetFile).mockClear();
+    vi.mocked(rememberFile).mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function settle() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  }
+
+  it('opens what was handed over, and records it like any other open', async () => {
+    vi.mocked(takePendingFiles).mockResolvedValue(['/data/from finder.parquet']);
+    const { result } = renderWorkspace();
+    await settle();
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/from finder.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/from finder.parquet');
+    // The same path a manual open takes, so the bookmark is created too.
+    expect(openParquetFile).toHaveBeenCalledWith('/data/from finder.parquet');
+    expect(rememberFile).toHaveBeenCalledWith('/data/from finder.parquet');
+  });
+
+  it('opens it after the restored tabs and leaves it active', async () => {
+    vi.mocked(listSessionTabs).mockResolvedValue({
+      tabs: [sessionTab('/data/a.parquet'), sessionTab('/data/b.parquet')],
+      active: '/data/b.parquet',
+    });
+    vi.mocked(takePendingFiles).mockResolvedValue(['/data/c.parquet']);
+    const { result } = renderWorkspace();
+    await settle();
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/c.parquet');
+  });
+
+  it('does not ask before the restore has finished', async () => {
+    let finishRestore!: (value: { tabs: SessionTab[]; active: string | null }) => void;
+    vi.mocked(listSessionTabs).mockReturnValue(new Promise(resolve => { finishRestore = resolve; }));
+    vi.mocked(takePendingFiles).mockResolvedValue(['/data/c.parquet']);
+    const { result } = renderWorkspace();
+    await settle();
+
+    // The backend keeps buffering until we ask; asking early would race the
+    // restore for the active tab.
+    expect(takePendingFiles).not.toHaveBeenCalled();
+
+    await act(async () => { finishRestore({ tabs: [sessionTab('/data/a.parquet')], active: '/data/a.parquet' }); });
+    await settle();
+
+    expect(takePendingFiles).toHaveBeenCalledTimes(1);
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'c.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/c.parquet');
+  });
+
+  it('opens no tab for a file that is not a parquet', async () => {
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+    vi.mocked(takePendingFiles).mockResolvedValue(['/data/notes.csv']);
+    const { result } = renderWorkspace();
+    await settle();
+
+    expect(result.current.tabs).toEqual([]);
+    expect(openParquetFile).not.toHaveBeenCalled();
+    expect(window.alert).toHaveBeenCalledWith('Parqsee can only open .parquet files');
+  });
+
+  it('does nothing, and never asks twice, when nothing was handed over', async () => {
+    const { result } = renderWorkspace();
+    await settle();
+    await settle();
+
+    expect(takePendingFiles).toHaveBeenCalledTimes(1);
+    expect(result.current.tabs).toEqual([]);
   });
 });

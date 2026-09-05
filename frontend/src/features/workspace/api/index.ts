@@ -19,6 +19,15 @@ export const removeWorkspaceRoot = async (path: string): Promise<void> => {
     return await invoke('remove_workspace_root', { path });
 };
 
+/**
+ * The files Finder, the Dock or `open -a` handed the app before the webview
+ * was listening. Ask once at startup, after the `file-drop` listener is
+ * registered: from then on the backend emits those files instead.
+ */
+export const takePendingFiles = async (): Promise<string[]> => {
+    return await invoke('take_pending_files');
+};
+
 export type { SessionTab, SessionTabs, SessionTabInput };
 
 /**

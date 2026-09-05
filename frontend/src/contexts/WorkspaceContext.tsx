@@ -18,6 +18,7 @@ import {
     removeWorkspaceRoot as apiRemoveWorkspaceRoot,
     listSessionTabs,
     saveSession,
+    takePendingFiles,
 } from '../features/workspace/api';
 import {
     Tab,
@@ -335,30 +336,61 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
     }, [activeTabId, handleTabClose, openFileDialog, openFolderDialog]);
 
-    // File drop listener
-    useEffect(() => {
-        if (isTauri()) {
-            const unlisten = listen('file-drop', async (event: any) => {
-                const files: string[] = event.payload || [];
-                if (files.length > 0) {
-                    const parquetFiles = files.filter((f) => isParquetPath(f));
-                    if (parquetFiles.length === 0) {
-                        alert('Please drop a .parquet file');
-                        return;
-                    }
-                    // Every dropped file gets a tab; the last one opened is the
-                    // active one.
-                    for (const file of parquetFiles) {
-                        await openParquetFile(file);
-                    }
-                }
-            });
-
-            return () => {
-                unlisten.then(fn => fn());
-            };
+    /**
+     * Files the app is handed from outside the window: dropped on it, and
+     * opened from Finder, the Dock or `open -a` — both arrive as `file-drop`
+     * (see `deliver_opened` in lib.rs).
+     *
+     * Nothing here looks at the license. While the app is locked the router
+     * renders the gate over the Welcome screen and never mounts the
+     * workspace, so no page is read; the tab is simply there once it
+     * unlocks, which is what the user asked for by opening the file.
+     */
+    const openExternalFiles = useCallback(async (paths: string[]) => {
+        if (paths.length === 0) return;
+        const parquetFiles = paths.filter(isParquetPath);
+        if (parquetFiles.length === 0) {
+            alert('Parqsee can only open .parquet files');
+            return;
+        }
+        // Every file gets a tab; the last one opened is the active one.
+        for (const file of parquetFiles) {
+            await openParquetFile(file);
         }
     }, [openParquetFile]);
+    // Read by the listener below, which is registered once: re-registering
+    // it whenever the callback changes would reopen a window in which a file
+    // handed over by Finder is lost.
+    const openExternalFilesRef = useRef(openExternalFiles);
+    openExternalFilesRef.current = openExternalFiles;
+
+    // Drops and files opened from Finder while the app runs.
+    const [dropListenerReady, setDropListenerReady] = useState(!isTauri());
+    useEffect(() => {
+        if (!isTauri()) return;
+        const listening = listen<string[] | null>('file-drop', event => {
+            openExternalFilesRef.current(event.payload ?? []);
+        });
+        listening.then(() => setDropListenerReady(true));
+        return () => {
+            listening.then(fn => fn());
+        };
+    }, []);
+
+    // The files Finder handed the app at launch, before the listener above
+    // existed. Asked for once, and only after two things: the listener is
+    // registered (the backend emits instead of buffering from the moment of
+    // this call, and an open arriving in between would be lost), and the
+    // session restore has finished (so the file is opened last and stays the
+    // active tab rather than being pushed behind the restored ones).
+    const pendingAsked = useRef(false);
+    useEffect(() => {
+        if (!isTauri() || !dropListenerReady || !sessionReady || pendingAsked.current) return;
+        pendingAsked.current = true;
+        takePendingFiles()
+            .then(paths => openExternalFilesRef.current(paths))
+            .catch(error => console.error('Failed to read the files to open:', error));
+    }, [dropListenerReady, sessionReady]);
 
     const activeTab = activeTabOf(workspaceTabs);
 
