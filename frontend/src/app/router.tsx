@@ -3,24 +3,18 @@ import { useLicense } from '../contexts/LicenseContext';
 import { Workspace, RestoreNotice } from '../features/workspace';
 import { Welcome } from '../features/welcome';
 import { SettingsModal } from '../features/settings';
-import { LicenseGate } from '../features/license';
+import { UpgradePrompt } from '../features/license';
 
 export const AppRouter = () => {
     const {
         tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
-    const { screen } = useLicense();
-
-    // Locked (before the trial, or after it without the purchase): the
-    // Welcome screen stays underneath so it is obvious what the app is,
-    // and the gate is the only thing to interact with. The tabs, if any,
-    // stay in the workspace context and come back once it unlocks.
-    const locked = screen === 'pretrial' || screen === 'paywall';
+    const { upgradeOpen } = useLicense();
 
     return (
         <>
-            {!locked && (tabs.length > 0 || roots.length > 0) ? (
+            {tabs.length > 0 || roots.length > 0 ? (
                 <Workspace />
             ) : (
                 <Welcome
@@ -31,14 +25,13 @@ export const AppRouter = () => {
                 />
             )}
 
-            {locked ? (
-                <LicenseGate mode={screen} />
-            ) : (
-                <SettingsModal
-                    isOpen={isSettingsOpen}
-                    onClose={() => toggleSettings(false)}
-                />
-            )}
+            <SettingsModal
+                isOpen={isSettingsOpen}
+                onClose={() => toggleSettings(false)}
+            />
+
+            {/* Over either screen: the free tier's limit was hit, or Upgrade was clicked. */}
+            {upgradeOpen && <UpgradePrompt />}
 
             {/* Shown over either screen: the whole session may have failed to come back. */}
             {restoreNotice && (

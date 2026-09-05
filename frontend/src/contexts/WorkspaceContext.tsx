@@ -3,7 +3,6 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { useSettings } from './SettingsContext';
-import { useLicense } from './LicenseContext';
 import { isTauri } from '../lib/tauri';
 import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
@@ -98,12 +97,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
     const { settings } = useSettings();
-    const { usable } = useLicense();
     // Read once: the setting decides what happens at launch, not later.
-    // A locked app (no trial yet, or an expired one) restores nothing:
-    // the backend would refuse every page read, and the paywall covers
-    // the Welcome screen anyway.
-    const restoreOnLaunch = useRef(settings.restoreTabs && usable);
+    const restoreOnLaunch = useRef(settings.restoreTabs);
     const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
     // Saving starts once the restore has finished (or was skipped): the
     // empty workspace of the first render must not overwrite the store.

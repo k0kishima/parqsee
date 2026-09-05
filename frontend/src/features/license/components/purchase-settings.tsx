@@ -4,31 +4,26 @@ import { useTranslation } from 'react-i18next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useLicense } from '../../../contexts/LicenseContext';
 import { isTauri } from '../../../lib/tauri';
+import { FREE_TAB_LIMIT } from '../lib/license';
 
 /** Apple's purchase history, where a purchase can be reviewed or reported. */
 const PURCHASE_HISTORY_URL = 'https://reportaproblem.apple.com/';
 
 /**
- * Settings → Purchase: the state in one line, Buy / Restore while the app
- * is not unlocked, and the way to Apple's purchase history.
+ * Settings → Purchase: the state in one line, Buy / Restore while on the
+ * free tier, and the way to Apple's purchase history.
  */
 export function PurchaseSettings() {
     const { t } = useTranslation();
-    const { status, daysLeft, products, product, loadProducts, busy, error, pending, buy, restore } = useLicense();
+    const { status, unlocked, products, product, loadProducts, busy, error, pending, buy, restore } = useLicense();
 
     useEffect(() => {
-        if (products === null && status.state !== 'unlocked') loadProducts();
-    }, [products, status.state, loadProducts]);
+        if (products === null && !unlocked) loadProducts();
+    }, [products, unlocked, loadProducts]);
 
-    const full = product('full');
-    const line = (() => {
-        switch (status.state) {
-            case 'unlocked': return t('license.settings.unlocked');
-            case 'trial': return t('license.settings.trial', { count: daysLeft });
-            case 'trial_expired': return t('license.settings.expired');
-            case 'none': return t('license.settings.none');
-        }
-    })();
+    const line = unlocked
+        ? t('license.settings.unlocked')
+        : t('license.settings.free', { count: FREE_TAB_LIMIT });
 
     const openHistory = () => {
         if (!isTauri()) return;
@@ -47,10 +42,10 @@ export function PurchaseSettings() {
                         {t('license.storeError', { reason: status.store_error })}
                     </p>
                 )}
-                {status.state !== 'unlocked' && (
+                {!unlocked && (
                     <div className="flex flex-wrap items-center gap-2">
                         <button onClick={buy} disabled={busy !== null} className="btn-primary disabled:opacity-50">
-                            {full ? t('license.buyFor', { price: full.display_price }) : t('license.buy')}
+                            {product ? t('license.buyFor', { price: product.display_price }) : t('license.buy')}
                         </button>
                         <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
                             {t('license.restore')}
