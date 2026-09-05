@@ -12,7 +12,9 @@ do not re-check those by hand.
 - Before tagging a release.
 - After touching `build_menu` in `backend/src/lib.rs`, `backend/capabilities/`,
   `backend/Entitlements.plist`, `backend/src/services/access/`,
-  `backend/storekit/`, `backend/src/services/store/`, any
+  `backend/storekit/`, `backend/src/services/store/`,
+  `bundle.fileAssociations` in `backend/tauri.conf.json`, the
+  `RunEvent::Opened` handler in `backend/src/lib.rs`, any
   `tauri-plugin-*` dependency, or the Tauri version — those are the things
   that silently break the items below.
 
@@ -164,14 +166,15 @@ around ten items or nobody will run it.
 | Expected | After the first relaunch the sidebar shows the fixtures tree without asking, the subfolder lists, and every Recent Files entry opens — including the dropped and the ⌘O-picked file, which no folder covers. The tabs are back in the same order with `dict.parquet` active, `multi_rowgroup.parquet` on page 2 and `one_row.parquet` in the Query view, and Recent Files is in the same order as before the quit (a restore does not count as an open). The save panel opens in the folder you exported into before quitting. After the move and the delete, the moved `dict.parquet` copy still opens from Recent Files (the bookmark follows the file) and its tab is back; `numeric.parquet` shows *No longer available* in Recent Files (on click, an alert and then it disappears) and its tab is not restored: a one-line notice at the bottom names the file (*1 file from the last session could not be reopened*), goes away on ✕, and does not come back on the next relaunch. With the setting off the app launches on the welcome screen (the folder is still restored, so the tree is there). `ls ~/Library/Containers/llc.fuji.parqsee/Data/Library/Application\ Support/llc.fuji.parqsee/bookmarks.json` exists, its root and recent entries carry a `bookmark`, `session.tabs[*]` carry one each (the same bytes as the recent entry for the same file) with their `state`, and `last_export` holds the export folder (its `bookmark` is expected to be `null`: the save panel grants the file, not the folder). |
 | Why manual | Security-scoped bookmarks and their grants only exist under the App Sandbox, which only the signed release bundle runs in; the harness's bridge is unsandboxed and records none. |
 
-### MQ-9 · Opening from Finder (known gap)
+### MQ-9 · Opening from Finder
 
 | | |
 |---|---|
-| Fixture | any file |
-| Steps | Double-click a `.parquet` in Finder; drop one on the Dock icon. |
-| Expected | **Currently nothing happens** — the bundle declares no document types and there is no `RunEvent::Opened` handler. Record the result so the release notes can state it; update this expectation once the association ships. |
-| Why manual | Launch Services integration. |
+| Fixture | `scripts/qa/fixtures/paths/sp ace.parquet`, `pct%20.parquet`, `hash#1.parquet` and `日本語ファイル.parquet`; `multi_rowgroup.parquet` |
+| Steps | Run `plutil -p backend/target/release/bundle/macos/Parqsee.app/Contents/Info.plist \| grep -A 8 CFBundleDocumentTypes`. Quit the app (`osascript -e 'quit app "Parqsee"'`) and **cold start** it three ways, one per file from `paths/`, quitting in between: double-click the file in Finder; drop it on the Dock icon; `open -a Parqsee '<path>'`. With the app running (**warm start**), double-click `日本語ファイル.parquet`, then minimize the window and `open -a Parqsee <path to multi_rowgroup.parquet>`. Right-click a `.parquet` in Finder → *Open With*. Finally quit, relaunch, and open the first file again from Recent Files. |
+| Expected | The Info.plist lists a `CFBundleDocumentTypes` entry with `CFBundleTypeExtensions = (parquet)` and `CFBundleTypeRole = Viewer`. Each cold start opens the window on that file with the grid filled — the names with a space, a `%`, a `#` and Japanese characters all open, since the URL is converted with `Url::to_file_path` and not by string surgery. A cold start that flashes and disappears is the regression to watch for: `RunEvent::Opened` arrives before `RunEvent::Ready`, so anything the handler expects the setup hook to have prepared panics inside an Objective-C callback and aborts the process (`pgrep -f MacOS/parqsee` empty a second after `open`, an `.ips` in `~/Library/Logs/DiagnosticReports`). A warm start adds a tab for the file and makes it the active one, without disturbing the tabs already open; the minimized window comes back to the front. Finder offers Parqsee in *Open With* for `.parquet` files. After the relaunch the first file is in Recent Files and opens from it — the Finder open went through `remember_file`, so its bookmark exists (this is the part the sandbox breaks if `RunEvent::Opened` ever grows its own access path). |
+| Why manual | Launch Services integration: only the installed bundle's `Info.plist` is read by Finder and the Dock, and only a real launch raises `RunEvent::Opened`. |
+| Pitfalls | Most of this can be judged without looking at the window: the container's `bookmarks.json` (see [How to run](#how-to-run)) gains the file in `recent` with a `bookmark`, and `session.tabs`/`session.active` show the order and which tab is active. `open` reuses a running Parqsee, so a cold start needs the quit first (and *Quit* really quits: the app has no menu-bar item left behind). If Finder still opens the old handler after you replace the `.app`, re-register it: `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f backend/target/release/bundle/macos/Parqsee.app`. If Finder does not offer Parqsee at all, `.parquet` has no system UTI and the extension-only declaration was not enough — add an `exportedType` (`UTExportedTypeDeclarations`) to `bundle.fileAssociations` and rebuild. Do not check any of this over a locked screen: `screencapture` returns black and System Events cannot see the window. |
 
 ### MQ-10 · Gatekeeper on another Mac
 
@@ -212,7 +215,7 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-6 Large file
 - [ ] MQ-7 Window and appearance
 - [ ] MQ-8 Sandbox: folders, recent files and tabs survive a restart
-- [ ] MQ-9 Opening from Finder (known gap)
+- [ ] MQ-9 Opening from Finder
 - [ ] MQ-10 Gatekeeper on another Mac
 - [ ] MQ-11 Sandbox entitlements and file access
 - [ ] MQ-12 StoreKit sandbox: trial and purchase

@@ -32,6 +32,13 @@ so the trial screens never appear here and the row commands are never
 refused. The trial and the purchase are checked by hand on the store build
 (`docs/MANUAL_QA.md`, MQ-12).
 
+`launch({ pendingFiles })` acts out a cold start from Finder: the harness has
+no Tauri event loop to raise `RunEvent::Opened`, so the paths are seeded into
+the bridge's `PendingOpen` (`PARQSEE_PENDING_FILES`) and the frontend drains
+them with `take_pending_files` as it does at launch. A warm start — the file
+opened while the window is up — is `finderOpen(page, paths)`, the `file-drop`
+event `deliver_opened` emits. S12 covers both.
+
 Workspace roots, recent files and the session (the open tabs) live in the
 bridge's store (`bookmarks.json` under `PARQSEE_DATA_DIR`). `launch()` gives
 every run a fresh directory under `out/data/`; pass the same `dataDir` to two

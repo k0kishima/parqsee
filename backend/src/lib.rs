@@ -3,6 +3,7 @@ pub mod models;
 pub mod services;
 
 use services::access::FileAccess;
+use services::opened::PendingOpen;
 use services::parquet::ParquetCache;
 use services::store::{License, StoreProvider};
 use std::sync::Arc;
@@ -79,6 +80,43 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])
 }
 
+/// Hand the files macOS was asked to open with the app (a double-click in
+/// Finder, a drop on the Dock icon, `open -a Parqsee …`) to the webview as
+/// the `file-drop` event a drag and drop uses — or buffer them when it is
+/// not listening yet, which is what a cold start looks like: the event
+/// arrives while the window is still loading. `PendingOpen` decides which,
+/// and `take_pending_files` hands the buffered ones over.
+///
+/// Runs in the event loop, outside `commands::guarded`, so nothing here may
+/// panic — and a panic here is not even an error the webview could show: it
+/// happens inside an Objective-C callback, cannot unwind through it, and
+/// aborts the process. That is what a cold start did while `PendingOpen`
+/// was managed from the setup hook: macOS delivers `application:openURLs:`
+/// before `applicationDidFinishLaunching`, so this runs before
+/// `RunEvent::Ready` — which is where Tauri runs `setup` — and `state()`
+/// panicked on a store that had nothing in it yet. `PendingOpen` is managed
+/// before the event loop starts for that reason, and this asks for it
+/// without insisting.
+#[cfg(target_os = "macos")]
+fn deliver_opened(app: &tauri::AppHandle, urls: &[tauri::Url]) {
+    let paths = services::opened::file_paths(urls);
+    let Some(pending) = app.try_state::<Arc<PendingOpen>>() else {
+        eprintln!("no place to keep the files to open: {:?}", paths);
+        return;
+    };
+    let Some(paths) = pending.deliver(paths) else { return };
+    if let Err(e) = app.emit("file-drop", &paths) {
+        eprintln!("failed to forward the files to open: {}", e);
+    }
+    // The app is activated by Launch Services, but its window may have been
+    // minimized or hidden; the file is of no use behind that.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// The platform's security-scoped bookmarks; see `services::access`.
 fn bookmark_provider() -> Box<dyn services::access::BookmarkProvider> {
     #[cfg(target_os = "macos")]
@@ -106,7 +144,7 @@ fn store_provider() -> Box<dyn StoreProvider> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -159,6 +197,7 @@ pub fn run() {
             commands::file::list_recent_files,
             commands::file::remove_recent_file,
             commands::file::clear_recent_files,
+            commands::file::take_pending_files,
             commands::workspace::list_workspace_roots,
             commands::workspace::add_workspace_root,
             commands::workspace::remove_workspace_root,
@@ -186,6 +225,19 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        // Built rather than run so the event loop is ours: `RunEvent::Opened`
+        // is the only way to hear about a file opened from Finder.
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Not in `setup`: a file passed at launch reaches `deliver_opened`
+    // before Tauri runs the setup hook (see its comment).
+    app.manage(Arc::new(PendingOpen::new()));
+
+    app.run(|_app, _event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = &_event {
+            deliver_opened(_app, urls);
+        }
+    });
 }

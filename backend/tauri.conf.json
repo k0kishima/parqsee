@@ -31,6 +31,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["parquet"],
+        "name": "Parquet File",
+        "description": "Apache Parquet file",
+        "mimeType": "application/vnd.apache.parquet",
+        "role": "Viewer"
+      }
+    ],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "entitlements": "./Entitlements.plist",
