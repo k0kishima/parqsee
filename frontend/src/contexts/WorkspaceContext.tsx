@@ -82,6 +82,13 @@ interface WorkspaceContextType {
     /** Merge `patch` into the tab's state; send only the fields you own. */
     setTabState: (tabId: string, patch: Partial<TabState>) => void;
     activeTab: Tab | undefined;
+    /**
+     * False until the roots and the last session are both back. The router
+     * paints nothing before it: the first render has neither, so the app
+     * would show the Welcome screen, then the workspace, then the tabs —
+     * three layouts, none of them asked for.
+     */
+    isReady: boolean;
     /** Set once the launch-time restore skipped a file; cleared by `dismissRestoreNotice`. */
     restoreNotice: RestoreNotice | null;
     dismissRestoreNotice: () => void;
@@ -119,6 +126,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // Saving starts once the restore has finished (or was skipped): the
     // empty workspace of the first render must not overwrite the store.
     const [sessionReady, setSessionReady] = useState(!isTauri());
+    // The other half of what the first paint waits for; see `isReady`.
+    const [rootsReady, setRootsReady] = useState(!isTauri());
 
     // The roots the backend restored from its store (and re-acquired access
     // to, under the sandbox).
@@ -126,7 +135,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!isTauri()) return;
         listWorkspaceRoots()
             .then(setRoots)
-            .catch(error => console.error('Failed to list workspace roots:', error));
+            .catch(error => console.error('Failed to list workspace roots:', error))
+            .finally(() => setRootsReady(true));
     }, []);
 
     // The tabs of the last session. Each available one is opened through the
@@ -480,6 +490,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         toggleSettings: setIsSettingsOpen,
         setTabState: (tabId: string, patch: Partial<TabState>) => dispatch({ type: 'patchState', tabId, patch }),
         activeTab,
+        isReady: rootsReady && sessionReady,
         restoreNotice,
         dismissRestoreNotice: () => setRestoreNotice(null),
     };
