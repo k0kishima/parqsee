@@ -16,6 +16,7 @@ export const Workspace = () => {
         tabStates,
         roots,
         openParquetFile,
+        openSampleFile,
         closeTab,
         selectTab,
         toggleSidebar,
@@ -59,6 +60,7 @@ export const Workspace = () => {
                             onFileSelect={openParquetFile}
                             onBrowse={openFileDialog}
                             onOpenFolder={openFolderDialog}
+                            onOpenSample={openSampleFile}
                         />
                     </div>
                 ) : (

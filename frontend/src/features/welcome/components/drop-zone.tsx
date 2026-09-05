@@ -7,9 +7,11 @@ interface DropZoneProps {
     onFileSelect: (path: string) => void;
     onBrowse: () => void;
     onOpenFolder: () => void;
+    /** Open the sample file the app ships, for anyone with no Parquet file at hand. */
+    onOpenSample: () => void;
 }
 
-export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOpenFolder }) => {
+export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample }) => {
     const { t } = useTranslation();
     const [isDragging, setIsDragging] = useState(false);
 
@@ -101,6 +103,16 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOp
 
                 <p className="mt-6 text-xs text-slate-400 dark:text-gray-500">
                     {t('welcome.dropZone.hint')}
+                </p>
+                <p className="mt-2 text-xs text-slate-400 dark:text-gray-500">
+                    {t('welcome.dropZone.noFile')}{' '}
+                    <button
+                        type="button"
+                        onClick={onOpenSample}
+                        className="underline underline-offset-2 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                        {t('welcome.dropZone.openSample')}
+                    </button>
                 </p>
             </div>
 
