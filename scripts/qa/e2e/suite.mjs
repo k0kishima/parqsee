@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT } from './lib.mjs';
+import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT, ROOT } from './lib.mjs';
 
 const base = (p) => p.split('/').pop();
 
@@ -873,6 +873,49 @@ await scenario('S12-finder', async ({ page, bridge }) => {
   check('S12.notParquet', (await tabNames(page)).length === 3 && alerts.includes('Parqsee can only open .parquet files'), `tabs=${(await tabNames(page)).length} alerts=${JSON.stringify(alerts)}`);
   await page.screenshot({ path: `${OUT}/shots/S12.png` });
 }, { dataDir: S12_DATA, pendingFiles: [S12_JA] });
+
+// ---------------------------------------------------------------- S13 the bundled sample file
+// "Open the sample file" on the Welcome screen, for anyone with no Parquet
+// file at hand (App Store reviewers, #16). The bridge answers
+// `sample_file_path` with the checkout's backend/resources/sample.parquet —
+// the same bytes the bundle carries. A tab like any other, kept in the
+// session, but never in Recent Files.
+const S13_DATA = path.join(OUT, 'data', 's13');
+fs.rmSync(S13_DATA, { recursive: true, force: true });
+const S13_SAMPLE = path.join(ROOT, 'backend', 'resources', 'sample.parquet');
+
+await scenario('S13-sample', async ({ page, bridge }) => {
+  await openFile(page, `${FIX}/one_row.parquet`);
+  // From the workspace's welcome content (a folder is not needed: the
+  // welcome content also shows when tabs are closed), and from the Welcome
+  // screen proper — both carry the link.
+  await page.locator('[title="Close tab"]').first().click();
+  await page.locator('button:has-text("Open the sample file")').first().click();
+  await page.waitForFunction(() => [...document.querySelectorAll('h1')].some(h => h.textContent === 'sample.parquet' && h.offsetParent !== null), null, { timeout: 15000 });
+  await waitGrid(page);
+  check('S13.path', bridge.log.some(l => l.cmd === 'open_parquet_file' && l.args.path === S13_SAMPLE), `open_parquet_file paths: ${bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => l.args.path)}`);
+  check('S13.grid', (await summary(page))?.startsWith('1,500 rows') && (await footer(page))?.startsWith('Showing 1 to 50'), `summary=${await summary(page)} footer=${await footer(page)}`);
+  const cols = await visibleHeader(page);
+  check('S13.columns', cols[0] === 'order_id' && cols.includes('unit_price') && cols.includes('shipped_at'), `columns=${cols}`);
+  check('S13.notRecent', !bridge.log.some(l => l.cmd === 'remember_file' && l.args.path === S13_SAMPLE) && (await bridge.call('list_recent_files')).every(f => f.name !== 'sample.parquet'), `recent=${(await bridge.call('list_recent_files')).map(f => f.name)}`);
+
+  // Clicking the link again with the sample open only activates its tab.
+  await openFile(page, `${FIX}/one_row.parquet`);
+  await page.locator('span[title="' + S13_SAMPLE + '"]').click();
+  await page.waitForTimeout(200);
+  check('S13.oneTab', (await tabNames(page)).join(',') === 'sample.parquet,one_row.parquet', `tabs=${await tabNames(page)}`);
+  await page.waitForTimeout(600);
+  const saved = await bridge.call('list_session_tabs');
+  check('S13.session', sessionPaths(saved).join(',') === 'sample.parquet,one_row.parquet' && saved.active === S13_SAMPLE, `${sessionPaths(saved)} active=${saved.active}`);
+  await page.screenshot({ path: `${OUT}/shots/S13.png` });
+}, { dataDir: S13_DATA });
+
+await scenario('S13-sample-restore', async ({ page }) => {
+  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await waitGrid(page);
+  check('S13r.tabs', (await tabNames(page)).join(',') === 'sample.parquet,one_row.parquet' && (await activeTabName(page)) === 'sample.parquet', `tabs=${await tabNames(page)} active=${await activeTabName(page)}`);
+  check('S13r.grid', (await summary(page))?.startsWith('1,500 rows'), await summary(page));
+}, { dataDir: S13_DATA });
 
 console.log('\n\n===== SUMMARY =====');
 for (const r of results) console.log(`${r.status.padEnd(7)} ${r.id}  ${r.note ?? ''}`);
