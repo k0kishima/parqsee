@@ -56,6 +56,29 @@ pnpm large-file            # needs `uv run scripts/qa/gen_huge.py`; use a releas
 BRIDGE_BIN=../../../backend/target/release/examples/bridge pnpm suite
 ```
 
+### Checking the Content Security Policy
+
+The release app serves the webview under the CSP in `backend/tauri.conf.json`
+(`app.security.csp`); the Vite dev server sends none, so a violation — an
+inline `<style>`, a `data:` image, a font, a `setAttribute('style', …)` —
+breaks the release build only. `csp-server.mjs` serves the built frontend
+with that header so the suite runs under it:
+
+```sh
+cd frontend && pnpm build                 # -> frontend/dist
+cd scripts/qa/e2e && pnpm csp-server      # port 1421, reads the CSP from tauri.conf.json
+DEV_URL=http://localhost:1421/ pnpm suite # in another shell
+```
+
+WebKit reports a violation as a console error starting with `Refused to`,
+which the suite prints in the `page-errors` OBSERVE lines. One is expected
+and harmless: `Refused to apply a stylesheet … (:5)` right after a
+`page.screenshot()` — Playwright injects an inline `<style>` to hide the
+caret. Anything else is a real violation. Run this after adding inline
+styles/scripts, images, fonts or a new plugin. Only the release `.app`
+exercises `connect-src` (the IPC goes through the fake `__TAURI_INTERNALS__`
+here); that stays on `docs/MANUAL_QA.md` MQ-11.
+
 Output goes to `out/` (git-ignored): `shots/*.png`, `suite_results.json`,
 and the suite's export files. `BRIDGE_QUIET=1` silences the bridge's stderr.
 

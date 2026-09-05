@@ -50,7 +50,9 @@ This 1024x1024 PNG file is the source of truth for all platform-specific icons g
 
 If you are distributing the app independently (outside the App Store) and wish to restore the DMG background:
 1.  Place your background image at `backend/background.png`.
-2.  Uncomment/Add the `dmg` configuration block in `backend/tauri.conf.json`.
+2.  Uncomment/Add the `dmg` configuration block in `backend/tauri.conf.json`
+    and build with `pnpm tauri build --bundles dmg` (`bundle.targets` is
+    `["app"]`, the App Store shape; the CLI flag replaces it for that build).
 
 ```json
 "bundle": {

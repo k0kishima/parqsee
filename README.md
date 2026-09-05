@@ -70,7 +70,7 @@ From the `frontend` directory:
 pnpm tauri build
 ```
 
-This creates platform-specific installers in `backend/target/release/bundle/` (note: backend artifacts are stored in `backend/target`, not `src-tauri`).
+This produces `backend/target/release/bundle/macos/Parqsee.app` (note: backend artifacts are stored in `backend/target`, not `src-tauri`). The App Store submission wraps that `.app` in a `.pkg` with `productbuild`; a disk image for direct distribution is not built by default — `pnpm tauri build --bundles dmg` makes one.
 
 ## Usage
 
