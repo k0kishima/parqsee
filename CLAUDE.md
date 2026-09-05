@@ -13,8 +13,9 @@ It features:
 - Tabbed browsing with pagination, filtering and in-page search
 - SQL query view (DataFusion) over the open file
 - CSV / JSON export
-- Recent files history, persisted with security-scoped bookmarks so the
-  sandboxed App Store build can reopen them
+- Recent files history and the open tabs, persisted with security-scoped
+  bookmarks so the sandboxed App Store build can reopen them at the next
+  launch (tabs come back in order, with their view mode, page and filter)
 - Dark/light mode and English/Japanese localization
 
 ## Tech Stack
@@ -135,6 +136,8 @@ Argument names are camelCase on the JS side.
 | `list_workspace_roots` | `()` → `WorkspaceRoot[]` | The folders open in the explorer, restored at launch |
 | `add_workspace_root` | `(path)` → `WorkspaceRoot` | Open a folder (chosen in the folder dialog) as a root; bookmarked for the next launch |
 | `remove_workspace_root` | `(path)` → `void` | Close a root and release its access grant |
+| `list_session_tabs` | `()` → `SessionTabs` | The tabs of the last session in order, each with its saved state and `available` (bookmark resolves and the file exists), plus the active tab's path |
+| `save_session` | `(tabs, active?)` → `void` | Replace the saved session with the open tabs (`{path, state}` each) and the active one's path; written by the webview on change |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
@@ -235,6 +238,25 @@ because a native key equivalent beats the webview's keydown handler.
     and the bare path is kept, which works because the sandbox allows
     `stat` on paths it cannot read. It is resolved for the path only and no
     grant outlives the call.
+    The open tabs are recorded there too (`session`: path, bookmark, view
+    mode / page / filter per tab, and the active tab's path; `version`
+    stays 1, a store without `session` restores nothing). Each tab carries
+    its own bookmark because Recent Files is capped and can be cleared,
+    but `save_session` never creates a second one for a file: it copies
+    the recent entry's bytes or the tab's previous entry, and only creates
+    one for a file recorded nowhere. Restoring adds no lifecycle:
+    `WorkspaceContext` lists the session at launch (after the roots), skips
+    tabs that are not `available` — the bookmark must resolve; `exists`
+    alone is meaningless under the sandbox — reopens the rest through
+    `open_parquet_file` (so `acquire` on fill / `release` on evict apply as
+    for a manual open; `bookmark_for` falls back to the session entry), and
+    never calls `remember_file`, so Recent Files keeps its order. Skipped
+    files are named in a one-line notice; the next save drops them. The
+    webview saves 250 ms after a change to what the session keeps (not on
+    search, selection or scroll), flushes on `pagehide`, and writes nothing
+    before the restore has finished so the empty first render cannot erase
+    the store. The `restoreTabs` setting (localStorage, default on) only
+    gates the restore.
 
 ## Testing
 
@@ -244,15 +266,18 @@ context (tabs, roots, recent files), `lib/path`, `lib/column-widths` and
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN, the read-only SQL view, result truncation, export, and
-the bookmark store and access-grant lifecycle in `services/access` (with a
-fake provider; the real `NSURL` round trip has one macOS-only test).
+the bookmark store, the session entries and the access-grant lifecycle in
+`services/access` (with a fake provider; the real `NSURL` round trip has one
+macOS-only test). `cargo test --lib export_bindings` regenerates the ts-rs
+bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through
 `backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same
 service functions the commands call, over an unsandboxed store under
 `PARQSEE_DATA_DIR`). Run it after backend or frontend changes that touch
-paging, filters, export, the explorer, workspace roots, recent files or the
-SQL view — see its README for setup (`cargo build --example bridge`,
+paging, filters, export, the explorer, workspace roots, recent files, the
+session (S11: tabs back across a relaunch, a deleted file's tab skipped and
+named) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
