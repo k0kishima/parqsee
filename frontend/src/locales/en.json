@@ -33,7 +33,7 @@
         "features": {
             "performance": {
                 "title": "Fast",
-                "desc": "A native Rust backend — files open right away"
+                "desc": "Native Rust — files open right away"
             },
             "usability": {
                 "title": "Easy to Use",
