@@ -28,8 +28,8 @@ responses back, which is how the suite provokes out-of-order responses.
 
 The bridge has no App Store: `iap_status` answers `unlocked` (the same
 `AlwaysUnlocked` provider every build without the `app-store` feature uses),
-so the trial screens never appear here and the row commands are never
-refused. The trial and the purchase are checked by hand on the store build
+so the free tier's tab limit and the upgrade prompt never appear here. The
+free tier and the purchase are checked by hand on the store build
 (`docs/MANUAL_QA.md`, MQ-12).
 
 `launch({ pendingFiles })` acts out a cold start from Finder: the harness has

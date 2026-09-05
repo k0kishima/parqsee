@@ -13,7 +13,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     return (
         <SettingsProvider>
             {/* Renders nothing until the purchase state is known: the
-                workspace decides at mount whether to restore the session. */}
+                workspace needs the free tier's tab limit when it restores
+                the session at mount. */}
             <LicenseProvider>
                 <RecentFilesProvider>
                     <WorkspaceProvider>

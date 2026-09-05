@@ -1,26 +1,21 @@
-import { createContext, useContext, useEffect, useReducer, useCallback, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useReducer, useCallback, useRef, ReactNode } from 'react';
 import { isTauri, toErrorMessage } from '../lib/tauri';
 import {
     IapStatus,
     IapProduct,
-    IapProductKind,
     getIapStatus,
     listIapProducts,
     purchaseProduct,
     restorePurchases,
-    quitApp,
     onIapStatus,
 } from '../features/license/api';
-import { screenFor, isUsable, trialDaysLeft, msUntilTrialEnds, productOfKind, LicenseScreen } from '../features/license/lib/license';
+import { tabLimitFor, fullProduct } from '../features/license/lib/license';
 import { reduceLicense, INITIAL_LICENSE, LicenseAction } from '../features/license/lib/license-reducer';
 
-export type { IapStatus, IapProduct, LicenseScreen, LicenseAction };
+export type { IapStatus, IapProduct, LicenseAction };
 
 /** What a build without a store answers, so the browser fallback behaves like one. */
-const UNLOCKED: IapStatus = { state: 'unlocked', trial_ends_at: null, trial_days: 0, store_error: null };
-
-/** How often the trial banner re-reads the clock. */
-const TICK_MS = 60 * 60 * 1000;
+const UNLOCKED: IapStatus = { state: 'unlocked', store_error: null };
 
 interface LicenseContextType {
     status: IapStatus;
@@ -30,33 +25,35 @@ interface LicenseContextType {
     busy: LicenseAction | null;
     error: string | null;
     pending: boolean;
-    screen: LicenseScreen;
-    /** True while the backend lets rows through. */
-    usable: boolean;
-    /** Whole days left in the trial (0 when there is none). */
-    daysLeft: number;
-    product: (kind: IapProductKind) => IapProduct | undefined;
+    /** The full version is owned. */
+    unlocked: boolean;
+    /** How many tabs may be open at once; `null` once unlocked. */
+    tabLimit: number | null;
+    /** The full version as the store describes it, once the products are loaded. */
+    product: IapProduct | undefined;
+    /** The upgrade prompt is shown. */
+    upgradeOpen: boolean;
+    showUpgrade: () => void;
+    dismissUpgrade: () => void;
     loadProducts: () => void;
-    startTrial: () => void;
     buy: () => void;
     restore: () => void;
     /** Ask the backend for the status again. */
     refresh: () => void;
-    quit: () => void;
 }
 
 const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
 
 /**
- * Mirrors the backend's trial / purchase state (see `services::store` in
- * Rust, which is the only place that decides it) and carries the user's
- * actions on it. Renders nothing until the first status has arrived, so
- * no child acts on an empty first render — the session restore in
- * `WorkspaceProvider` reads `usable` at mount.
+ * Mirrors the backend's purchase state (see `services::store` in Rust,
+ * which is the only place that decides it) and carries the user's actions
+ * on it. The free tier's limit is enforced here in the webview:
+ * `WorkspaceProvider` asks `tabLimit` before opening a tab and calls
+ * `showUpgrade` when it is reached. Renders nothing until the first status
+ * has arrived, so the session restore at mount knows the limit.
  */
 export function LicenseProvider({ children }: { children: ReactNode }) {
     const [model, dispatch] = useReducer(reduceLicense, INITIAL_LICENSE);
-    const [now, setNow] = useState(() => Date.now());
 
     const refresh = useCallback(() => {
         if (!isTauri()) {
@@ -67,11 +64,8 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             .then(status => dispatch({ type: 'status', status }))
             .catch(error => {
                 console.error('Failed to read the purchase state:', error);
-                // Locked, with the reason: the backend refuses rows in this state too.
-                dispatch({
-                    type: 'status',
-                    status: { state: 'none', trial_ends_at: null, trial_days: 0, store_error: toErrorMessage(error) },
-                });
+                // The free tier, with the reason: the app stays usable.
+                dispatch({ type: 'status', status: { state: 'free', store_error: toErrorMessage(error) } });
             });
     }, []);
 
@@ -87,24 +81,6 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             unlisten.then(fn => fn());
         };
     }, []);
-
-    // The trial ends while the app runs: ask again at that moment.
-    const status = model.status;
-    useEffect(() => {
-        const wait = msUntilTrialEnds(status, Date.now());
-        if (wait === null) return;
-        const timer = setTimeout(() => {
-            setNow(Date.now());
-            refresh();
-        }, wait);
-        return () => clearTimeout(timer);
-    }, [status, refresh]);
-
-    useEffect(() => {
-        if (status?.state !== 'trial') return;
-        const timer = setInterval(() => setNow(Date.now()), TICK_MS);
-        return () => clearInterval(timer);
-    }, [status?.state]);
 
     const loadProducts = useCallback(() => {
         if (!isTauri()) {
@@ -130,34 +106,31 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    /** Buy the product of `kind`; the products are fetched first when they are not there yet. */
-    const purchase = useCallback((action: LicenseAction, kind: IapProductKind) => {
-        run(action, async () => {
+    /** Buy the full version; the products are fetched first when they are not there yet. */
+    const buy = useCallback(() => {
+        run('buy', async () => {
             let products = productsRef.current;
             if (!products) {
                 products = await listIapProducts();
                 dispatch({ type: 'products', products });
             }
-            const product = productOfKind(products, kind);
+            const product = fullProduct(products);
             if (!product) {
-                throw new Error(`The App Store has no ${kind} product for Parqsee`);
+                throw new Error('The App Store has no product for Parqsee');
             }
             const result = await purchaseProduct(product.id);
             return { status: result.status, outcome: result.outcome };
         });
     }, [run]);
 
-    const startTrial = useCallback(() => purchase('trial', 'trial'), [purchase]);
-    const buy = useCallback(() => purchase('buy', 'full'), [purchase]);
     const restore = useCallback(() => {
         run('restore', async () => ({ status: await restorePurchases() }));
     }, [run]);
 
-    const quit = useCallback(() => {
-        if (!isTauri()) return;
-        quitApp().catch(error => console.error('Failed to quit:', error));
-    }, []);
+    const showUpgrade = useCallback(() => dispatch({ type: 'open-upgrade' }), []);
+    const dismissUpgrade = useCallback(() => dispatch({ type: 'close-upgrade' }), []);
 
+    const status = model.status;
     if (!status) return null;
 
     const value: LicenseContextType = {
@@ -167,16 +140,16 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         busy: model.busy,
         error: model.error,
         pending: model.pending,
-        screen: screenFor(status),
-        usable: isUsable(status),
-        daysLeft: trialDaysLeft(status, now),
-        product: kind => productOfKind(model.products, kind),
+        unlocked: status.state === 'unlocked',
+        tabLimit: tabLimitFor(status),
+        product: fullProduct(model.products),
+        upgradeOpen: model.upgradeOpen,
+        showUpgrade,
+        dismissUpgrade,
         loadProducts,
-        startTrial,
         buy,
         restore,
         refresh,
-        quit,
     };
 
     return (

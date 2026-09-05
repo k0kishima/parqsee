@@ -22,8 +22,7 @@
 //! the bridge is not sandboxed, so the harness covers the store and the
 //! explorer, not the grants. There is no App Store either: `iap_status`
 //! answers `unlocked` (the `AlwaysUnlocked` provider, as in every build
-//! without the `app-store` feature), so the trial screens never show and
-//! the row commands are never refused.
+//! without the `app-store` feature), so the free tier's limit never shows.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
 use parqsee_lib::models::SessionTabInput;

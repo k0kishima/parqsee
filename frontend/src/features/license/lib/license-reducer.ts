@@ -1,7 +1,7 @@
 import type { IapStatus, IapProduct, IapPurchaseOutcome } from '../api';
 
 /** What the user asked the store to do. */
-export type LicenseAction = 'trial' | 'buy' | 'restore';
+export type LicenseAction = 'buy' | 'restore';
 
 export interface LicenseModel {
     /** `null` until the backend has answered. */
@@ -15,6 +15,8 @@ export interface LicenseModel {
     error: string | null;
     /** A purchase the store is still deciding on (Ask to Buy). */
     pending: boolean;
+    /** The upgrade prompt is shown (the free tier's limit was hit, or the user asked). */
+    upgradeOpen: boolean;
 }
 
 export const INITIAL_LICENSE: LicenseModel = {
@@ -24,32 +26,31 @@ export const INITIAL_LICENSE: LicenseModel = {
     busy: null,
     error: null,
     pending: false,
+    upgradeOpen: false,
 };
 
 export type LicenseEvent =
-    /** From `iap_status`, from the `iap-status` event, or after a timer. */
+    /** From `iap_status` or from the `iap-status` event. */
     | { type: 'status'; status: IapStatus }
     | { type: 'products'; products: IapProduct[] }
     | { type: 'products-failed'; error: string }
     | { type: 'action-start'; action: LicenseAction }
     | { type: 'action-done'; action: LicenseAction; status: IapStatus; outcome?: IapPurchaseOutcome }
-    | { type: 'action-failed'; action: LicenseAction; error: string };
+    | { type: 'action-failed'; action: LicenseAction; error: string }
+    | { type: 'open-upgrade' }
+    | { type: 'close-upgrade' };
 
 /**
- * The webview's side of the license: it only mirrors the backend's status
- * and tracks what the user is doing about it. Every transition of the
- * state itself (none → trial → trial_expired → unlocked) arrives as a new
- * `status` from the backend; nothing here computes one.
+ * The webview's side of the license: it mirrors the backend's status and
+ * tracks what the user is doing about it. The state itself (free →
+ * unlocked, and back on a refund) only ever arrives as a new `status` from
+ * the backend; nothing here computes one. An unlocked status settles a
+ * pending purchase and closes the upgrade prompt.
  */
 export function reduceLicense(model: LicenseModel, event: LicenseEvent): LicenseModel {
     switch (event.type) {
         case 'status':
-            return {
-                ...model,
-                status: event.status,
-                // A status that unlocked or started the trial settles the pending purchase.
-                pending: model.pending && event.status.state !== 'unlocked' && event.status.state !== 'trial',
-            };
+            return withStatus(model, event.status);
         case 'products':
             return { ...model, products: event.products, productsError: null };
         case 'products-failed':
@@ -58,15 +59,26 @@ export function reduceLicense(model: LicenseModel, event: LicenseEvent): License
             return { ...model, busy: event.action, error: null };
         case 'action-done':
             return {
-                ...model,
+                ...withStatus(model, event.status),
                 busy: null,
                 error: null,
-                status: event.status,
-                pending: event.outcome === 'pending'
-                    ? true
-                    : model.pending && event.status.state !== 'unlocked' && event.status.state !== 'trial',
+                pending: event.outcome === 'pending' ? true : model.pending && event.status.state !== 'unlocked',
             };
         case 'action-failed':
             return { ...model, busy: null, error: event.error };
+        case 'open-upgrade':
+            return { ...model, upgradeOpen: true };
+        case 'close-upgrade':
+            return { ...model, upgradeOpen: false };
     }
+}
+
+function withStatus(model: LicenseModel, status: IapStatus): LicenseModel {
+    const unlocked = status.state === 'unlocked';
+    return {
+        ...model,
+        status,
+        pending: model.pending && !unlocked,
+        upgradeOpen: model.upgradeOpen && !unlocked,
+    };
 }

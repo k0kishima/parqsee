@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { TrialBanner } from '../../license';
+import { FreeBadge } from '../../license';
 
 interface WelcomeHeaderProps {
     onBrowse: () => void;
@@ -20,7 +20,7 @@ export const WelcomeHeader: React.FC<WelcomeHeaderProps> = ({ onBrowse, onOpenSe
                     </div>
                 </div>
                 <div className="flex items-center space-x-3">
-                    <TrialBanner />
+                    <FreeBadge />
                     <button
                         onClick={onBrowse}
                         className="btn-primary"

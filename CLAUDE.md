@@ -17,8 +17,9 @@ It features:
   bookmarks so the sandboxed App Store build can reopen them at the next
   launch (tabs come back in order, with their view mode, page and filter)
 - Dark/light mode and English/Japanese localization
-- Mac App Store build: 14-day trial and a one-time in-app purchase that
-  unlocks the app (StoreKit 2 through a Swift bridge; `app-store` feature)
+- Mac App Store build: free with a limited tier (3 tabs open at a time)
+  and a one-time in-app purchase that removes the limit (StoreKit 2
+  through a Swift bridge; `app-store` feature)
 
 ## Tech Stack
 
@@ -61,7 +62,7 @@ parqsee/
 ├── backend/                      # Tauri backend
 │   ├── src/
 │   │   ├── commands/             # Tauri command handlers (file, data, query, workspace, iap)
-│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (trial / purchase)
+│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (free tier / purchase)
 │   │   ├── models/               # Serde types shared with the frontend
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
@@ -96,7 +97,7 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `query` — SQL editor and result grid
 - `layout` — tab bar
 - `settings` — settings modal
-- `license` — pre-trial screen / paywall (`LicenseGate`), trial banner, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds the pure screen selection and reducer
+- `license` — the upgrade prompt (`UpgradePrompt`), the Free badge, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds `FREE_TAB_LIMIT`, the tab-limit derivation and the reducer
 
 ## Key Commands
 
@@ -153,11 +154,10 @@ Argument names are camelCase on the JS side.
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
-| `iap_status` | `()` → `IapStatus` | `{state: none \| trial \| trial_expired \| unlocked, trial_ends_at?, trial_days, store_error?}`, derived from the App Store entitlements and the clock on every call; waits for the launch-time read |
-| `iap_products` | `()` → `IapProduct[]` | The trial and full products (`kind`) with the storefront's name, description and `display_price`; empty in a build without a store |
-| `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy a product from `iap_products` (starting the trial is buying the $0 trial item); `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
+| `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?}`, derived from the App Store entitlements on every call; waits for the launch-time read |
+| `iap_products` | `()` → `IapProduct[]` | The full version (one product) with the storefront's name, description and `display_price`; empty in a build without a store |
+| `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy the product `iap_products` returned; `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
 | `iap_restore` | `()` → `IapStatus` | Restore Purchases, then the state |
-| `quit_app` | `()` → `void` | Exit; backs Escape / ✕ on the pre-trial screen and the paywall |
 
 The frontend also listens for a `file-drop` event emitted from
 `lib.rs`'s window drag-drop handler — and from its `RunEvent::Opened`
@@ -283,24 +283,31 @@ store (a purchase approved elsewhere, a refund).
     before the restore has finished so the empty first render cannot erase
     the store. The `restoreTabs` setting (localStorage, default on) only
     gates the restore.
-12. The trial and the purchase (`services/store`, issue #15; decisions in
-    #5). The store build is free, usable for `TRIAL_DAYS` (14) after the
-    user starts the trial, unlocked for good by a non-consumable in-app
-    purchase, and locked otherwise (Guideline 3.1.1). The trial is itself
-    a $0 non-consumable, so its start date is the purchase date in the
-    Apple account's history and survives a reinstall. `License` (Tauri
-    managed state, `Arc<License>`) keeps a snapshot of the entitlements —
-    read at launch, after purchase / restore, and on every
-    `Transaction.updates` event — and derives `IapStatus` from it and the
-    clock on every call, so a running app crosses into `trial_expired` by
-    itself. `read_parquet_data`, `count_parquet_data`, `execute_sql` and
-    `export_data` call `License::require_unlocked` first; the webview
-    renders the lock (`LicenseProvider`, `LicenseGate`) and cannot lift
-    it. The product ids (`parqsee.trial14`, `parqsee.full`) and the trial
-    length are constants in `services/store/mod.rs` and nowhere else —
-    they do not depend on the bundle identifier, and the webview asks for
-    products by kind; names, descriptions and prices come from App Store
-    Connect through `iap_products`, never from code. The App Store sits
+12. The free tier and the purchase (`services/store`, issue #22, which
+    replaced the 14-day trial of #15 before anything existed in App Store
+    Connect; decisions in #5). The store build is free and always usable:
+    the free tier keeps at most `FREE_TAB_LIMIT` (3) tabs open at once
+    and everything else — paging, filters, search, the SQL view, export —
+    works; a non-consumable in-app purchase (`parqsee.full`) removes the
+    limit for good, and a refund puts it back. `License` (Tauri managed
+    state, `Arc<License>`) keeps a snapshot of the entitlements — read at
+    launch, after purchase / restore, and on every `Transaction.updates`
+    event — and derives `IapStatus` (`free | unlocked`, plus
+    `store_error`) from it; there is no clock. **The backend enforces
+    nothing**: it has no notion of a tab, so the limit lives in the
+    webview (`FREE_TAB_LIMIT` in `features/license/lib/license.ts`,
+    checked by `WorkspaceContext` before a file is opened and when the
+    session is restored — the first tabs up to the limit come back, the
+    rest are named in the restore notice — with the `open` / `restore`
+    transitions in `workspace-tabs.ts` as the backstop), and the row
+    commands never refuse. A client-side limit is bypassable by patching
+    the bundle; that is the trade a one-time-purchase utility makes — do
+    not "fix" it by inventing a tab count in Rust. A store that cannot be
+    read leaves the app on the free tier with the reason, never locked.
+    The product id is a constant in `services/store/mod.rs` and nowhere
+    else — it does not depend on the bundle identifier, and the webview
+    buys by the id `iap_products` returned; name, description and price
+    come from App Store Connect, never from code. The App Store sits
     behind the `StoreProvider` trait: `storekit::SwiftStore` (compiled
     with the `app-store` Cargo feature, macOS only) calls the C functions
     of the Swift package in `backend/storekit/`, which `build.rs` builds
@@ -312,8 +319,8 @@ store (a purchase approved elsewhere, a refund).
     `AlwaysUnlocked` serves every other build — the default
     `pnpm tauri build`, `pnpm tauri dev`, `cargo test --lib`, the e2e
     bridge, Windows / Linux — so nothing outside the store build ever
-    shows the trial screens. The state machine is unit-tested with a
-    fake provider and a fixed clock; the real store is checked by hand
+    shows the limit or the upgrade prompt. The state is unit-tested with
+    a fake provider; the real store is checked by hand
     (`docs/MANUAL_QA.md`, MQ-12, which also says how to sign the store
     build so StoreKit uses the sandbox).
 13. The webview runs under the Content Security Policy in `tauri.conf.json`
@@ -353,10 +360,11 @@ store (a purchase approved elsewhere, a refund).
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the workspace
-context (tabs, roots, recent files), the license context and its pure
-parts (screen selection, reducer: none → trial → trial_expired →
-unlocked, none → unlocked, restore, cancelled / failed / pending
-purchases), `lib/path`, `lib/column-widths` and
+context (tabs, roots, recent files, the free tier's tab limit at open
+and at restore), the license context and its pure parts (tab-limit
+derivation, reducer: free → unlocked and back on a refund, restore,
+cancelled / failed / pending purchases, the upgrade prompt),
+`lib/path`, `lib/column-widths` and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
@@ -364,10 +372,9 @@ big integers / NaN, the read-only SQL view, result truncation, export,
 the bookmark store, the URL-to-path conversion and the launch handover in
 `services::opened`, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
-macOS-only test), and the trial / purchase state machine in
-`services/store` (with a fake store and a fixed clock;
-`cargo test --lib --features app-store` adds two round trips through the
-Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
+macOS-only test), and the free / unlocked state in `services/store` (with a
+fake store; `cargo test --lib --features app-store` adds two round trips
+through the Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through

@@ -33,13 +33,17 @@ import {
     nthTabId,
     sessionSnapshot,
     restoredTabState,
+    hasRoomForTab,
 } from './workspace-tabs';
 
 export type { Tab, WorkspaceRoot };
 
-/** The files of the last session that could not be reopened at launch. */
+/** What of the last session did not come back at launch. */
 export interface RestoreNotice {
+    /** The files that could not be reopened (gone, or failed to open). */
     skipped: string[];
+    /** The tabs left out because the free tier's limit was reached. */
+    capped: string[];
 }
 
 /**
@@ -98,12 +102,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
     const { settings } = useSettings();
-    const { usable } = useLicense();
+    // The free tier's tab limit (none once unlocked), read through a ref so
+    // the stable callbacks below and the launch-time restore see the latest.
+    const { tabLimit, showUpgrade } = useLicense();
+    const tabLimitRef = useRef(tabLimit);
+    tabLimitRef.current = tabLimit;
     // Read once: the setting decides what happens at launch, not later.
-    // A locked app (no trial yet, or an expired one) restores nothing:
-    // the backend would refuse every page read, and the paywall covers
-    // the Welcome screen anyway.
-    const restoreOnLaunch = useRef(settings.restoreTabs && usable);
+    const restoreOnLaunch = useRef(settings.restoreTabs);
     const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
     // Saving starts once the restore has finished (or was skipped): the
     // empty workspace of the first render must not overwrite the store.
@@ -122,7 +127,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // same command a manual open uses, so the cache and the access grants
     // behave as usual; `rememberFile` is not called, so Recent Files keeps
     // its order. A file that is gone, or fails to open, is skipped and named
-    // in the notice; the next save drops it from the store.
+    // in the notice; the next save drops it from the store. On the free tier
+    // the first tabs up to the limit come back and the rest are named too
+    // (and never opened in the backend, so no grant or cache for them) —
+    // restoring them all would make "never close a tab" a way around the
+    // limit.
     useEffect(() => {
         if (!isTauri()) return;
         // StrictMode runs this effect twice in development; only the run
@@ -130,13 +139,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let cancelled = false;
         (async () => {
             const skipped: string[] = [];
+            const capped: string[] = [];
             if (restoreOnLaunch.current) {
                 try {
                     const session = await listSessionTabs();
+                    const limit = tabLimitRef.current;
                     const restored: RestoredTab[] = [];
                     for (const tab of session.tabs) {
                         if (!tab.available) {
                             skipped.push(tab.path);
+                            continue;
+                        }
+                        if (!hasRoomForTab(restored.length, limit)) {
+                            capped.push(tab.path);
                             continue;
                         }
                         try {
@@ -152,13 +167,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                         });
                     }
                     if (cancelled) return;
-                    dispatch({ type: 'restore', tabs: restored, activePath: session.active });
+                    dispatch({ type: 'restore', tabs: restored, activePath: session.active, limit });
                 } catch (error) {
                     console.error('Failed to restore the last session:', error);
                 }
             }
             if (cancelled) return;
-            if (skipped.length > 0) setRestoreNotice({ skipped });
+            if (skipped.length > 0 || capped.length > 0) setRestoreNotice({ skipped, capped });
             setSessionReady(true);
         })();
         return () => {
@@ -216,6 +231,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const openParquetFile = useCallback(async (path: string) => {
         try {
             if (isTauri()) {
+                // The free tier's limit, before anything is asked of the
+                // backend: the tab is not opened, the prompt says why. A
+                // file already in a tab is only activated and needs no room.
+                const { tabs: openTabs } = workspaceTabsRef.current;
+                if (!openTabs.some(t => t.path === path) && !hasRoomForTab(openTabs.length, tabLimitRef.current)) {
+                    showUpgrade();
+                    return;
+                }
+
                 const fileExists = await checkFileExists(path);
                 if (!fileExists) {
                     removeRecentFile(path);
@@ -234,14 +258,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 });
                 if (recent) upsertRecentFile(recent);
 
-                dispatch({ type: 'open', tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) } });
+                dispatch({
+                    type: 'open',
+                    tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) },
+                    limit: tabLimitRef.current,
+                });
             }
             // Browser fallback: there is no backend to open the file with.
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
         }
-    }, [upsertRecentFile, removeRecentFile]);
+    }, [upsertRecentFile, removeRecentFile, showUpgrade]);
 
     const openFileDialog = useCallback(async () => {
         try {
@@ -341,10 +369,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * opened from Finder, the Dock or `open -a` — both arrive as `file-drop`
      * (see `deliver_opened` in lib.rs).
      *
-     * Nothing here looks at the license. While the app is locked the router
-     * renders the gate over the Welcome screen and never mounts the
-     * workspace, so no page is read; the tab is simply there once it
-     * unlocks, which is what the user asked for by opening the file.
+     * Each goes through `openParquetFile`, so on the free tier the files
+     * that fit open and the first one that does not brings up the upgrade
+     * prompt (once: it is one dialog, however many were dropped).
      */
     const openExternalFiles = useCallback(async (paths: string[]) => {
         if (paths.length === 0) return;
