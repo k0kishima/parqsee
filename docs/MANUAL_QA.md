@@ -49,16 +49,17 @@ Nothing reads them any more; delete them.
 
 ### The store build (MQ-12)
 
-The trial and the purchase only exist in the build with the `app-store`
-Cargo feature, which links the StoreKit bridge (`backend/storekit/`):
+The free tier's limit and the purchase only exist in the build with the
+`app-store` Cargo feature, which links the StoreKit bridge
+(`backend/storekit/`):
 
 ```sh
 cd frontend && pnpm tauri:store        # tauri build --config tauri.appstore.conf.json
 ```
 
 Every other build — `pnpm tauri build`, `pnpm tauri dev`, the e2e bridge —
-owns the full version and never shows the trial screens, so MQ-1 to MQ-11
-are unaffected by the store work and cannot check it.
+owns the full version and never shows the limit, so MQ-1 to MQ-11 are
+unaffected by the store work and cannot check it.
 
 StoreKit answers only an app that carries a provisioning profile and is
 signed by the same team, and then it talks to the **sandbox** App Store
@@ -73,16 +74,15 @@ scripts/qa/sign_for_storekit.sh backend/target/release/bundle/macos/Parqsee.app 
 The profile is a *Mac App Development* profile for the App ID
 `llc.fuji.parqsee` (Certificates, Identifiers & Profiles), the identity the
 Apple Development certificate it names (`security find-identity -v -p
-codesigning`). Without them the pre-trial screen still appears but reads
+codesigning`). Without them the upgrade prompt still appears but reads
 *The App Store did not return a price* and the buttons fail — that is the
 unsigned build, not a bug. Purchases need a **Sandbox tester** account
 (App Store Connect › Users and Access › Sandbox), never a real Apple
-Account; macOS asks for it at the first purchase. Its state — the trial's
-start date, the purchase — lives in that account's history on Apple's
-side: deleting the app or its container does not reset it, and a fresh
-Sandbox tester is the only way to see the pre-trial screen again. In
-System Settings › App Store, the *Sandbox Account* section shows who is
-signed in and lets you sign out.
+Account; macOS asks for it at the first purchase. The purchase lives in
+that account's history on Apple's side: deleting the app or its container
+does not reset it, and a fresh Sandbox tester is the only way to see the
+free tier again. In System Settings › App Store, the *Sandbox Account*
+section shows who is signed in and lets you sign out.
 
 The pitfalls of driving the release app from a terminal apply here too:
 `open` reuses a running instance of the same app (quit it first), and a
@@ -194,14 +194,14 @@ around ten items or nobody will run it.
 | Expected | The entitlements list exactly `com.apple.security.app-sandbox`, `com.apple.security.files.user-selected.read-write`, `com.apple.security.files.bookmarks.app-scope` and `com.apple.security.network.client` (the last one is for WKWebView's helper processes; without it the window stays blank). The window renders the Welcome screen with the logo — a blank white window means the sandbox is blocking the webview. Everything works and Console shows no `deny` lines from `sandboxd` for Parqsee. The dev build starts and behaves as before (it is unsandboxed; that is expected). The release webview also runs under the CSP from `tauri.conf.json`, which the dev build does not: the grid's columns keep their widths and the logo shows (a violation would drop them), and a page read is as fast as it was — if the CSP blocked the IPC, Tauri would silently fall back to `postMessage` and every `invoke` would get slower. Release builds have no Web Inspector, so the violation list itself comes from the harness: `scripts/qa/e2e/csp-server.mjs` (see its README) before this check. |
 | Why manual | Whether the sandbox is actually applied depends on the signature of the built artifact; every automated suite runs an unsandboxed binary, and only the real webview sends the IPC through `ipc://localhost`. |
 
-### MQ-12 · StoreKit sandbox: trial and purchase
+### MQ-12 · StoreKit sandbox: the free tier and the purchase
 
 | | |
 |---|---|
-| Fixture | the store build, re-signed as described in [The store build](#the-store-build-mq-12); a **new** Sandbox tester account; any file, e.g. `numeric.parquet` |
-| Steps | Sign out of any Sandbox account (System Settings › App Store), delete the container, launch. Read the pre-trial screen. Press Escape; relaunch, click ✕; relaunch. Click **Restore purchases** (sign in with the new tester when asked). Click **Start free trial**. Open a file, page, filter, run a query, export. Open Settings. Quit; set the clock 15 days ahead (System Settings › General › Date & Time, automatic off); launch. Try the Restore button, then Escape. Relaunch, click **Buy for …**, confirm with the tester. Open a file. Set the clock back. Quit, delete the app and its container, build/sign/launch again with the same tester; click **Restore purchases**. Finally run `pnpm tauri build` (no feature) and launch that app. |
-| Expected | The pre-trial screen names the trial length (14 days), what stops working (rows/paging/filters, SQL, export) and the price in the tester's storefront currency, with a Buy button showing the same price. Escape and ✕ quit the app. Restore with nothing owned leaves the screen as it is (no error). Start free trial closes the screen without a payment sheet; the header shows *Trial · 14 days left · Buy* and everything works; Settings › Purchase says *Free trial · 14 days left* with Buy / Restore. With the clock 15 days ahead the launch shows *Your free trial has ended* over the Welcome screen with Buy / Restore / Quit and no tabs restored; Restore changes nothing; Escape quits. Buy shows the sandbox payment sheet; on confirmation the screen closes, the banner is gone, files open, Settings › Purchase says *Full version — unlocked* without Buy / Restore. After the reinstall the pre-trial screen appears (the app knows nothing yet); Restore purchases signs in and unlocks it at once, with no trial. The build without the feature launches straight to the Welcome screen and never shows any of this. |
-| Why manual | The App Store (sandbox) is on the other end: products, the payment sheet, the account's purchase history and the trial's start date all live there. The unit tests cover the state machine with a fake store; only this checks the bridge against the real one. |
+| Fixture | the store build, re-signed as described in [The store build](#the-store-build-mq-12); a **new** Sandbox tester account; the fixtures folder with at least five files, e.g. `one_row.parquet`, `numeric.parquet`, `dict.parquet`, `multi_rowgroup.parquet`, `all_null.parquet` |
+| Steps | Sign out of any Sandbox account (System Settings › App Store), delete the container, launch. Open the fixtures folder (⌘⇧O) and three files from the tree; page, filter, run a query, export one. Open a fourth file from the tree, then drop a fifth on the window. Read the prompt; press Escape. Click a tab that is already open, then click **Free · Upgrade** in the header and ✕. Close one tab, open the fourth file again. Open Settings › Purchase. Quit and relaunch. With the three tabs back, click **Free · Upgrade**, then **Restore purchases** (sign in with the new tester when asked). Click **Buy for …**, confirm with the tester. Open the fourth and fifth files. Quit, relaunch. Open Settings › Purchase. Quit, delete the app and its container, build/sign/launch again with the same tester; open four files, and on the prompt click **Restore purchases**. Finally run `pnpm tauri build` (no feature) and launch that app and open four files. |
+| Expected | The app launches straight to the Welcome screen; the header carries a small *Free · Upgrade* badge. Three files open and everything in them works (rows, paging, filters, SQL, export). The fourth open and the drop each bring up the upgrade prompt — the limit (3 tabs), *Everything else works*, the price in the tester's storefront currency, a Buy button with the same price, Restore, *Not now* — and open no tab; Escape and ✕ only close the prompt, the three tabs stay. Clicking an open tab at the limit switches to it without the prompt. After closing a tab the fourth file opens. Settings › Purchase says *Free version · up to 3 tabs at a time* with Buy / Restore. After the relaunch the three tabs are back. Restore with nothing owned leaves things as they are (no error). Buy shows the sandbox payment sheet; on confirmation the prompt closes, the badge is gone, the fourth and fifth files open, and after the relaunch all five tabs are back; Settings › Purchase says *Full version — unlocked* without Buy / Restore. After the reinstall the app is on the free tier again (the app knows nothing yet); the prompt appears at the fourth file, and Restore purchases signs in and unlocks it at once — the prompt closes and the badge goes. The build without the feature opens four files, shows no badge and never shows any of this. |
+| Why manual | The App Store (sandbox) is on the other end: the product, the payment sheet and the account's purchase history live there. The unit tests cover the state with a fake store and the tab limit with a mocked license; only this checks the bridge against the real one. |
 
 ## Results template
 
@@ -218,6 +218,6 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-9 Opening from Finder
 - [ ] MQ-10 Gatekeeper on another Mac
 - [ ] MQ-11 Sandbox entitlements and file access
-- [ ] MQ-12 StoreKit sandbox: trial and purchase
+- [ ] MQ-12 StoreKit sandbox: the free tier and the purchase
 Notes: <anything that differed from Expected, with what happened>
 ```
