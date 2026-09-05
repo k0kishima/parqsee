@@ -148,5 +148,45 @@
   "session": {
     "notReopened_one": "前回のセッションの {{count}} 件のファイルを開き直せませんでした",
     "notReopened_other": "前回のセッションの {{count}} 件のファイルを開き直せませんでした"
+  },
+  "license": {
+    "trialTitle": "Parqsee を {{count}} 日間無料で試す",
+    "expiredTitle": "無料トライアルが終了しました",
+    "trialIntro": "{{count}} 日間の無料トライアルで Parqsee のすべての機能を使えます。開始時に料金はかかりません。トライアルは Apple アカウントに記録されます。",
+    "expiredIntro": "{{count}} 日間の無料トライアルは終了しました。Parqsee を一度購入すると引き続き使えます。この Apple アカウントで購入済みの場合は復元できます。",
+    "lockedHeading": "トライアルまたは購入がない状態では、次の機能は使えません:",
+    "locked": {
+      "rows": "行の表示・ページ送り・フィルタ",
+      "sql": "SQL クエリ",
+      "export": "CSV / JSON エクスポート"
+    },
+    "stillWorks": "ファイルを開いてスキーマを見ることは引き続きできます。",
+    "price": "買い切り価格: {{price}}",
+    "priceLoading": "App Store から価格を取得しています…",
+    "priceUnavailable": "App Store から Parqsee の価格を取得できませんでした。",
+    "priceError": "価格を取得できませんでした: {{reason}}",
+    "retry": "再試行",
+    "startTrial": "無料トライアルを開始",
+    "buy": "購入",
+    "buyFor": "{{price}} で購入",
+    "restore": "購入を復元",
+    "quit": "Parqsee を終了",
+    "working": "App Store に接続しています…",
+    "pending": "購入は承認待ちです。承認され次第、Parqsee のロックが解除されます。",
+    "storeError": "App Store で購入状況を確認できませんでした: {{reason}}",
+    "banner": {
+      "daysLeft_one": "トライアル · 残り {{count}} 日",
+      "daysLeft_other": "トライアル · 残り {{count}} 日"
+    },
+    "settings": {
+      "title": "購入",
+      "unlocked": "フル版 — 購入済み",
+      "trial_one": "無料トライアル · 残り {{count}} 日",
+      "trial_other": "無料トライアル · 残り {{count}} 日",
+      "expired": "無料トライアル終了",
+      "none": "無料トライアル未開始",
+      "history": "apple.com で購入履歴を見る",
+      "desc": "購入は Apple アカウントに紐づき、同じアカウントでサインインしたどの Mac でも復元できます。"
+    }
   }
 }
