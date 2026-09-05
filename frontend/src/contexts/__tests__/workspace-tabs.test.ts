@@ -29,6 +29,13 @@ describe('openTab', () => {
     expect(next.activeTabId).toBe('d');
   });
 
+  it('adds nothing past the limit, and still activates a tab already showing the file', () => {
+    expect(openTab(three, tab('d'), 3)).toBe(three);
+    expect(openTab(three, tab('d'), 4).tabs).toHaveLength(4);
+    expect(openTab(three, tab('d'), null).tabs).toHaveLength(4);
+    expect(openTab(three, tab('x', '/data/a.parquet'), 3).activeTabId).toBe('a');
+  });
+
   it('activates the tab already showing the file instead of adding one', () => {
     const next = openTab(three, tab('x', '/data/a.parquet'));
     expect(next.tabs).toBe(three.tabs);
@@ -141,6 +148,22 @@ describe('restoreTabs', () => {
     expect(next.activeTabId).toBe('b');
     expect(next.tabStates.a).toEqual({ currentPage: 2 });
     expect(next.tabStates.x).toBeUndefined();
+  });
+});
+
+describe('restoreTabs under a limit', () => {
+  const restored = ['r1', 'r2', 'r3', 'r4'].map(id => ({ tab: tab(id), state: {} }));
+
+  it('takes the first tabs up to the limit, in order', () => {
+    const next = restoreTabs(EMPTY_WORKSPACE_TABS, restored, '/data/r4.parquet', 3);
+    expect(next.tabs.map(t => t.id)).toEqual(['r1', 'r2', 'r3']);
+    // The named active tab was left out: the first restored one stands in.
+    expect(next.activeTabId).toBe('r1');
+  });
+
+  it('counts the tabs already open, and a file open in both only once', () => {
+    const next = restoreTabs(three, [{ tab: tab('x', '/data/a.parquet'), state: {} }, ...restored], null, 4);
+    expect(next.tabs.map(t => t.id)).toEqual(['a', 'b', 'c', 'r1']);
   });
 });
 

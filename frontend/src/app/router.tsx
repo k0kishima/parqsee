@@ -10,7 +10,7 @@ export const AppRouter = () => {
         tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
-    const { upgradeOpen } = useLicense();
+    const { upgradeOpen, showUpgrade } = useLicense();
 
     return (
         <>
@@ -35,7 +35,12 @@ export const AppRouter = () => {
 
             {/* Shown over either screen: the whole session may have failed to come back. */}
             {restoreNotice && (
-                <RestoreNotice skipped={restoreNotice.skipped} onDismiss={dismissRestoreNotice} />
+                <RestoreNotice
+                    skipped={restoreNotice.skipped}
+                    capped={restoreNotice.capped}
+                    onDismiss={dismissRestoreNotice}
+                    onUpgrade={showUpgrade}
+                />
             )}
         </>
     );

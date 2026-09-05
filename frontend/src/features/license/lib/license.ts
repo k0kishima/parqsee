@@ -19,11 +19,6 @@ export function tabLimitFor(status: IapStatus | null): number | null {
     return status?.state === 'unlocked' ? null : FREE_TAB_LIMIT;
 }
 
-/** Whether one more tab may open with `openCount` open under `limit`. */
-export function canOpenTab(openCount: number, limit: number | null): boolean {
-    return limit === null || openCount < limit;
-}
-
 /** The full version among the products the store returned (there is only one). */
 export function fullProduct(products: readonly IapProduct[] | null): IapProduct | undefined {
     return products?.[0];

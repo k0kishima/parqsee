@@ -147,7 +147,9 @@
   },
   "session": {
     "notReopened_one": "前回のセッションの {{count}} 件のファイルを開き直せませんでした",
-    "notReopened_other": "前回のセッションの {{count}} 件のファイルを開き直せませんでした"
+    "notReopened_other": "前回のセッションの {{count}} 件のファイルを開き直せませんでした",
+    "notRestoredFree_one": "前回のセッションの {{count}} 件のタブは復元しませんでした。無料版で同時に開けるタブは {{limit}} 枚までです。",
+    "notRestoredFree_other": "前回のセッションの {{count}} 件のタブは復元しませんでした。無料版で同時に開けるタブは {{limit}} 枚までです。"
   },
   "license": {
     "upgrade": {

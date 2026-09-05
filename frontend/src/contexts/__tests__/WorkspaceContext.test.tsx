@@ -24,8 +24,10 @@ vi.mock('../../features/workspace/api', () => ({
   saveSession: vi.fn(async () => undefined),
   takePendingFiles: vi.fn(async () => [] as string[]),
 }));
-// The license gates the restore; here the app is always unlocked.
-vi.mock('../LicenseContext', () => ({ useLicense: () => ({ usable: true }) }));
+// The free tier's tab limit comes from the license; unlocked (no limit)
+// unless a test says otherwise.
+const license = vi.hoisted(() => ({ tabLimit: null as number | null, showUpgrade: vi.fn() }));
+vi.mock('../LicenseContext', () => ({ useLicense: () => license }));
 // SettingsProvider syncs the language into i18n, which the global setup does not provide.
 vi.mock('../../lib/i18n', () => ({ default: { language: 'en', changeLanguage: vi.fn() } }));
 // SettingsProvider follows the system theme through matchMedia, which jsdom lacks.
@@ -318,7 +320,7 @@ describe('WorkspaceProvider session', () => {
     expect(result.current.tabs.map(t => t.name)).toEqual(['ok.parquet']);
     expect(result.current.activeTab?.path).toBe('/data/ok.parquet');
     expect(openParquetFile).not.toHaveBeenCalledWith('/data/gone.parquet');
-    expect(result.current.restoreNotice).toEqual({ skipped: ['/data/gone.parquet', '/data/broken.parquet'] });
+    expect(result.current.restoreNotice).toEqual({ skipped: ['/data/gone.parquet', '/data/broken.parquet'], capped: [] });
     // The first save after the restore writes the pruned session.
     await settle();
     expect(saveSession).toHaveBeenLastCalledWith(
@@ -407,6 +409,95 @@ describe('WorkspaceProvider session', () => {
 // Files opened from Finder, the Dock or `open -a`: the backend buffers them
 // until the webview asks, and hands over later ones as `file-drop` events
 // (see `services::opened` and `deliver_opened` in lib.rs).
+describe('WorkspaceProvider on the free tier', () => {
+  const sessionTab = (path: string): SessionTab => ({
+    path,
+    name: path.split('/').pop()!,
+    state: { view_mode: null, current_page: null, active_filter: null },
+    available: true,
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    license.tabLimit = 3;
+    license.showUpgrade.mockClear();
+    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    vi.mocked(saveSession).mockClear();
+    vi.mocked(openParquetFile).mockClear();
+    vi.mocked(rememberFile).mockClear();
+    vi.mocked(checkFileExists).mockClear();
+  });
+
+  afterEach(() => {
+    license.tabLimit = null;
+  });
+
+  it('refuses the tab past the limit with the upgrade prompt, asking nothing of the backend', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet', '/data/d.parquet');
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/c.parquet');
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+    expect(checkFileExists).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(openParquetFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(rememberFile).not.toHaveBeenCalledWith('/data/d.parquet');
+  });
+
+  it('still activates a file already open, and frees a slot when a tab closes', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    expect(result.current.activeTab?.path).toBe('/data/a.parquet');
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+
+    act(() => result.current.closeTab(result.current.tabs[1].id));
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'c.parquet', 'd.parquet']);
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+  });
+
+  it('holds the limit when files open back to back without a render in between', async () => {
+    const { result } = renderWorkspace();
+    await act(async () => {
+      await result.current.openParquetFile('/data/a.parquet');
+      await result.current.openParquetFile('/data/b.parquet');
+      await result.current.openParquetFile('/data/c.parquet');
+      await result.current.openParquetFile('/data/d.parquet');
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+  });
+
+  it('restores the first tabs up to the limit and names the rest, without opening them', async () => {
+    vi.useFakeTimers();
+    vi.mocked(listSessionTabs).mockResolvedValue({
+      tabs: ['a', 'b', 'c', 'd', 'e'].map(n => sessionTab(`/data/${n}.parquet`)),
+      active: '/data/e.parquet',
+    });
+    const { result } = renderWorkspace();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/a.parquet');
+    expect(openParquetFile).toHaveBeenCalledTimes(3);
+    expect(result.current.restoreNotice).toEqual({ skipped: [], capped: ['/data/d.parquet', '/data/e.parquet'] });
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    // The next save keeps only what is open: the capped tabs leave the store.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(vi.mocked(saveSession).mock.lastCall?.[0].map(t => t.path)).toEqual(['/data/a.parquet', '/data/b.parquet', '/data/c.parquet']);
+    vi.useRealTimers();
+  });
+
+  it('has no limit once unlocked', async () => {
+    license.tabLimit = null;
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet', '/data/d.parquet');
+    expect(result.current.tabs).toHaveLength(4);
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+  });
+});
+
 describe('WorkspaceProvider files handed over at launch', () => {
   const sessionTab = (path: string): SessionTab => ({
     path,

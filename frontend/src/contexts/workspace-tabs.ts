@@ -29,28 +29,47 @@ export interface RestoredTab {
   state: TabState;
 }
 
+/**
+ * How many tabs may be open at once; `null` for no limit. The free tier's
+ * limit (see `features/license/lib/license.ts`) is checked before a file is
+ * opened so the user gets the upgrade prompt instead of a silent no-op —
+ * the transitions take it too, as the backstop that holds when several
+ * opens race within one render.
+ */
+export type TabLimit = number | null;
+
 export type WorkspaceTabsAction =
-  | { type: 'open'; tab: Tab }
+  | { type: 'open'; tab: Tab; limit?: TabLimit }
   | { type: 'close'; tabId: string }
   | { type: 'select'; tabId: string }
   | { type: 'patchState'; tabId: string; patch: Partial<TabState> }
-  | { type: 'restore'; tabs: RestoredTab[]; activePath: string | null };
+  | { type: 'restore'; tabs: RestoredTab[]; activePath: string | null; limit?: TabLimit };
 
 export function reduceWorkspaceTabs(state: WorkspaceTabs, action: WorkspaceTabsAction): WorkspaceTabs {
   switch (action.type) {
-    case 'open': return openTab(state, action.tab);
+    case 'open': return openTab(state, action.tab, action.limit ?? null);
     case 'close': return closeTab(state, action.tabId).state;
     case 'select': return selectTab(state, action.tabId);
     case 'patchState': return patchTabState(state, action.tabId, action.patch);
-    case 'restore': return restoreTabs(state, action.tabs, action.activePath);
+    case 'restore': return restoreTabs(state, action.tabs, action.activePath, action.limit ?? null);
     default: return assertNever(action, 'workspace tabs action');
   }
 }
 
-/** Activate the tab showing `tab.path`, adding `tab` if no tab shows it yet. */
-export function openTab(state: WorkspaceTabs, tab: Tab): WorkspaceTabs {
+/** Whether one more tab fits under `limit` with `openCount` open. */
+export function hasRoomForTab(openCount: number, limit: TabLimit): boolean {
+  return limit === null || openCount < limit;
+}
+
+/**
+ * Activate the tab showing `tab.path`, adding `tab` if no tab shows it yet.
+ * A new tab that would go past `limit` is not added and the state is
+ * returned as it is (activating an existing tab never needs room).
+ */
+export function openTab(state: WorkspaceTabs, tab: Tab, limit: TabLimit = null): WorkspaceTabs {
   const existing = state.tabs.find(t => t.path === tab.path);
   if (existing) return { ...state, activeTabId: existing.id };
+  if (!hasRoomForTab(state.tabs.length, limit)) return state;
   return { ...state, tabs: [...state.tabs, tab], activeTabId: tab.id };
 }
 
@@ -113,13 +132,14 @@ export function nthTabId(state: WorkspaceTabs, n: number): string | null {
  * activate the one at `activePath`. A file the user opened meanwhile (a
  * drop during the restore) keeps its tab and its state; with no active
  * path among the tabs, the current active tab stays, or the first restored
- * one when there is none.
+ * one when there is none. Tabs past `limit` are left out, in order.
  */
-export function restoreTabs(state: WorkspaceTabs, restored: readonly RestoredTab[], activePath: string | null): WorkspaceTabs {
+export function restoreTabs(state: WorkspaceTabs, restored: readonly RestoredTab[], activePath: string | null, limit: TabLimit = null): WorkspaceTabs {
   const tabs = [...state.tabs];
   const tabStates = { ...state.tabStates };
   for (const { tab, state: tabState } of restored) {
     if (tabs.some(t => t.path === tab.path)) continue;
+    if (!hasRoomForTab(tabs.length, limit)) continue;
     tabs.push(tab);
     tabStates[tab.id] = tabState;
   }

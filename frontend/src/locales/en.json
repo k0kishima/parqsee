@@ -147,7 +147,9 @@
     },
     "session": {
         "notReopened_one": "{{count}} file from the last session could not be reopened",
-        "notReopened_other": "{{count}} files from the last session could not be reopened"
+        "notReopened_other": "{{count}} files from the last session could not be reopened",
+        "notRestoredFree_one": "{{count}} tab from the last session was not restored: the free version keeps {{limit}} tabs open at a time.",
+        "notRestoredFree_other": "{{count}} tabs from the last session were not restored: the free version keeps {{limit}} tabs open at a time."
     },
     "license": {
         "upgrade": {

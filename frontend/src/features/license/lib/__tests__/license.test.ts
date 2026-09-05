@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FREE_TAB_LIMIT, tabLimitFor, canOpenTab, fullProduct } from '../license';
+import { FREE_TAB_LIMIT, tabLimitFor, fullProduct } from '../license';
 import type { IapStatus, IapProduct } from '../../api';
 
 const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, ...partial });
@@ -16,20 +16,6 @@ describe('tabLimitFor', () => {
 
     it('stays the free limit, not a lock, while the store cannot be read', () => {
         expect(tabLimitFor(status({ store_error: 'no network' }))).toBe(FREE_TAB_LIMIT);
-    });
-});
-
-describe('canOpenTab', () => {
-    it('allows up to the limit and no further', () => {
-        expect(canOpenTab(0, 3)).toBe(true);
-        expect(canOpenTab(2, 3)).toBe(true);
-        expect(canOpenTab(3, 3)).toBe(false);
-        expect(canOpenTab(7, 3)).toBe(false);
-    });
-
-    it('has no ceiling without a limit', () => {
-        expect(canOpenTab(0, null)).toBe(true);
-        expect(canOpenTab(100, null)).toBe(true);
     });
 });
 
