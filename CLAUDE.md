@@ -257,6 +257,20 @@ because a native key equivalent beats the webview's keydown handler.
     before the restore has finished so the empty first render cannot erase
     the store. The `restoreTabs` setting (localStorage, default on) only
     gates the restore.
+12. The webview runs under the Content Security Policy in `tauri.conf.json`
+    (`app.security.csp`): `default-src 'self'` plus
+    `connect-src ipc: http://ipc.localhost`. Tauri does not add the IPC
+    origins itself; without them the `fetch` to `ipc://localhost` is blocked
+    and every `invoke` silently falls back to the slower `postMessage`
+    path. `'self'` covers the Vite bundle, the stylesheet and `/logo.png`;
+    Tauri's own init scripts are user scripts and exempt. There is no
+    `'unsafe-inline'`: React writes the `style` prop through the CSSOM,
+    which the CSP does not police, so the virtualized grids' inline styles
+    are fine — what would break the release build is an inline `<style>`
+    or `<script>` element, `setAttribute('style', …)`, a `data:` image or
+    a web font. The policy is only applied to the built assets (the dev
+    server sends none), so check with `scripts/qa/e2e/csp-server.mjs`
+    (see its README) and then on the release `.app` (MQ-11).
 
 ## Testing
 
