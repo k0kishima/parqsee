@@ -9,7 +9,7 @@ import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, evictCacheQuietly } from '../features/file-viewer/api';
-import { rememberFile } from '../features/welcome/api';
+import { rememberFile, sampleFilePath } from '../features/welcome/api';
 import { TabState } from '../features/file-viewer';
 import {
     WorkspaceRoot,
@@ -64,6 +64,12 @@ interface WorkspaceContextType {
     /** The folders open in the explorer, restored from the last session. */
     roots: readonly WorkspaceRoot[];
     openParquetFile: (path: string) => Promise<void>;
+    /**
+     * Open the sample file the app ships, as a tab like any other — it
+     * counts against the free tier's limit and comes back with the
+     * session — except that Recent Files never lists it.
+     */
+    openSampleFile: () => Promise<void>;
     /** Show the native file picker and open what was chosen. */
     openFileDialog: () => Promise<void>;
     /** Show the native folder picker and add what was chosen as a workspace root. */
@@ -228,7 +234,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const openParquetFile = useCallback(async (path: string) => {
+    /**
+     * Open `path` in a tab: the free tier's limit first, then the backend.
+     * `remember` records the file in Recent Files — every user-initiated
+     * open does; the bundled sample is the one file that is not recorded
+     * (the Welcome screen links to it, and its bundle path is not one of
+     * the user's files).
+     */
+    const openFile = useCallback(async (path: string, { remember }: { remember: boolean }) => {
         try {
             if (isTauri()) {
                 // The free tier's limit, before anything is asked of the
@@ -252,10 +265,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 // Recorded now, while the app can read the file, so Recent
                 // Files can reopen it after a relaunch. A failure to record
                 // it is not a failure to open it.
-                const recent = await rememberFile(path).catch(error => {
-                    console.error('Failed to record the file in Recent Files:', error);
-                    return null;
-                });
+                const recent = remember
+                    ? await rememberFile(path).catch(error => {
+                        console.error('Failed to record the file in Recent Files:', error);
+                        return null;
+                    })
+                    : null;
                 if (recent) upsertRecentFile(recent);
 
                 dispatch({
@@ -270,6 +285,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             alert(`Failed to open file: ${error}`);
         }
     }, [upsertRecentFile, removeRecentFile, showUpgrade]);
+
+    const openParquetFile = useCallback((path: string) => openFile(path, { remember: true }), [openFile]);
+
+    const openSampleFile = useCallback(async () => {
+        if (!isTauri()) {
+            alert("The sample file is only available in the desktop app. Please drag and drop a file instead.");
+            return;
+        }
+        // Locating the sample opens nothing; the limit is checked against
+        // its path in openFile, so a sample already in a tab is activated
+        // rather than refused.
+        let path: string;
+        try {
+            path = await sampleFilePath();
+        } catch (error) {
+            console.error('Failed to locate the sample file:', error);
+            alert(`Failed to open the sample file: ${error}`);
+            return;
+        }
+        await openFile(path, { remember: false });
+    }, [openFile]);
 
     const openFileDialog = useCallback(async () => {
         try {
@@ -431,6 +467,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         tabStates,
         roots,
         openParquetFile,
+        openSampleFile,
         openFileDialog,
         openFolderDialog,
         removeWorkspaceRoot,

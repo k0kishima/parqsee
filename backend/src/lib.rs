@@ -198,6 +198,7 @@ pub fn run() {
             commands::file::remove_recent_file,
             commands::file::clear_recent_files,
             commands::file::take_pending_files,
+            commands::file::sample_file_path,
             commands::workspace::list_workspace_roots,
             commands::workspace::add_workspace_root,
             commands::workspace::remove_workspace_root,

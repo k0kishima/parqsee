@@ -39,6 +39,11 @@ them with `take_pending_files` as it does at launch. A warm start — the file
 opened while the window is up — is `finderOpen(page, paths)`, the `file-drop`
 event `deliver_opened` emits. S12 covers both.
 
+The bridge has no Tauri resource directory either: `sample_file_path`
+answers with the checkout's `backend/resources/sample.parquet` (the bytes
+the bundle carries), or with `PARQSEE_SAMPLE_FILE` when set. S13 opens it
+from the Welcome screen and relaunches on it.
+
 Workspace roots, recent files and the session (the open tabs) live in the
 bridge's store (`bookmarks.json` under `PARQSEE_DATA_DIR`). `launch()` gives
 every run a fresh directory under `out/data/`; pass the same `dataDir` to two

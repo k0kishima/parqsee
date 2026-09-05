@@ -24,3 +24,12 @@ export const removeRecentFile = async (path: string): Promise<void> => {
 export const clearRecentFiles = async (): Promise<void> => {
     return await invoke('clear_recent_files');
 };
+
+/**
+ * The bundled sample file (`Contents/Resources/sample.parquet`), for "Open
+ * sample file". Opened through the ordinary open path afterwards, minus
+ * `rememberFile`: it is not one of the user's files.
+ */
+export const sampleFilePath = async (): Promise<string> => {
+    return await invoke('sample_file_path');
+};

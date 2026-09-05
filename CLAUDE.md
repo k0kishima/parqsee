@@ -17,6 +17,9 @@ It features:
   bookmarks so the sandboxed App Store build can reopen them at the next
   launch (tabs come back in order, with their view mode, page and filter)
 - Dark/light mode and English/Japanese localization
+- A bundled sample file (`Contents/Resources/sample.parquet`), opened from
+  the Welcome screen for anyone with no Parquet file at hand — App Store
+  reviewers first of all
 - Mac App Store build: free with a limited tier (3 tabs open at a time)
   and a one-time in-app purchase that removes the limit (StoreKit 2
   through a Swift bridge; `app-store` feature)
@@ -66,6 +69,7 @@ parqsee/
 │   │   ├── models/               # Serde types shared with the frontend
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
+│   ├── resources/                # Bundled into Resources/: sample.parquet (from scripts/gen_sample.py)
 │   ├── storekit/                 # Swift package: the StoreKit 2 bridge (built by build.rs under `app-store`)
 │   ├── build.rs                  # tauri-build, plus the Swift build and link under `app-store`
 │   ├── Cargo.toml
@@ -77,6 +81,7 @@ parqsee/
 │   └── MANUAL_QA.md              # Shell-dependent checks to run on the release app
 └── scripts/
     ├── apply_squircle.py         # Icon post-processing
+    ├── gen_sample.py             # Writes backend/resources/sample.parquet (uv run; the result is committed)
     └── qa/
         ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
         ├── gen_huge.py
@@ -142,6 +147,7 @@ Argument names are camelCase on the JS side.
 | `remember_file` | `(path)` → `RecentFile` | Record a just-opened file in Recent Files and create its security-scoped bookmark |
 | `list_recent_files` | `()` → `RecentFile[]` | Newest first; `available` is false when the file cannot be reached any more |
 | `take_pending_files` | `()` → `string[]` | The files Finder / the Dock handed the app before the webview was listening; asked for once at launch, and empty afterwards |
+| `sample_file_path` | `()` → `string` | Where the bundled sample file is (`resource_dir()/sample.parquet`); an error in a build without it. The webview opens it through `open_parquet_file` like any file, minus `remember_file` |
 | `remove_recent_file` / `clear_recent_files` | `(path)` / `()` → `void` | Edit the Recent Files list |
 | `list_workspace_roots` | `()` → `WorkspaceRoot[]` | The folders open in the explorer, restored at launch |
 | `add_workspace_root` | `(path)` → `WorkspaceRoot` | Open a folder (chosen in the folder dialog) as a root; bookmarked for the next launch |
@@ -257,6 +263,14 @@ store (a purchase approved elsewhere, a refund).
     later. The ObjC calls sit behind the `BookmarkProvider` trait
     (`access/macos.rs`); the store and the lifecycle are unit-tested with a
     fake on any OS.
+    The bundled sample (`services/sample`, `resources/sample.parquet`
+    bundled through `bundle.resources`) needs none of this: the app's own
+    bundle is readable under the sandbox, and `FileAccess` falls back to the
+    plain path for a file it has no bookmark for. The webview opens it
+    through the ordinary path — a tab like any other, counted against the
+    free tier's limit, kept in the session — but never calls `remember_file`
+    for it: the Welcome screen links to it, and Recent Files is capped at
+    five of the user's own files.
     `bookmarks.json` also records the last export folder (`last_export`),
     which only decides where the next save panel starts — the panel grants
     the write. Its bookmark is best effort: the save panel grants the chosen
@@ -359,8 +373,9 @@ store (a purchase approved elsewhere, a refund).
 
 ## Testing
 
-Vitest + Testing Library cover the file-explorer feature, the workspace
-context (tabs, roots, recent files, the free tier's tab limit at open
+Vitest + Testing Library cover the file-explorer feature, the Welcome
+screen's sample link, the workspace
+context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
 cancelled / failed / pending purchases, the upgrade prompt),
@@ -370,7 +385,8 @@ cancelled / failed / pending purchases, the upgrade prompt),
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN, the read-only SQL view, result truncation, export,
 the bookmark store, the URL-to-path conversion and the launch handover in
-`services::opened`, the session entries and the access-grant lifecycle in
+`services::opened`, the sample's lookup and the committed file's shape in
+`services::sample`, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
 macOS-only test), and the free / unlocked state in `services/store` (with a
 fake store; `cargo test --lib --features app-store` adds two round trips
@@ -384,7 +400,8 @@ service functions the commands call, over an unsandboxed store under
 paging, filters, export, the explorer, workspace roots, recent files, the
 session (S11: tabs back across a relaunch, a deleted file's tab skipped and
 named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
-warm start through the `file-drop` event) or the SQL view — see its README for setup (`cargo build --example bridge`,
+warm start through the `file-drop` event), the bundled sample (S13: opened
+from the Welcome screen, not in Recent Files, back after a relaunch) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

@@ -3,11 +3,13 @@ use crate::models::{FileEntry, FileInfo, ParquetMetadata, RecentFile};
 use crate::services::access::FileAccess;
 use crate::services::opened::PendingOpen;
 use crate::services::parquet::ParquetCache;
+use crate::services::sample::sample_path;
 use std::cmp::Ordering;
 use std::fs::{metadata, read_dir, DirEntry};
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
+use tauri::Manager;
 
 /// Match the parquet extension case-insensitively. macOS and Windows preserve
 /// case but treat `data.PARQUET` and `data.parquet` as the same file, and the
@@ -93,6 +95,21 @@ pub async fn take_pending_files(
     pending: tauri::State<'_, Arc<PendingOpen>>,
 ) -> Result<Vec<String>, String> {
     guarded("Reading the files to open", async { Ok(pending.take()) }).await
+}
+
+/// The bundled sample file (see `services::sample`), for the Welcome
+/// screen's "Open sample file". The webview opens the path it gets back
+/// through `open_parquet_file` like any other file, minus `remember_file`.
+#[tauri::command]
+pub async fn sample_file_path(app: tauri::AppHandle) -> Result<String, String> {
+    guarded("Locating the sample file", async {
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("The app's resource directory could not be found: {e}"))?;
+        Ok(sample_path(&resource_dir)?.to_string_lossy().into_owned())
+    })
+    .await
 }
 
 /// Describe one directory entry for the explorer.

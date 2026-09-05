@@ -22,7 +22,9 @@
             "title": "Drop your Parquet file here",
             "subtitle": "or click the button below to browse",
             "browse": "Browse Files",
-            "hint": "Supports .parquet files • ⌘O opens a file, ⌘⇧O a folder"
+            "hint": "Supports .parquet files • ⌘O opens a file, ⌘⇧O a folder",
+            "noFile": "No Parquet file at hand?",
+            "openSample": "Open the sample file"
         },
         "recentFiles": {
             "empty": "No recent files yet. Open a Parquet file to see it here.",

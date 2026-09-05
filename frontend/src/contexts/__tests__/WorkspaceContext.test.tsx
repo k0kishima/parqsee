@@ -8,7 +8,7 @@ import { evictCacheQuietly, openParquetFile } from '../../features/file-viewer/a
 import { open } from '@tauri-apps/plugin-dialog';
 import { addWorkspaceRoot, listWorkspaceRoots, removeWorkspaceRoot, listSessionTabs, saveSession, takePendingFiles } from '../../features/workspace/api';
 import type { SessionTab } from '../../features/workspace/api';
-import { rememberFile, removeRecentFile } from '../../features/welcome/api';
+import { rememberFile, removeRecentFile, sampleFilePath } from '../../features/welcome/api';
 import { checkFileExists } from '../../features/file-viewer/api';
 import { useRecentFiles } from '../RecentFilesContext';
 import { saveSettings, defaultSettings } from '../../lib/settings-storage';
@@ -47,6 +47,7 @@ vi.mock('../../features/welcome/api', () => ({
   rememberFile: vi.fn(async (path: string) => ({ path, name: path.split('/').pop(), size: 1, last_accessed: 0, available: true })),
   removeRecentFile: vi.fn(async () => undefined),
   clearRecentFiles: vi.fn(async () => undefined),
+  sampleFilePath: vi.fn(async () => '/Applications/Parqsee.app/Contents/Resources/sample.parquet'),
 }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -587,5 +588,85 @@ describe('WorkspaceProvider files handed over at launch', () => {
 
     expect(takePendingFiles).toHaveBeenCalledTimes(1);
     expect(result.current.tabs).toEqual([]);
+  });
+});
+
+describe('WorkspaceProvider sample file', () => {
+  const SAMPLE = '/Applications/Parqsee.app/Contents/Resources/sample.parquet';
+
+  beforeEach(() => {
+    localStorage.clear();
+    license.showUpgrade.mockClear();
+    vi.mocked(sampleFilePath).mockClear();
+    vi.mocked(openParquetFile).mockClear();
+    vi.mocked(rememberFile).mockClear();
+    vi.mocked(checkFileExists).mockClear();
+    vi.mocked(saveSession).mockClear();
+  });
+
+  afterEach(() => {
+    license.tabLimit = null;
+  });
+
+  it('opens the bundled sample in a tab without recording it in Recent Files', async () => {
+    const { result } = renderWorkspace();
+    await act(() => result.current.openSampleFile());
+
+    expect(sampleFilePath).toHaveBeenCalledTimes(1);
+    expect(checkFileExists).toHaveBeenCalledWith(SAMPLE);
+    expect(openParquetFile).toHaveBeenCalledWith(SAMPLE);
+    expect(result.current.tabs.map(t => t.name)).toEqual(['sample.parquet']);
+    expect(result.current.activeTab?.path).toBe(SAMPLE);
+    expect(rememberFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the sample in the session like any other tab', async () => {
+    vi.useFakeTimers();
+    const { result } = renderWorkspace();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(() => result.current.openSampleFile());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(vi.mocked(saveSession).mock.lastCall?.[0].map(t => t.path)).toEqual([SAMPLE]);
+    expect(vi.mocked(saveSession).mock.lastCall?.[1]).toBe(SAMPLE);
+    vi.useRealTimers();
+  });
+
+  it('counts against the free tier\'s limit, and activates its tab when it is already open', async () => {
+    license.tabLimit = 3;
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    await act(() => result.current.openSampleFile());
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+    expect(openParquetFile).not.toHaveBeenCalledWith(SAMPLE);
+
+    act(() => result.current.closeTab(result.current.tabs[2].id));
+    await act(() => result.current.openSampleFile());
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'sample.parquet']);
+
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await act(() => result.current.openSampleFile());
+    expect(result.current.activeTab?.path).toBe(SAMPLE);
+    expect(result.current.tabs).toHaveLength(3);
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so, and opens nothing, when this build has no sample', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(sampleFilePath).mockRejectedValueOnce('This build has no sample file (…/sample.parquet is missing)');
+    const { result } = renderWorkspace();
+    await act(() => result.current.openSampleFile());
+
+    expect(result.current.tabs).toHaveLength(0);
+    expect(openParquetFile).not.toHaveBeenCalled();
+    expect(alerted).toHaveBeenCalledWith(expect.stringContaining('This build has no sample file'));
+    alerted.mockRestore();
+    logged.mockRestore();
   });
 });

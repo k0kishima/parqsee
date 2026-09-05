@@ -7,7 +7,7 @@ import { UpgradePrompt } from '../features/license';
 
 export const AppRouter = () => {
     const {
-        tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog, openFolderDialog,
+        tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
     const { upgradeOpen, showUpgrade } = useLicense();
@@ -21,6 +21,7 @@ export const AppRouter = () => {
                     onFileSelect={openParquetFile}
                     onBrowse={openFileDialog}
                     onOpenFolder={openFolderDialog}
+                    onOpenSample={openSampleFile}
                     onOpenSettings={() => toggleSettings(true)}
                 />
             )}
