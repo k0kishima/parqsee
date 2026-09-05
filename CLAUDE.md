@@ -17,6 +17,8 @@ It features:
   bookmarks so the sandboxed App Store build can reopen them at the next
   launch (tabs come back in order, with their view mode, page and filter)
 - Dark/light mode and English/Japanese localization
+- Mac App Store build: 14-day trial and a one-time in-app purchase that
+  unlocks the app (StoreKit 2 through a Swift bridge; `app-store` feature)
 
 ## Tech Stack
 
@@ -58,14 +60,17 @@ parqsee/
 │   └── vitest.config.ts
 ├── backend/                      # Tauri backend
 │   ├── src/
-│   │   ├── commands/             # Tauri command handlers (file, data, query, workspace)
-│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks)
+│   │   ├── commands/             # Tauri command handlers (file, data, query, workspace, iap)
+│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (trial / purchase)
 │   │   ├── models/               # Serde types shared with the frontend
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
+│   ├── storekit/                 # Swift package: the StoreKit 2 bridge (built by build.rs under `app-store`)
+│   ├── build.rs                  # tauri-build, plus the Swift build and link under `app-store`
 │   ├── Cargo.toml
 │   ├── Entitlements.plist        # App Sandbox entitlements (applied to signed release builds)
-│   └── tauri.conf.json           # Tauri config (window, bundle, build hooks)
+│   ├── tauri.conf.json           # Tauri config (window, bundle, build hooks)
+│   └── tauri.appstore.conf.json  # Overlay for the store build: turns the `app-store` feature on
 ├── docs/
 │   ├── ASSETS.md
 │   └── MANUAL_QA.md              # Shell-dependent checks to run on the release app
@@ -74,6 +79,7 @@ parqsee/
     └── qa/
         ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
         ├── gen_huge.py
+        ├── sign_for_storekit.sh  # Re-sign the store build with a development profile for MQ-12
         └── e2e/                  # Playwright WebKit suite against the real backend (see README)
 ```
 
@@ -90,6 +96,7 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `query` — SQL editor and result grid
 - `layout` — tab bar
 - `settings` — settings modal
+- `license` — pre-trial screen / paywall (`LicenseGate`), trial banner, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds the pure screen selection and reducer
 
 ## Key Commands
 
@@ -107,7 +114,8 @@ pnpm tauri dev    # Full desktop app (delegates to `cd ../backend && tauri dev`)
 ```bash
 cd frontend
 pnpm build        # tsc && vite build
-pnpm tauri build  # Production desktop app
+pnpm tauri build  # Production desktop app (no store: always unlocked)
+pnpm tauri:store  # The Mac App Store variant: `app-store` feature, StoreKit bridge linked
 ```
 
 Installers land in `backend/target/release/bundle/`.
@@ -144,12 +152,19 @@ Argument names are camelCase on the JS side.
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
+| `iap_status` | `()` → `IapStatus` | `{state: none \| trial \| trial_expired \| unlocked, trial_ends_at?, trial_days, store_error?}`, derived from the App Store entitlements and the clock on every call; waits for the launch-time read |
+| `iap_products` | `()` → `IapProduct[]` | The trial and full products (`kind`) with the storefront's name, description and `display_price`; empty in a build without a store |
+| `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy a product from `iap_products` (starting the trial is buying the $0 trial item); `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
+| `iap_restore` | `()` → `IapStatus` | Restore Purchases, then the state |
+| `quit_app` | `()` → `void` | Exit; backs Escape / ✕ on the pre-trial screen and the paywall |
 
 The frontend also listens for a `file-drop` event emitted from
-`lib.rs`'s window drag-drop handler, and for a `menu` event carrying the id
+`lib.rs`'s window drag-drop handler, for a `menu` event carrying the id
 of the native menu item that was chosen (`open-file`, `open-folder`,
 `close-tab`, `settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘⇧O / ⌘W / ⌘,
-because a native key equivalent beats the webview's keydown handler.
+because a native key equivalent beats the webview's keydown handler — and
+for `iap-status`, the new `IapStatus` after a transaction update from the
+store (a purchase approved elsewhere, a refund).
 
 ## Architecture Notes
 
@@ -265,7 +280,40 @@ because a native key equivalent beats the webview's keydown handler.
     before the restore has finished so the empty first render cannot erase
     the store. The `restoreTabs` setting (localStorage, default on) only
     gates the restore.
-12. The webview runs under the Content Security Policy in `tauri.conf.json`
+12. The trial and the purchase (`services/store`, issue #15; decisions in
+    #5). The store build is free, usable for `TRIAL_DAYS` (14) after the
+    user starts the trial, unlocked for good by a non-consumable in-app
+    purchase, and locked otherwise (Guideline 3.1.1). The trial is itself
+    a $0 non-consumable, so its start date is the purchase date in the
+    Apple account's history and survives a reinstall. `License` (Tauri
+    managed state, `Arc<License>`) keeps a snapshot of the entitlements —
+    read at launch, after purchase / restore, and on every
+    `Transaction.updates` event — and derives `IapStatus` from it and the
+    clock on every call, so a running app crosses into `trial_expired` by
+    itself. `read_parquet_data`, `count_parquet_data`, `execute_sql` and
+    `export_data` call `License::require_unlocked` first; the webview
+    renders the lock (`LicenseProvider`, `LicenseGate`) and cannot lift
+    it. The product ids (`parqsee.trial14`, `parqsee.full`) and the trial
+    length are constants in `services/store/mod.rs` and nowhere else —
+    they do not depend on the bundle identifier, and the webview asks for
+    products by kind; names, descriptions and prices come from App Store
+    Connect through `iap_products`, never from code. The App Store sits
+    behind the `StoreProvider` trait: `storekit::SwiftStore` (compiled
+    with the `app-store` Cargo feature, macOS only) calls the C functions
+    of the Swift package in `backend/storekit/`, which `build.rs` builds
+    with `swift build` and links statically (see its comments for the
+    Swift runtime and the deployment target: the app requires macOS 12
+    for StoreKit 2, and `MACOSX_DEPLOYMENT_TARGET` is pinned in
+    `.cargo/config.toml` because linking for older makes ld pick an
+    `@rpath` copy of the concurrency runtime that is not in the bundle);
+    `AlwaysUnlocked` serves every other build — the default
+    `pnpm tauri build`, `pnpm tauri dev`, `cargo test --lib`, the e2e
+    bridge, Windows / Linux — so nothing outside the store build ever
+    shows the trial screens. The state machine is unit-tested with a
+    fake provider and a fixed clock; the real store is checked by hand
+    (`docs/MANUAL_QA.md`, MQ-12, which also says how to sign the store
+    build so StoreKit uses the sandbox).
+13. The webview runs under the Content Security Policy in `tauri.conf.json`
     (`app.security.csp`): `default-src 'self'` plus
     `connect-src ipc: http://ipc.localhost`. Tauri does not add the IPC
     origins itself; without them the `fetch` to `ipc://localhost` is blocked
@@ -283,14 +331,20 @@ because a native key equivalent beats the webview's keydown handler.
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the workspace
-context (tabs, roots, recent files), `lib/path`, `lib/column-widths` and
+context (tabs, roots, recent files), the license context and its pure
+parts (screen selection, reducer: none → trial → trial_expired →
+unlocked, none → unlocked, restore, cancelled / failed / pending
+purchases), `lib/path`, `lib/column-widths` and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
-big integers / NaN, the read-only SQL view, result truncation, export, and
+big integers / NaN, the read-only SQL view, result truncation, export,
 the bookmark store, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
-macOS-only test). `cargo test --lib export_bindings` regenerates the ts-rs
+macOS-only test), and the trial / purchase state machine in
+`services/store` (with a fake store and a fixed clock;
+`cargo test --lib --features app-store` adds two round trips through the
+Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through

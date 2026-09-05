@@ -26,6 +26,12 @@ listeners are kept so `window.__emit('file-drop', [path])` delivers drops,
 and `alert()` are recorded). `window.__delays[cmd] = ms` holds one command's
 responses back, which is how the suite provokes out-of-order responses.
 
+The bridge has no App Store: `iap_status` answers `unlocked` (the same
+`AlwaysUnlocked` provider every build without the `app-store` feature uses),
+so the trial screens never appear here and the row commands are never
+refused. The trial and the purchase are checked by hand on the store build
+(`docs/MANUAL_QA.md`, MQ-12).
+
 Workspace roots, recent files and the session (the open tabs) live in the
 bridge's store (`bookmarks.json` under `PARQSEE_DATA_DIR`). `launch()` gives
 every run a fresh directory under `out/data/`; pass the same `dataDir` to two
