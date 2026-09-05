@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サポート — Parqsee</title>
+<meta name="description" content="Parqsee の問い合わせ先と、よくある質問への回答。">
+<link rel="icon" href="../img/icon.png">
+<link rel="canonical" href="https://k0kishima.github.io/parqsee/ja/support.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../img/icon.png" alt="">Parqsee</a>
+    <nav>
+      <a href="./">ホーム</a>
+      <a href="privacy.html">プライバシー</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="../support.html" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main class="prose wrap">
+  <h1>サポート</h1>
+  <p class="updated">Parqsee は個人開発です。返信はその範囲での対応になります。</p>
+
+  <h2>問い合わせ</h2>
+  <p>
+    不具合の報告・質問は
+    <a href="https://github.com/k0kishima/parqsee/issues">github.com/k0kishima/parqsee/issues</a>
+    へお願いします。次の情報があると調べやすくなります。
+  </p>
+  <ul>
+    <li>macOS のバージョンと Mac の機種、Parqsee のバージョン（<em>Parqsee → Parqsee について</em>）</li>
+    <li>何をしたら、どうなったか</li>
+    <li>ファイルが開けない場合: 書き出したツール（pandas / Spark / DuckDB など）、ファイルサイズ、共有できるなら現象を再現する小さなファイル。公開できないデータは添付しないでください。</li>
+  </ul>
+
+  <h2>よくある質問</h2>
+
+  <h3>なぜ先にフォルダを開く必要があるのですか</h3>
+  <p>
+    App Store 版は Apple のサンドボックス内で動作し、利用者が渡したものしか読めません。ウィンドウへのドロップ、Finder でのダブルクリック、「開く」パネルでの選択は、そのファイルについては十分です。サイドバーでツリーを辿るには
+    <em>フォルダを開く</em>（⌘⇧O）を一度実行してください。以後は起動のたびにそのフォルダを開き直せます。
+  </p>
+
+  <h3>無料版の制限は何ですか</h3>
+  <p>
+    同時に開けるファイルが 3 つまでです。それ以外 — ページ送り、絞り込み、検索、SQL ビュー、書き出し — に制限はありません。買い切りのアプリ内課金でこの上限が恒久的に外れます。サブスクリプションでも、期限切れになる体験版でもありません。
+  </p>
+
+  <h3>購入済みなのに別の Mac で上限が出ます</h3>
+  <p>
+    購入した Apple アカウントでサインインした状態で、<em>設定 → 購入</em>から
+    <em>購入を復元</em>を実行してください。購入はマシンではなくアカウントに紐づきます。ファミリー共有はアプリ内課金に関する Apple の規定に従います。
+  </p>
+
+  <h3>返金してもらえますか</h3>
+  <p>
+    App Store での購入はすべて Apple が販売者です。返金は
+    <a href="https://reportaproblem.apple.com/">reportaproblem.apple.com</a> から申請してください。
+  </p>
+
+  <h3>どんなファイルを開けますか</h3>
+  <p>
+    Apache Parquet ファイル（<code>.parquet</code>）です。書き出したツールや圧縮方式は問いません。非常に大きなファイルでも、手前の行グループを読み飛ばして目的のページだけを読むため問題ありません。開けないファイルがあれば報告していただけると助かります。表示されるエラーはリーダーが返したものです。
+  </p>
+
+  <h3>最近開いたファイルやタブはどこに保存されますか</h3>
+  <p>
+    Mac 上のアプリ自身のコンテナの中だけです — <a href="privacy.html">プライバシーポリシー</a>をご覧ください。最近開いたファイルはスタート画面から消去でき、コンテナを削除すればすべて初期化されます。
+  </p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Parqsee</span>
+    <nav>
+      <a href="./">ホーム</a>
+      <a href="privacy.html">プライバシー</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

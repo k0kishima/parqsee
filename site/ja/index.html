@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parqsee — macOS 向けの高速な Parquet ビューア</title>
+<meta name="description" content="Parqsee は Mac で Apache Parquet ファイルを開くアプリです。閲覧・絞り込み・検索、SQL での問い合わせ、CSV / JSON への書き出しまで、すべてローカルで完結します。">
+<link rel="icon" href="../img/icon.png">
+<link rel="canonical" href="https://k0kishima.github.io/parqsee/ja/">
+<link rel="alternate" hreflang="en" href="https://k0kishima.github.io/parqsee/">
+<link rel="alternate" hreflang="ja" href="https://k0kishima.github.io/parqsee/ja/">
+<meta property="og:title" content="Parqsee — macOS 向けの高速な Parquet ビューア">
+<meta property="og:description" content="Mac で Apache Parquet ファイルを開き、絞り込み、SQL で問い合わせる。ローカル完結、アカウント不要。">
+<meta property="og:image" content="https://k0kishima.github.io/parqsee/img/screenshot-ja-light.png">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../img/icon.png" alt="">Parqsee</a>
+    <nav>
+      <a href="#features">機能</a>
+      <a href="#pricing">価格</a>
+      <a href="support.html">サポート</a>
+      <a href="privacy.html">プライバシー</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="../" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero wrap">
+    <h1>Parquet ファイルを、開くだけ。</h1>
+    <p class="lede">
+      Parqsee は Apache Parquet のための macOS ネイティブなビューアです。行を送りながら中身を眺め、条件で絞り込み、SQL で問い合わせ、必要な分だけ書き出す。ノートブックもクラスタもアップロードも要りません。
+    </p>
+    <div class="cta">
+      <!-- 審査通過後（#16）に Apple 公式の「Mac App Store でダウンロード」バッジとアプリページへのリンクに差し替える。 -->
+      <span class="badge-slot pending">Mac App Store に近日公開</span>
+      <a class="btn-ghost" href="https://github.com/k0kishima/parqsee">ソースからビルド</a>
+    </div>
+    <p class="req">macOS 12 以降 · Apple シリコン / Intel 対応</p>
+
+    <figure class="shot">
+      <picture>
+        <source srcset="../img/screenshot-ja-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../img/screenshot-ja-light.png" width="1600" height="1000"
+             alt="Parqsee で Parquet ファイルを開いた画面。サイドバーにフォルダ内のファイル、右に列の型付きのテーブル、絞り込みバーとページ送り。">
+      </picture>
+    </figure>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>できること</h2>
+      <p class="sub">すべて手元の Mac で、手元のファイルに対して動きます。</p>
+      <div class="features">
+        <div>
+          <h3>大きなファイルでも速い</h3>
+          <p>Arrow / Parquet を使う Rust 製バックエンドが、手前の行グループを読み飛ばして目的のページだけを読みます。数千万行のファイルでも小さなファイルと同じ感覚で送れます。</p>
+        </div>
+        <div>
+          <h3>型をごまかさない</h3>
+          <p>各列には Parquet 上の型を表示します。decimal、64 ビット整数、非有限の浮動小数点も、
+             JavaScript の数値に丸めずに保存されたまま表示します。</p>
+        </div>
+        <div>
+          <h3>絞り込みと検索</h3>
+          <p>任意の列に条件を組み立てるか、表示中のページを検索できます。条件を足しても行の順序は変わりません。</p>
+        </div>
+        <div>
+          <h3>ファイルに SQL</h3>
+          <p>開いているファイルはテーブル <code>t</code> です。DataFusion の読み取り専用クエリ — 集計、ウィンドウ関数、CTE — を実行し、結果を同じグリッドで読めます。</p>
+        </div>
+        <div>
+          <h3>書き出し</h3>
+          <p>ファイル全体・表示中のページ・絞り込んだ行を CSV または JSON へ。行はストリーミングされるので、1,000 行でも数千万行でもメモリ使用量は変わりません。</p>
+        </div>
+        <div>
+          <h3>タブとファイルエクスプローラー</h3>
+          <p>フォルダを開けば、その中の Parquet ファイルをサイドバーから辿れます。開いていたタブは、ページや絞り込み条件ごと次回起動時に戻ります。</p>
+        </div>
+        <div>
+          <h3>Finder から開ける</h3>
+          <p><code>.parquet</code> をダブルクリック、ウィンドウや Dock アイコンにドロップ。最近開いたファイルはスタート画面からワンクリックです。</p>
+        </div>
+        <div>
+          <h3>ダークモード、日本語と英語</h3>
+          <p>システムの外観に追従し、言語は設定から切り替えられます。</p>
+        </div>
+        <div>
+          <h3>そもそも通信しない</h3>
+          <p>ファイルが Mac の外に出ることはありません。アカウントも計測もクラウドもなし — <a href="privacy.html">プライバシーポリシー</a>をご覧ください。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="wrap">
+      <h2>無料で使えて、上限を外すのは買い切り 1 回</h2>
+      <p class="sub">サブスクリプションなし、期限切れの体験版なし、ライセンスキーなし。</p>
+      <div class="tiers">
+        <div class="tier">
+          <h3>無料版</h3>
+          <p class="price">ダウンロード無料</p>
+          <ul>
+            <li>同時に開けるファイルは 3 つまで</li>
+            <li>ページ送り・絞り込み・検索</li>
+            <li>SQL ビュー</li>
+            <li>CSV / JSON 書き出し</li>
+          </ul>
+        </div>
+        <div class="tier">
+          <h3>フルバージョン</h3>
+          <p class="price">アプリ内課金（買い切り）</p>
+          <ul>
+            <li>無料版のすべて</li>
+            <li>同時に開けるファイル数の上限なし</li>
+            <li>一度購入すればそのまま — 更新料なし</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Parqsee</span>
+    <nav>
+      <a href="support.html">サポート</a>
+      <a href="privacy.html">プライバシー</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="../" lang="en">English</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

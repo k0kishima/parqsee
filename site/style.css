@@ -1,0 +1,109 @@
+/* Parqsee site. One stylesheet, no external requests: the privacy policy says
+   the app talks to nothing, and a page that phones a font CDN to say so would
+   be a poor way to put it. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
+  --fg: #10151c;
+  --fg-soft: #5a6675;
+  --line: #e3e7ec;
+  --accent: #1a6ef5;
+  --accent-fg: #ffffff;
+  --radius: 12px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10151c;
+    --bg-soft: #171e27;
+    --fg: #e9edf2;
+    --fg-soft: #9aa7b6;
+    --line: #26303c;
+    --accent: #4b90ff;
+    --accent-fg: #0b1017;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font: 16px/1.65 var(--sans);
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); }
+code { font: 0.9em var(--mono); }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+/* ---- header ---- */
+header {
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 2;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(12px);
+}
+header .wrap { display: flex; align-items: center; gap: 20px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: inherit; text-decoration: none; }
+.brand img { width: 26px; height: 26px; border-radius: 6px; }
+header nav { margin-left: auto; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+header nav a { color: var(--fg-soft); text-decoration: none; font-size: 14px; }
+header nav a:hover { color: var(--fg); }
+
+/* ---- hero ---- */
+.hero { padding: 72px 0 40px; text-align: center; }
+.hero h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; }
+.hero p.lede { font-size: 19px; color: var(--fg-soft); max-width: 640px; margin: 0 auto 28px; }
+.cta { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.badge-slot {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 20px; border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-fg);
+  font-weight: 600; text-decoration: none;
+}
+.badge-slot.pending { background: var(--bg-soft); color: var(--fg-soft); border: 1px dashed var(--line); font-weight: 500; }
+.btn-ghost {
+  padding: 12px 18px; border-radius: var(--radius);
+  border: 1px solid var(--line); color: var(--fg); text-decoration: none; font-weight: 500;
+}
+.req { margin-top: 14px; font-size: 13px; color: var(--fg-soft); }
+
+figure.shot { margin: 44px 0 0; }
+figure.shot img {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.12);
+}
+
+/* ---- sections ---- */
+section { padding: 56px 0; border-top: 1px solid var(--line); }
+section h2 { font-size: 24px; letter-spacing: -0.01em; margin: 0 0 8px; }
+section > .wrap > p.sub { color: var(--fg-soft); margin: 0 0 28px; }
+
+.features { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.features h3 { font-size: 16px; margin: 0 0 6px; }
+.features p { margin: 0; color: var(--fg-soft); font-size: 15px; }
+
+.tiers { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.tier { border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; background: var(--bg-soft); }
+.tier h3 { margin: 0 0 4px; font-size: 17px; }
+.tier .price { color: var(--fg-soft); font-size: 14px; margin: 0 0 14px; }
+.tier ul { margin: 0; padding-left: 20px; color: var(--fg-soft); font-size: 15px; }
+
+/* ---- prose pages ---- */
+.prose { padding: 56px 0 72px; }
+.prose h1 { font-size: 30px; letter-spacing: -0.015em; margin: 0 0 6px; }
+.prose .updated { color: var(--fg-soft); font-size: 14px; margin: 0 0 32px; }
+.prose h2 { font-size: 19px; margin: 34px 0 8px; }
+.prose h3 { font-size: 16px; margin: 26px 0 6px; }
+.prose ul { padding-left: 22px; }
+.prose li { margin: 6px 0; }
+
+footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--fg-soft); font-size: 14px; }
+footer .wrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+footer nav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+footer a { color: var(--fg-soft); }

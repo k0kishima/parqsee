@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parqsee — a fast Parquet viewer for macOS</title>
+<meta name="description" content="Parqsee opens Apache Parquet files on your Mac: browse, filter, search and query them with SQL, then export to CSV or JSON. Native, offline, no account.">
+<link rel="icon" href="img/icon.png">
+<link rel="canonical" href="https://k0kishima.github.io/parqsee/">
+<link rel="alternate" hreflang="en" href="https://k0kishima.github.io/parqsee/">
+<link rel="alternate" hreflang="ja" href="https://k0kishima.github.io/parqsee/ja/">
+<meta property="og:title" content="Parqsee — a fast Parquet viewer for macOS">
+<meta property="og:description" content="Open, filter and query Apache Parquet files on your Mac. Native, offline, no account.">
+<meta property="og:image" content="https://k0kishima.github.io/parqsee/img/screenshot-en-light.png">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="img/icon.png" alt="">Parqsee</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="support.html">Support</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="ja/" lang="ja">日本語</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero wrap">
+    <h1>Open a Parquet file. Nothing else required.</h1>
+    <p class="lede">
+      Parqsee is a native macOS viewer for Apache Parquet: browse and page
+      through the rows, filter and search them, run SQL over the file, and
+      export what you found. No notebook, no cluster, no upload.
+    </p>
+    <div class="cta">
+      <!-- After approval (#16): replace this with Apple's official
+           "Download on the Mac App Store" badge linking to the app's page. -->
+      <span class="badge-slot pending">Coming to the Mac App Store</span>
+      <a class="btn-ghost" href="https://github.com/k0kishima/parqsee">Build from source</a>
+    </div>
+    <p class="req">macOS 12 or later · Apple silicon and Intel</p>
+
+    <figure class="shot">
+      <picture>
+        <source srcset="img/screenshot-en-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="img/screenshot-en-light.png" width="1600" height="1000"
+             alt="Parqsee showing a Parquet file: a folder of files in the sidebar, the rows in a table with their column types, a filter bar and pagination.">
+      </picture>
+    </figure>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <p class="sub">Everything runs on your machine, on files you already have.</p>
+      <div class="features">
+        <div>
+          <h3>Fast on large files</h3>
+          <p>A Rust backend on Arrow and Parquet reads a page of rows by
+             skipping the row groups before it, so a file with tens of
+             millions of rows pages as quickly as a small one.</p>
+        </div>
+        <div>
+          <h3>Real types, not guesses</h3>
+          <p>Each column shows its Parquet type. Decimals, 64-bit integers
+             and non-finite floats are rendered as they are stored, not
+             rounded through a JavaScript number.</p>
+        </div>
+        <div>
+          <h3>Filter and search</h3>
+          <p>Build conditions over any column, or search the page you are
+             looking at. The row order never changes when you add a filter.</p>
+        </div>
+        <div>
+          <h3>SQL over the file</h3>
+          <p>The open file is table <code>t</code>. Run a read-only DataFusion
+             query — aggregates, window functions, CTEs — and read the
+             result in the same grid.</p>
+        </div>
+        <div>
+          <h3>Export</h3>
+          <p>Write the whole file, the current page or the filtered rows to
+             CSV or JSON. The rows are streamed, so the export uses the same
+             memory for a thousand rows as for tens of millions.</p>
+        </div>
+        <div>
+          <h3>A file explorer, in tabs</h3>
+          <p>Open a folder and browse its Parquet files in the sidebar. Tabs,
+             their page and their filter come back the next time you launch.</p>
+        </div>
+        <div>
+          <h3>Opens from Finder</h3>
+          <p>Double-click a <code>.parquet</code> file, drop it on the window
+             or the Dock icon. Recent files are one click from the start
+             screen.</p>
+        </div>
+        <div>
+          <h3>Dark mode, English and Japanese</h3>
+          <p>Follows the system appearance, and switches language in
+             Settings.</p>
+        </div>
+        <div>
+          <h3>Offline by construction</h3>
+          <p>Your files never leave your Mac. No account, no telemetry, no
+             cloud — see the <a href="privacy.html">privacy policy</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="wrap">
+      <h2>Free to use, one purchase to remove the limit</h2>
+      <p class="sub">No subscription, no trial that expires, no license key.</p>
+      <div class="tiers">
+        <div class="tier">
+          <h3>Free</h3>
+          <p class="price">Free download</p>
+          <ul>
+            <li>Up to 3 files open at a time</li>
+            <li>Paging, filters and search</li>
+            <li>The SQL view</li>
+            <li>CSV and JSON export</li>
+          </ul>
+        </div>
+        <div class="tier">
+          <h3>Full version</h3>
+          <p class="price">One-time in-app purchase</p>
+          <ul>
+            <li>Everything in Free</li>
+            <li>As many files open at a time as you like</li>
+            <li>Bought once, kept forever — no renewal</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Parqsee</span>
+    <nav>
+      <a href="support.html">Support</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="ja/" lang="ja">日本語</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

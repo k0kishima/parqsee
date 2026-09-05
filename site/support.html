@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support — Parqsee</title>
+<meta name="description" content="How to get help with Parqsee, and answers to the questions that come up most.">
+<link rel="icon" href="img/icon.png">
+<link rel="canonical" href="https://k0kishima.github.io/parqsee/support.html">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="img/icon.png" alt="">Parqsee</a>
+    <nav>
+      <a href="./">Home</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="ja/support.html" lang="ja">日本語</a>
+    </nav>
+  </div>
+</header>
+
+<main class="prose wrap">
+  <h1>Support</h1>
+  <p class="updated">Parqsee is made by one developer; replies are as fast as that allows.</p>
+
+  <h2>Getting help</h2>
+  <p>
+    Report a problem or ask a question at
+    <a href="https://github.com/k0kishima/parqsee/issues">github.com/k0kishima/parqsee/issues</a>.
+    It helps to include:
+  </p>
+  <ul>
+    <li>your macOS version and Mac model, and the Parqsee version
+        (<em>Parqsee → About Parqsee</em>);</li>
+    <li>what you did and what happened instead;</li>
+    <li>for a file that will not open: how it was written (pandas, Spark,
+        DuckDB, …), its size, and — if you can share it — a small file that
+        shows the problem. Never attach data you are not free to publish.</li>
+  </ul>
+
+  <h2>Questions that come up</h2>
+
+  <h3>Why do I have to open a folder before I can browse?</h3>
+  <p>
+    The App Store version runs in Apple's sandbox, which lets an app read only
+    what you hand it. Dropping a file on the window, double-clicking it in
+    Finder or picking it in the open panel is enough for that file; to browse a
+    tree in the sidebar, use <em>Open Folder</em> (⌘⇧O) once and Parqsee can
+    reopen that folder at every launch.
+  </p>
+
+  <h3>What is the limit in the free version?</h3>
+  <p>
+    Three files open at a time. Everything else — paging, filters, search, the
+    SQL view, export — works with no limit. The one-time in-app purchase
+    removes the tab limit permanently; there is no subscription and no trial
+    that runs out.
+  </p>
+
+  <h3>I bought the full version but a new Mac shows the limit</h3>
+  <p>
+    Open <em>Settings → Purchase</em> and choose <em>Restore Purchases</em>,
+    signed in with the Apple Account that made the purchase. The purchase is
+    tied to that account, not to the machine, and Family Sharing follows
+    Apple's rules for in-app purchases.
+  </p>
+
+  <h3>Can I get a refund?</h3>
+  <p>
+    Apple is the seller for everything bought in the App Store. Request a
+    refund at <a href="https://reportaproblem.apple.com/">reportaproblem.apple.com</a>.
+  </p>
+
+  <h3>Which files can it open?</h3>
+  <p>
+    Apache Parquet files (<code>.parquet</code>), whichever tool wrote them,
+    with any of the usual compressions. Very large files are fine — pages are
+    read by skipping the row groups before them, not by decoding the whole
+    file. If a file will not open, it is worth filing: the error the app shows
+    is the one the reader gave.
+  </p>
+
+  <h3>Where does Parqsee keep my recent files and tabs?</h3>
+  <p>
+    Inside its own container on your Mac, and nowhere else — see the
+    <a href="privacy.html">privacy policy</a>. Recent files can be cleared from
+    the start screen; removing the app's container resets everything.
+  </p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Parqsee</span>
+    <nav>
+      <a href="./">Home</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

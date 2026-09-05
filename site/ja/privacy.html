@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プライバシーポリシー — Parqsee</title>
+<meta name="description" content="Parqsee は一切のデータを収集しません。Parquet ファイルは Mac の中だけで読み込まれ、外に出ることはありません。">
+<link rel="icon" href="../img/icon.png">
+<link rel="canonical" href="https://k0kishima.github.io/parqsee/ja/privacy.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../img/icon.png" alt="">Parqsee</a>
+    <nav>
+      <a href="./">ホーム</a>
+      <a href="support.html">サポート</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+      <a href="../privacy.html" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main class="prose wrap">
+  <h1>プライバシーポリシー</h1>
+  <p class="updated">2026 年 9 月 5 日 発効</p>
+
+  <p>
+    Parqsee は Mac の中だけで完結する Parquet ファイルビューアです。
+    <strong>利用者に関するデータを一切収集せず、どこにも送信しません。</strong>
+    アカウント、サインイン、アクセス解析、クラッシュレポート、広告のいずれもありません。
+  </p>
+
+  <h2>あなたのファイル</h2>
+  <p>
+    Parqsee が読むのは、あなたが開いたファイル — ウィンドウへのドロップ、Finder からの起動、「開く」パネルでの選択、開いたフォルダ内からの選択 — だけです。その内容もファイル名もパスも送信されません。表示のために読むだけで、あなた自身が CSV / JSON へ書き出したとき以外、どこにもコピーされません。
+  </p>
+
+  <h2>Mac に保存されるもの</h2>
+  <p>
+    前回の状態から再開できるように、Parqsee は次の情報を Mac 上の自身のコンテナ（<code>~/Library/Containers/llc.fuji.parqsee/</code>）に保存します。
+  </p>
+  <ul>
+    <li>設定（外観・言語・1 ページあたりの行数）</li>
+    <li>最近開いたファイル 5 件、エクスプローラーで開いたフォルダ、開いていたタブ — 次回起動時に開き直すため、それぞれ macOS が発行するアクセス許可のトークンとともに保存します</li>
+    <li>最後に書き出したフォルダ（次回の保存パネルの初期位置に使います）</li>
+  </ul>
+  <p>
+    これらは Mac の中に留まります。同期もされず、開発者に送られることもなく、あなた以外が読めるものでもありません。アプリまたはそのコンテナを削除すればすべて消えます。最近開いたファイルはスタート画面からいつでも消去できます。
+  </p>
+
+  <h2>アプリ内課金</h2>
+  <p>
+    フルバージョンは買い切りのアプリ内課金で、決済はすべて Apple が処理します。
+    Parqsee は App Store に「この Apple アカウントで購入済みか」を尋ね、
+    App Store が返す名称と価格を表示するだけです。支払い情報がアプリに渡ることはなく、開発者が Apple から受け取るのはすべての開発者に提供される集計済みの売上レポートのみで、個人情報は含まれません。決済の取り扱いは
+    <a href="https://www.apple.com/legal/privacy/">Apple のプライバシーポリシー</a>に従います。
+  </p>
+
+  <h2>ネットワーク</h2>
+  <p>
+    Parqsee は開発者が運用するサーバーに一切接続しません。更新チェックもライセンスサーバーもリモート設定もなく、アップデートは App Store が配信します。通信が発生するのは、アプリ内課金の購入・復元のときの Apple との通信だけです。
+  </p>
+
+  <h2>子どもの利用について</h2>
+  <p>
+    Parqsee は年齢制限 4+ の開発者向けユーティリティです。ユーザー生成コンテンツもメッセージ機能も広告もなく、そもそも何も収集しないため、子どもから収集する情報もありません。
+  </p>
+
+  <h2>変更について</h2>
+  <p>
+    このポリシーを変更する場合は、新しい発効日とともにこのページで公開します。何も収集していない以上、ここが変わるということはアプリ自体の変更を意味するので、リリースノートにも記載します。
+  </p>
+
+  <h2>お問い合わせ</h2>
+  <p>
+    本ポリシーに関するお問い合わせは
+    <a href="https://github.com/k0kishima/parqsee/issues">github.com/k0kishima/parqsee/issues</a>
+    へ、または<a href="support.html">サポートページ</a>をご覧ください。
+  </p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Parqsee</span>
+    <nav>
+      <a href="./">ホーム</a>
+      <a href="support.html">サポート</a>
+      <a href="https://github.com/k0kishima/parqsee">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
