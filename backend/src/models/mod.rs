@@ -122,3 +122,76 @@ pub struct SessionTabInput {
     #[serde(default)]
     pub state: SessionTabState,
 }
+
+/// Where the app stands with the trial and the one-time purchase; derived
+/// by `services::store::License` from the App Store entitlements and the
+/// clock, never stored by the webview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "ipc/")]
+pub enum IapState {
+    /// Neither the trial nor the purchase: the pre-trial screen.
+    None,
+    /// Inside the trial period.
+    Trial,
+    /// The trial period has passed and nothing was bought: the paywall.
+    TrialExpired,
+    /// The full version is owned.
+    Unlocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct IapStatus {
+    pub state: IapState,
+    /// Unix time in milliseconds when the trial ends (or ended), once one
+    /// was started; the banner and the paywall count down from it.
+    pub trial_ends_at: Option<i64>,
+    /// The trial length the backend enforces, so the screens quote the
+    /// same number.
+    pub trial_days: u32,
+    /// Set when the entitlements could not be read from the App Store;
+    /// the app is locked until they can be.
+    pub store_error: Option<String>,
+}
+
+/// The role of a store product, so the webview never carries a product id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "ipc/")]
+pub enum IapProductKind {
+    Trial,
+    Full,
+}
+
+/// A product as the App Store describes it in the user's storefront —
+/// name, description and price are App Store Connect's, not the app's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct IapProduct {
+    pub id: String,
+    pub kind: IapProductKind,
+    pub display_name: String,
+    pub description: String,
+    /// Localized, currency included (`¥1,500`, `$9.99`).
+    pub display_price: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "ipc/")]
+pub enum IapPurchaseOutcome {
+    Purchased,
+    Cancelled,
+    /// Waiting on something outside the app (Ask to Buy, a payment
+    /// review); `Transaction.updates` delivers the result later.
+    Pending,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct IapPurchaseResult {
+    pub outcome: IapPurchaseOutcome,
+    /// The status after the purchase was accounted for.
+    pub status: IapStatus,
+}

@@ -1,5 +1,6 @@
 import { Menu, File, FolderOpen, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { TrialBanner } from '../../license';
 
 interface HeaderProps {
     isSidebarOpen: boolean;
@@ -24,6 +25,7 @@ export const Header = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolde
             </button>
             <span className="ml-3 text-sm text-gray-500 dark:text-gray-400">{t('common.fileExplorer')}</span>
             <div className="ml-auto flex items-center gap-1">
+                <TrialBanner />
                 <button onClick={onOpenFile} className={iconButton} title={`${t('common.openFile')} (⌘O)`}>
                     <File className="w-5 h-5" />
                 </button>

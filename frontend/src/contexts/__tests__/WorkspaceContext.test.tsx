@@ -23,6 +23,8 @@ vi.mock('../../features/workspace/api', () => ({
   listSessionTabs: vi.fn(async () => ({ tabs: [], active: null })),
   saveSession: vi.fn(async () => undefined),
 }));
+// The license gates the restore; here the app is always unlocked.
+vi.mock('../LicenseContext', () => ({ useLicense: () => ({ usable: true }) }));
 // SettingsProvider syncs the language into i18n, which the global setup does not provide.
 vi.mock('../../lib/i18n', () => ({ default: { language: 'en', changeLanguage: vi.fn() } }));
 // SettingsProvider follows the system theme through matchMedia, which jsdom lacks.

@@ -3,3 +3,9 @@
 # bindings so frontend callers cannot silently drift from serialized responses.
 TS_RS_EXPORT_DIR = { value = "../frontend/src/bindings", relative = true }
 TS_RS_LARGE_INT = "number"
+# The app requires macOS 12 (StoreKit 2; `bundle.macOS.minimumSystemVersion`
+# in tauri.conf.json says the same for the bundle). Linking for anything
+# older makes ld pick the `@rpath` back-deployment copy of the Swift
+# concurrency runtime, which is not in the bundle, so the store build would
+# not start.
+MACOSX_DEPLOYMENT_TARGET = "12.0"

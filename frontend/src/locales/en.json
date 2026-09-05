@@ -148,5 +148,45 @@
     "session": {
         "notReopened_one": "{{count}} file from the last session could not be reopened",
         "notReopened_other": "{{count}} files from the last session could not be reopened"
+    },
+    "license": {
+        "trialTitle": "Try Parqsee free for {{count}} days",
+        "expiredTitle": "Your free trial has ended",
+        "trialIntro": "Start a free {{count}}-day trial to use everything in Parqsee. Nothing is charged to start it; the trial is recorded with your Apple Account.",
+        "expiredIntro": "The {{count}}-day free trial is over. Buy Parqsee once to keep using it, or restore a purchase made with this Apple Account.",
+        "lockedHeading": "Without the trial or the purchase, these stop working:",
+        "locked": {
+            "rows": "Viewing rows, paging and filtering",
+            "sql": "SQL queries",
+            "export": "CSV / JSON export"
+        },
+        "stillWorks": "Opening files and reading their schema keeps working.",
+        "price": "One-time purchase: {{price}}",
+        "priceLoading": "Loading the price from the App Store…",
+        "priceUnavailable": "The App Store did not return a price for Parqsee.",
+        "priceError": "The price could not be loaded: {{reason}}",
+        "retry": "Retry",
+        "startTrial": "Start free trial",
+        "buy": "Buy",
+        "buyFor": "Buy for {{price}}",
+        "restore": "Restore purchases",
+        "quit": "Quit Parqsee",
+        "working": "Contacting the App Store…",
+        "pending": "The purchase is waiting for approval. Parqsee unlocks as soon as it goes through.",
+        "storeError": "Parqsee could not check its purchase with the App Store: {{reason}}",
+        "banner": {
+            "daysLeft_one": "Trial · {{count}} day left",
+            "daysLeft_other": "Trial · {{count}} days left"
+        },
+        "settings": {
+            "title": "Purchase",
+            "unlocked": "Full version — unlocked",
+            "trial_one": "Free trial · {{count}} day left",
+            "trial_other": "Free trial · {{count}} days left",
+            "expired": "Free trial ended",
+            "none": "Free trial not started",
+            "history": "Purchase history on apple.com",
+            "desc": "The purchase is tied to your Apple Account and can be restored on any Mac signed in with it."
+        }
     }
 }

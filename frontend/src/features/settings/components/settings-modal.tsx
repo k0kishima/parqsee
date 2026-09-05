@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
+import { PurchaseSettings } from '../../license';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -262,6 +263,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </p>
               </div>
             </div>
+
+            {/* Purchase */}
+            <PurchaseSettings />
 
             {/* Recent Files Settings */}
             <div>

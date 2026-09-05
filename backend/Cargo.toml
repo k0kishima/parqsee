@@ -14,6 +14,13 @@ edition = "2021"
 name = "parqsee_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Links the StoreKit 2 bridge (`storekit/`, built by `build.rs`) and reads
+# the trial / purchase state from the App Store. Off by default: the e2e
+# bridge, `cargo test --lib`, `pnpm tauri dev` and non-macOS builds run
+# without it and are always unlocked (see `services::store`).
+app-store = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

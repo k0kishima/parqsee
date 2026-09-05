@@ -4,6 +4,8 @@ use ts_rs::TS;
 
 use crate::commands::guarded;
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
+use crate::services::store::License;
+use std::sync::Arc;
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
 /// the JSON round trip both scale with rows x columns; beyond this the UI
@@ -31,13 +33,19 @@ pub struct QueryResult {
     pub max_rows: usize,
 }
 
+/// Checks the license first (see `services::store`).
 #[command]
 pub async fn execute_sql(
     cache: tauri::State<'_, ParquetCache>,
+    license: tauri::State<'_, Arc<License>>,
     file_path: String,
     query: String,
 ) -> Result<QueryResult, String> {
-    guarded("The query", run_query(&cache, &file_path, &query)).await
+    guarded("The query", async {
+        license.require_unlocked().await?;
+        run_query(&cache, &file_path, &query).await
+    })
+    .await
 }
 
 /// The SQL view's query, minus the Tauri plumbing, so the E2E bridge

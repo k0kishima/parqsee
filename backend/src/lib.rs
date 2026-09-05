@@ -4,6 +4,7 @@ pub mod services;
 
 use services::access::FileAccess;
 use services::parquet::ParquetCache;
+use services::store::{License, StoreProvider};
 use std::sync::Arc;
 use tauri::{DragDropEvent, Emitter, Manager};
 
@@ -90,6 +91,19 @@ fn bookmark_provider() -> Box<dyn services::access::BookmarkProvider> {
     }
 }
 
+/// The App Store, on the store build; every other build owns the full
+/// version. See `services::store`.
+fn store_provider() -> Box<dyn StoreProvider> {
+    #[cfg(all(feature = "app-store", target_os = "macos"))]
+    {
+        Box::new(services::store::storekit::SwiftStore)
+    }
+    #[cfg(not(all(feature = "app-store", target_os = "macos")))]
+    {
+        Box::new(services::store::AlwaysUnlocked)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -110,6 +124,20 @@ pub fn run() {
             let access = Arc::new(FileAccess::load(bookmark_provider(), data_dir.as_deref()));
             app.manage(Arc::clone(&access));
             app.manage(ParquetCache::with_access(access));
+
+            // The trial / purchase state. Read in the background; commands
+            // that need it wait for the first read (`License::status`).
+            // A transaction update from the store reaches the webview as
+            // the `iap-status` event.
+            let license = Arc::new(License::new(store_provider()));
+            let handle = app.handle().clone();
+            license.set_on_change(Box::new(move |status| {
+                if let Err(e) = handle.emit("iap-status", status) {
+                    eprintln!("failed to forward the purchase state: {}", e);
+                }
+            }));
+            app.manage(Arc::clone(&license));
+            tauri::async_runtime::spawn(async move { license.init().await });
 
             #[cfg(target_os = "macos")]
             {
@@ -141,7 +169,12 @@ pub fn run() {
             commands::data::export_data,
             commands::data::export_default_dir,
             commands::data::evict_cache,
-            commands::query::execute_sql
+            commands::query::execute_sql,
+            commands::iap::iap_status,
+            commands::iap::iap_products,
+            commands::iap::iap_purchase,
+            commands::iap::iap_restore,
+            commands::iap::quit_app
         ])
         .on_window_event(|window, event| {
             // Forward the drop to the frontend. This callback runs outside
