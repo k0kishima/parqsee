@@ -21,9 +21,7 @@
   "welcome": {
     "dropZone": {
       "title": "Parquet ファイルをここにドロップ",
-      "subtitle": "または下のボタンをクリックして参照",
-      "browse": "ファイルを参照",
-      "hint": "対応形式: .parquet • ⌘O でファイル、⌘⇧O でフォルダを開く",
+      "subtitle": "または下のボタンから開く",
       "noFile": "Parquet ファイルが手元にない場合は",
       "openSample": "サンプルファイルを開く"
     },

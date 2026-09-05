@@ -21,9 +21,7 @@
     "welcome": {
         "dropZone": {
             "title": "Drop your Parquet file here",
-            "subtitle": "or click the button below to browse",
-            "browse": "Browse Files",
-            "hint": "Supports .parquet files • ⌘O opens a file, ⌘⇧O a folder",
+            "subtitle": "or use the buttons below",
             "noFile": "No Parquet file at hand?",
             "openSample": "Open the sample file"
         },
