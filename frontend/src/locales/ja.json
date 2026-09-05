@@ -66,7 +66,10 @@
     "showRecentFiles": "最近開いたファイルを表示",
     "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
     "clearRecentFiles": "履歴を削除",
-    "confirmClearRecent": "本当にすべての履歴を削除しますか？"
+    "confirmClearRecent": "本当にすべての履歴を削除しますか？",
+    "startup": "起動時",
+    "restoreTabs": "前回のタブを復元する",
+    "restoreTabsDesc": "終了時に開いていたファイルをタブごと開き直します"
   },
   "viewer": {
     "search": "検索",
@@ -141,5 +144,9 @@
       "body": "{{rows}} 行を {{file}} へエクスポートしました",
       "copied": "コピーしました"
     }
+  },
+  "session": {
+    "notReopened_one": "前回のセッションの {{count}} 件のファイルを開き直せませんでした",
+    "notReopened_other": "前回のセッションの {{count}} 件のファイルを開き直せませんでした"
   }
 }

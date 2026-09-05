@@ -1,12 +1,15 @@
 
 
 import { useWorkspace } from '../contexts/WorkspaceContext';
-import { Workspace } from '../features/workspace';
+import { Workspace, RestoreNotice } from '../features/workspace';
 import { Welcome } from '../features/welcome';
 import { SettingsModal } from '../features/settings';
 
 export const AppRouter = () => {
-    const { tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog, openFolderDialog } = useWorkspace();
+    const {
+        tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openFileDialog, openFolderDialog,
+        restoreNotice, dismissRestoreNotice,
+    } = useWorkspace();
 
     return (
         <>
@@ -25,6 +28,11 @@ export const AppRouter = () => {
                 isOpen={isSettingsOpen}
                 onClose={() => toggleSettings(false)}
             />
+
+            {/* Shown over either screen: the whole session may have failed to come back. */}
+            {restoreNotice && (
+                <RestoreNotice skipped={restoreNotice.skipped} onDismiss={dismissRestoreNotice} />
+            )}
         </>
     );
 };
