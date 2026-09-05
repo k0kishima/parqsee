@@ -201,6 +201,14 @@ because a native key equivalent beats the webview's keydown handler.
    `range_reader` (the parquet Arrow reader with offset/limit pushed down, the
    same path unfiltered pages take); with one they are streamed out of
    DataFusion so the exported range matches what the grid shows.
+   The rows go to a staging file in `std::env::temp_dir()` and are moved
+   into place at the end (rename, or a copy when the rename is refused), so
+   a failed export never destroys an existing file. The staging file must
+   not sit next to the destination: under the sandbox the save panel grants
+   exactly the chosen file, and creating `<name>.partial` beside it fails
+   with EPERM unless the folder is inside a workspace root (#21). The temp
+   directory is the container's `Data/tmp` there — `libsecinit` rewrites
+   `TMPDIR` in-process — and is always writable.
 9. Arrow's JSON writers reject decimals and write NaN/±Infinity as `null`, and
    the webview parses the IPC payload with JS number semantics.
    `batches_to_rows` (`services/parquet.rs`) is the one choke point that renders

@@ -5,6 +5,7 @@ use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use crate::services::parquet::{
     build_page_query, json_unsafe_to_strings, nested_to_json_strings, range_reader, where_clause, ParquetCache,
@@ -92,10 +93,15 @@ impl RowWriter {
 /// `offset` and `limit` address rows of the *filtered* result, so the range
 /// the user picks in the modal is the range they see in the grid.
 ///
-/// The rows are written to a staging file next to the destination and only
-/// moved into place once the export has finished, so a failed export — bad
-/// format, missing source, rejected filter, or an error mid-write — never
-/// destroys an existing file at `export_path`.
+/// The rows are written to a staging file and only moved into place once
+/// the export has finished, so a failed export — bad format, missing
+/// source, rejected filter, or an error mid-write — never destroys an
+/// existing file at `export_path`. The staging file lives in the process's
+/// temp directory, not next to the destination: under the App Sandbox the
+/// save panel grants exactly the file the user chose, so creating a sibling
+/// `<name>.partial` there is refused (EPERM) unless the folder happens to be
+/// inside an open workspace root, while the temp directory (the container's
+/// `Data/tmp` in the sandboxed build) can always be written.
 pub async fn export_data(
     cache: &ParquetCache,
     source_path: String,
@@ -106,7 +112,7 @@ pub async fn export_data(
     filter: Option<String>,
 ) -> Result<usize, String> {
     let format = ExportFormat::parse(&format)?;
-    let staging_path = format!("{}.partial", export_path);
+    let staging_path = staging_path_for(&export_path).to_string_lossy().into_owned();
 
     let result = match where_clause(filter.as_deref()) {
         Some(filter) => {
@@ -127,8 +133,7 @@ pub async fn export_data(
 
     match result {
         Ok(rows_written) => {
-            std::fs::rename(&staging_path, &export_path)
-                .map_err(|e| format!("Failed to move the export into place at {}: {}", export_path, e))?;
+            move_into_place(Path::new(&staging_path), &export_path)?;
             Ok(rows_written)
         }
         Err(err) => {
@@ -137,6 +142,38 @@ pub async fn export_data(
             Err(err)
         }
     }
+}
+
+/// A unique staging path in the temp directory for an export to `export_path`
+/// (`<name>.<pid>.<nanos>.partial`, so two exports of files with the same name
+/// cannot collide).
+fn staging_path_for(export_path: &str) -> PathBuf {
+    let name = Path::new(export_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "export".to_string());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("{name}.{}.{nanos}.partial", std::process::id()))
+}
+
+/// Move the finished staging file to `export_path`. A `rename` is atomic and
+/// free on the same volume; when it is refused — the destination is on another
+/// volume, or the sandbox lets the app write the granted file but not link a
+/// new entry into its folder — the rows are copied into the granted path
+/// instead. Only that fallback can leave a partial destination behind, and
+/// only if the copy itself fails halfway.
+fn move_into_place(staging: &Path, export_path: &str) -> Result<(), String> {
+    if std::fs::rename(staging, export_path).is_ok() {
+        return Ok(());
+    }
+    let copied = std::fs::copy(staging, export_path)
+        .map(|_| ())
+        .map_err(|e| format!("Failed to move the export into place at {}: {}", export_path, e));
+    let _ = std::fs::remove_file(staging);
+    copied
 }
 
 /// Unfiltered: read straight from the parquet reader with the range pushed
@@ -229,7 +266,7 @@ async fn export_filtered(
 
 #[cfg(test)]
 mod tests {
-    use super::export_data;
+    use super::{export_data, staging_path_for};
     use crate::services::parquet::ParquetCache;
     use arrow::array::{
         ArrayRef, Decimal128Array, Float64Array, Int64Array, ListBuilder, StringArray, StringBuilder,
@@ -242,6 +279,19 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         test_support::temp_path("export", name)
+    }
+
+    /// Staging files for an export named `name` that are still in the temp
+    /// directory — there must be none once `export_data` has returned.
+    fn staging_leftovers(name: &str) -> Vec<PathBuf> {
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                let file = p.file_name().unwrap().to_string_lossy().into_owned();
+                file.starts_with(&format!("{name}.")) && file.ends_with(".partial")
+            })
+            .collect()
     }
 
     /// Three columns, four rows, one null, written in schema order id, name, score.
@@ -457,8 +507,42 @@ mod tests {
         .unwrap_err();
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
 
-        // No staging leftovers either.
+        // No staging leftovers either — not next to the destination, which the
+        // sandboxed build may not write, and not in the temp directory.
         assert!(!temp_path("precious.csv.partial").exists());
+        assert!(staging_leftovers("precious.csv").is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_staging_file_never_touches_the_destination_folder() {
+        // Under the App Sandbox the save panel grants exactly the chosen file,
+        // so the export must not create anything else in its folder.
+        let src = write_fixture("granted");
+        let dir = temp_path("granted_dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("granted.csv");
+
+        let rows = export_data(
+            &ParquetCache::new(),
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows, 4);
+
+        let entries: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(entries, vec!["granted.csv".to_string()], "only the granted file may exist");
+        assert!(staging_leftovers("granted.csv").is_empty());
+        assert!(!staging_path_for(out.to_str().unwrap()).starts_with(&dir));
     }
 
     #[tokio::test]
