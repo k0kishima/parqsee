@@ -134,6 +134,8 @@ pub fn run() {
             commands::workspace::list_workspace_roots,
             commands::workspace::add_workspace_root,
             commands::workspace::remove_workspace_root,
+            commands::workspace::list_session_tabs,
+            commands::workspace::save_session,
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::export_data,
