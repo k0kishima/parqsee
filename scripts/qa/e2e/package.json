@@ -7,7 +7,8 @@
     "smoke": "node smoke.mjs",
     "suite": "node suite.mjs",
     "large-file": "node large-file.mjs",
-    "csp-server": "node csp-server.mjs"
+    "csp-server": "node csp-server.mjs",
+    "shots": "node shots.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.50.0"

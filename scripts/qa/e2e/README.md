@@ -74,6 +74,26 @@ pnpm large-file            # needs `uv run scripts/qa/gen_huge.py`; use a releas
 BRIDGE_BIN=../../../backend/target/release/examples/bridge pnpm suite
 ```
 
+### Demo screenshots (`pnpm shots`)
+
+Not a test: `shots.mjs` drives the same harness to photograph the app for the
+site (#7) and the App Store listing (#16), so the pictures are the real UI
+against the real backend rather than a mockup. The data is the bundled sample
+(`backend/resources/sample.parquet`) copied into `out/demo/shop-data/` as a
+small folder of orders files — `gen_fixtures.py` writes test shapes
+(`corrupt.parquet`, `all_null.parquet`) that would look broken in a store
+screenshot.
+
+```sh
+pnpm shots                          # 1280x800 @2x -> 2560x1600, en+ja, light+dark
+SIZE=1440x900 pnpm shots            # -> 2880x1800
+SIZE=1280x800 SCALE=1 pnpm shots    # the 1x sizes
+LANGS=en THEMES=light pnpm shots    # one combination
+```
+
+The four sizes are what App Store Connect accepts; 2560x1600 and 2880x1800 are
+the other two at `deviceScaleFactor` 2. Output: `out/shots/demo/`.
+
 ### Checking the Content Security Policy
 
 The release app serves the webview under the CSP in `backend/tauri.conf.json`

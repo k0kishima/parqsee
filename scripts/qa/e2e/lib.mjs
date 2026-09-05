@@ -122,8 +122,11 @@ let launches = 0;
  * and no recent files; pass the same one twice to act out a relaunch.
  * `pendingFiles` launches the app the way a double-click in Finder does:
  * the backend is holding those paths before the webview loads.
+ * `viewport` / `deviceScaleFactor` are the window size and the pixel ratio —
+ * the defaults are what the suite asserts against; `shots.mjs` raises them to
+ * capture the App Store's @2x sizes.
  */
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [] } = {}) {
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1 } = {}) {
   await assertDevServer();
   if (!dataDir) {
     dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
@@ -133,7 +136,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   const bridge = new Bridge(dataDir, pendingFiles);
   const engine = browser === 'chromium' ? chromium : webkit;
   const b = await engine.launch({ headless });
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await b.newContext({ viewport, deviceScaleFactor });
   const page = await ctx.newPage();
   page.__errors = [];
   page.on('pageerror', (e) => page.__errors.push(String(e)));
