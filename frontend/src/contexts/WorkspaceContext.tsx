@@ -369,6 +369,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } else if (isModifierPressed(e) && e.key === ',') {
             e.preventDefault();
             setIsSettingsOpen(true);
+        } else if (isModifierPressed(e) && e.key === 'b') {
+            e.preventDefault();
+            setIsSidebarOpen(prev => !prev);
         } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
             const target = adjacentTabId(workspaceTabs, -1);

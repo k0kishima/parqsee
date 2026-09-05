@@ -10,6 +10,7 @@
         "closeTab": "Close tab",
         "showSidebar": "Show sidebar",
         "hideSidebar": "Hide sidebar",
+        "resizeSidebar": "Drag to resize, double-click to reset",
         "export": "Export",
         "appName": "Parqsee",
         "apply": "Apply",
