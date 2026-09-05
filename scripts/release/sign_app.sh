@@ -33,10 +33,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ENTITLEMENTS_IN="$HERE/../../backend/Entitlements.plist"
 
 # The team and bundle identifiers, from the profile, for the entitlements
-# that make the app the profile's app.
+# that make the app the profile's app. plutil key paths are dot-separated,
+# so the dots inside a key are escaped.
 PLIST=$(security cms -D -i "$PROFILE")
 TEAM=$(printf '%s' "$PLIST" | plutil -extract TeamIdentifier.0 raw -o - -)
-APP_ID=$(printf '%s' "$PLIST" | plutil -extract Entitlements.com.apple.application-identifier raw -o - -)
+APP_ID=$(printf '%s' "$PLIST" | plutil -extract 'Entitlements.com\.apple\.application-identifier' raw -o - -)
 BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")
 case "$APP_ID" in
   "$TEAM.$BUNDLE_ID") ;;
@@ -45,8 +46,8 @@ esac
 
 ENTITLEMENTS=$(mktemp -t parqsee-entitlements).plist
 cp "$ENTITLEMENTS_IN" "$ENTITLEMENTS"
-plutil -replace com.apple.application-identifier -string "$APP_ID" "$ENTITLEMENTS"
-plutil -replace com.apple.developer.team-identifier -string "$TEAM" "$ENTITLEMENTS"
+plutil -replace 'com\.apple\.application-identifier' -string "$APP_ID" "$ENTITLEMENTS"
+plutil -replace 'com\.apple\.developer\.team-identifier' -string "$TEAM" "$ENTITLEMENTS"
 
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
 
