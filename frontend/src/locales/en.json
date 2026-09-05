@@ -32,16 +32,16 @@
         },
         "features": {
             "performance": {
-                "title": "Fast Performance",
-                "desc": "Native Rust backend for blazing fast file processing"
+                "title": "Fast",
+                "desc": "A native Rust backend — files open right away"
             },
             "usability": {
                 "title": "Easy to Use",
-                "desc": "Simple drag & drop interface with keyboard shortcuts"
+                "desc": "Drag and drop, plus keyboard shortcuts"
             },
             "largeFiles": {
                 "title": "Large Files",
-                "desc": "Efficient pagination for handling massive datasets"
+                "desc": "Tens of millions of rows, a page at a time"
             }
         }
     },
