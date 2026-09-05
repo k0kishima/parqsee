@@ -80,18 +80,21 @@ parqsee/
 ├── docs/
 │   ├── ASSETS.md
 │   └── MANUAL_QA.md              # Shell-dependent checks to run on the release app
-└── scripts/
-    ├── apply_squircle.py         # Icon post-processing
-    ├── gen_sample.py             # Writes backend/resources/sample.parquet (uv run; the result is committed)
-    ├── release/
-    │   ├── appstore.sh           # Build → sign → .pkg → App Store Connect (universal; --unsigned is the dry run)
-    │   ├── sign_app.sh           # Embed a provisioning profile and sign with Entitlements.plist + the identifiers
-    │   └── test_appstore.py      # unittest over appstore.sh with stubbed tools (python3 scripts/release/test_appstore.py)
-    └── qa/
-        ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
-        ├── gen_huge.py
-        ├── sign_for_storekit.sh  # MQ-12: sign_app.sh with a development profile
-        └── e2e/                  # Playwright WebKit suite against the real backend (see README)
+├── scripts/
+│   ├── apply_squircle.py         # Icon post-processing
+│   ├── gen_sample.py             # Writes backend/resources/sample.parquet (uv run; the result is committed)
+│   ├── release/
+│   │   ├── appstore.sh           # Build → sign → .pkg → App Store Connect (universal; --unsigned is the dry run)
+│   │   ├── sign_app.sh           # Embed a provisioning profile and sign with Entitlements.plist + the identifiers
+│   │   └── test_appstore.py      # unittest over appstore.sh with stubbed tools (python3 scripts/release/test_appstore.py)
+│   └── qa/
+│       ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
+│       ├── gen_huge.py
+│       ├── sign_for_storekit.sh  # MQ-12: sign_app.sh with a development profile
+│       └── e2e/                  # Playwright WebKit suite against the real backend (see README)
+└── site/                         # The product page, privacy policy and support page,
+                                  # en + ja, published to GitHub Pages by
+                                  # .github/workflows/pages.yml (see site/README.md)
 ```
 
 ### Feature modules
@@ -420,6 +423,11 @@ against a fake checkout with stubs of pnpm / codesign / productbuild /
 altool on PATH (argument handling, artifact paths, the build's scrubbed
 environment, the signed and unsigned sequences) plus one run through the
 real `productbuild`.
+`scripts/qa/e2e/shots.mjs` (`pnpm shots`) is not a test: it drives the same
+harness to photograph the app for `site/` and the App Store listing (#16), in
+en/ja × light/dark at the sizes App Store Connect accepts. Regenerate the
+site's screenshots from it after a visible UI change (`site/README.md` has the
+one-liner).
 `scripts/qa/e2e/` is the end-to-end regression suite: Playwright WebKit
 drives the Vite dev server against the real backend through
 `backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same
