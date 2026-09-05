@@ -25,3 +25,8 @@ scripts/qa/fixtures/
 # a project settings.json) is committed deliberately; these are not.
 .claude/settings.local.json
 .claude/.credentials.json
+
+# Provisioning profiles (Mac App Store / development) stay outside the
+# repository; scripts/release/appstore.sh and scripts/qa/sign_for_storekit.sh
+# take their path as an argument.
+*.provisionprofile
