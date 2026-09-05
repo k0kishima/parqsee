@@ -2,15 +2,26 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileText } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
+import { SidebarToggle, HeaderActions } from './header-controls';
 
 interface TabBarProps {
   tabs: readonly Tab[];
   activeTabId: string | null;
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
+  /**
+   * The tab bar is the window's top row: the sidebar toggle sits at its
+   * left end and Open File / Open Folder / Settings at its right, where the
+   * header (shown while no tab is open) has them. Only the tabs scroll.
+   */
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  onOpenFile: () => void;
+  onOpenFolder: () => void;
+  onOpenSettings: () => void;
 }
 
-const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose }) => {
+const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose, isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }) => {
   const { t } = useTranslation();
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
@@ -23,8 +34,11 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
   }
 
   return (
-    <div className="flex items-end border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700">
-      <div className="flex overflow-x-auto scrollbar-thin">
+    <div className="flex items-stretch border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700">
+      <div className="flex items-center px-2">
+        <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
+      </div>
+      <div className="flex items-end overflow-x-auto scrollbar-thin flex-1 min-w-0">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
@@ -67,6 +81,9 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
           );
         })}
       </div>
+      <div className="flex items-center px-2">
+        <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
+      </div>
     </div>
   );
 };
@@ -79,6 +96,11 @@ export const TabBar = React.memo(TabBarComponent, (prevProps, nextProps) => {
     prevProps.activeTabId === nextProps.activeTabId &&
     prevProps.onTabSelect === nextProps.onTabSelect &&
     prevProps.onTabClose === nextProps.onTabClose &&
+    prevProps.isSidebarOpen === nextProps.isSidebarOpen &&
+    prevProps.onToggleSidebar === nextProps.onToggleSidebar &&
+    prevProps.onOpenFile === nextProps.onOpenFile &&
+    prevProps.onOpenFolder === nextProps.onOpenFolder &&
+    prevProps.onOpenSettings === nextProps.onOpenSettings &&
     prevProps.tabs.length === nextProps.tabs.length &&
     prevProps.tabs.every((tab, i) => tab.id === nextProps.tabs[i].id && tab.name === nextProps.tabs[i].name)
   );

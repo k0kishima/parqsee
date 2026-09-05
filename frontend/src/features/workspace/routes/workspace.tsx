@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useWorkspace } from '../../../contexts/WorkspaceContext';
 import { FileExplorer } from '../../file-explorer';
 import { TabBar } from '../../layout';
@@ -26,6 +27,7 @@ export const Workspace = () => {
         openFolderDialog,
         removeWorkspaceRoot,
     } = useWorkspace();
+    const openSettings = useCallback(() => toggleSettings(true), [toggleSettings]);
 
     return (
         <div className="h-screen flex">
@@ -43,18 +45,18 @@ export const Workspace = () => {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Header with toggle button */}
-                <Header
-                    isSidebarOpen={isSidebarOpen}
-                    onToggleSidebar={toggleSidebar}
-                    onOpenFile={openFileDialog}
-                    onOpenFolder={openFolderDialog}
-                    onOpenSettings={() => toggleSettings(true)}
-                />
-
                 {tabs.length === 0 ? (
                     // Folders are open but no file is: the ways to open one,
-                    // next to the tree.
+                    // next to the tree. The header is the top row only here;
+                    // with tabs, the tab bar carries its controls.
+                    <>
+                    <Header
+                        isSidebarOpen={isSidebarOpen}
+                        onToggleSidebar={toggleSidebar}
+                        onOpenFile={openFileDialog}
+                        onOpenFolder={openFolderDialog}
+                        onOpenSettings={openSettings}
+                    />
                     <div className="flex-1 overflow-auto p-8 bg-slate-50 dark:bg-gray-900">
                         <WelcomeContent
                             onFileSelect={openParquetFile}
@@ -63,14 +65,20 @@ export const Workspace = () => {
                             onOpenSample={openSampleFile}
                         />
                     </div>
+                    </>
                 ) : (
                     <>
-                        {/* Tab Bar */}
+                        {/* Tab Bar: the top row, with the header's controls at its ends */}
                         <TabBar
                             tabs={tabs}
                             activeTabId={activeTabId}
                             onTabSelect={selectTab}
                             onTabClose={closeTab}
+                            isSidebarOpen={isSidebarOpen}
+                            onToggleSidebar={toggleSidebar}
+                            onOpenFile={openFileDialog}
+                            onOpenFolder={openFolderDialog}
+                            onOpenSettings={openSettings}
                         />
 
                         {/* Only render the active tab for better performance */}
