@@ -20,7 +20,7 @@ vi.mock('../../api', () => ({
 
 vi.mock('../../../../contexts/SettingsContext', () => ({
   useSettings: () => ({
-    settings: { rowsPerPage: 50, typeDisplay: 'logical' },
+    settings: { rowsPerPage: 50, typeDisplay: 'logical', rowDensity: 'comfortable' },
     updateSettings: vi.fn(),
   }),
 }));

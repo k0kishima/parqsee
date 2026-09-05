@@ -58,6 +58,12 @@
         },
         "rowsPerPage": "Rows per page",
         "rowsPerPageDesc": "Number of rows to display per page in the data viewer",
+        "rowDensity": "Row Density",
+        "rowDensityDesc": "How much vertical space each row of the grid takes",
+        "rowDensityOptions": {
+            "comfortable": "Comfortable",
+            "compact": "Compact"
+        },
         "typeDisplay": "Column Type Display",
         "typeDisplayDesc": "Choose how to display column data types in the viewer",
         "typeDisplayOptions": {

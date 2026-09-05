@@ -4,6 +4,8 @@ import { QueryResult } from '../types';
 import { useColumnVirtualizer, useRowVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
+import { useSettings } from '../../../contexts/SettingsContext';
+import { ROW_DENSITY_CLASSES } from '../../../lib/settings-storage';
 
 interface QueryResultsProps {
     result?: QueryResult;
@@ -73,6 +75,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
     const scrollerRef = useRef<HTMLDivElement>(null);
     const tbodyRef = useRef<HTMLTableSectionElement>(null);
     const { columns, rows } = result;
+    const density = ROW_DENSITY_CLASSES[useSettings().settings.rowDensity];
 
     const widths = useMemo(
         () => measureColumnWidths(
@@ -132,7 +135,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                             <th
                                 key={cols.start + i}
                                 title={col.name}
-                                className="px-4 py-2 font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-gray-200 dark:text-gray-300 dark:border-gray-700"
+                                className={`px-4 ${density.queryHeader} font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-gray-200 dark:text-gray-300 dark:border-gray-700`}
                             >
                                 <div className="flex flex-col">
                                     <span>{col.name}</span>
@@ -161,7 +164,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                                         <td
                                             key={cols.start + c}
                                             title={mayTruncate ? text : undefined}
-                                            className="px-4 py-1.5 border-r whitespace-nowrap overflow-hidden text-ellipsis text-gray-900 border-gray-100 dark:text-gray-100 dark:border-gray-800"
+                                            className={`px-4 ${density.queryCell} border-r whitespace-nowrap overflow-hidden text-ellipsis text-gray-900 border-gray-100 dark:text-gray-100 dark:border-gray-800`}
                                         >
                                             {text}
                                         </td>

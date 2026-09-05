@@ -1,6 +1,14 @@
 export type Theme = 'light' | 'dark' | 'system';
 export type TypeDisplay = 'logical' | 'physical' | 'both';
 export type Language = 'en' | 'ja';
+/** Vertical padding of the grids' rows; `comfortable` is the original size. */
+export type RowDensity = 'comfortable' | 'compact';
+
+/** The cell and header classes each density gives the grids. */
+export const ROW_DENSITY_CLASSES = {
+  comfortable: { cell: 'py-2.5', header: 'py-3', queryCell: 'py-1.5', queryHeader: 'py-2' },
+  compact: { cell: 'py-1', header: 'py-1.5', queryCell: 'py-0.5', queryHeader: 'py-1' },
+} satisfies Record<RowDensity, Record<string, string>>;
 
 export interface Settings {
   theme: Theme;
@@ -10,6 +18,7 @@ export interface Settings {
   language: Language;
   /** Reopen the tabs of the last session at launch. */
   restoreTabs: boolean;
+  rowDensity: RowDensity;
 }
 
 export const defaultSettings: Settings = {
@@ -19,6 +28,7 @@ export const defaultSettings: Settings = {
   typeDisplay: 'logical',
   language: 'en',
   restoreTabs: true,
+  rowDensity: 'comfortable',
 };
 
 const SETTINGS_STORAGE_KEY = 'parqsee-settings';

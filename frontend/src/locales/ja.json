@@ -58,6 +58,12 @@
     },
     "rowsPerPage": "1ページあたりの行数",
     "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
+    "rowDensity": "行の密度",
+    "rowDensityDesc": "グリッドの 1 行あたりの高さ",
+    "rowDensityOptions": {
+        "comfortable": "標準",
+        "compact": "コンパクト"
+    },
     "typeDisplay": "列の型表示",
     "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
     "typeDisplayOptions": {
