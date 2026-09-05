@@ -217,7 +217,7 @@ await scenario('S3-filter', async ({ page }) => {
   check('S3.bigLiteral', (await footer(page)).includes('of 0 ') && !(await dataError(page)), `footer=${await footer(page)} err=${await dataError(page)}`);
   // Two conditions
   await setRow(0, 'grp', '=', '3');
-  await form().locator('button:has-text("Add Condition")').click();
+  await form().locator('button[title="Add Condition"]').click();
   await setRow(1, 'id', '<', '100'); await apply();
   check('S3.and', (await footer(page)).includes('of 14 '), await footer(page));
   // remove second row -> requires Apply

@@ -232,23 +232,31 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
     const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
+    // One grid for every condition, so the value inputs line up whatever
+    // the last row carries: `[FILTER: | AND] column operator value [−, and
+    // on the last row + Apply ×]`. Add Condition and Apply used to have a
+    // row of their own under the conditions, which cost the grid a line.
+    // Each row keeps an element of its own (`contents`, so its cells still
+    // sit in the form's grid): a row is a unit to a reader of the DOM, the
+    // e2e suite included.
     return (
-        <div className="px-6 py-2 flex flex-col gap-2 bg-slate-50 dark:bg-gray-800/50">
-            <form onSubmit={handleSubmit}>
+        <div className="px-6 py-2 bg-slate-50 dark:bg-gray-800/50">
+            <form onSubmit={handleSubmit} className="grid grid-cols-[5rem_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
+                    const isLast = index === filters.length - 1;
 
                     return (
-                        <div key={filter.id} className="flex items-center gap-2 mb-2 last:mb-0">
+                        <div key={filter.id} className="contents">
                             {index === 0 ? (
-                                <div className="flex items-center gap-2 min-w-[80px]">
+                                <div className="flex items-center gap-2">
                                     <Filter size={14} className="text-slate-400 dark:text-gray-400" />
                                     <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-gray-500">
                                         {t('viewer.filter')}:
                                     </span>
                                 </div>
                             ) : (
-                                <div className="min-w-[80px] flex justify-end pr-2">
+                                <div className="flex justify-end pr-2">
                                     <span className="text-xs font-bold uppercase text-slate-500 dark:text-gray-500">AND</span>
                                 </div>
                             )}
@@ -257,7 +265,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                             <select
                                 value={filter.column}
                                 onChange={(e) => handleChange(filter.id, { column: e.target.value })}
-                                className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
                             >
                                 {columns.map(col => (
                                     <option key={col.name} value={col.name}>{col.name}</option>
@@ -271,7 +279,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                                     const operator = e.target.value;
                                     if (isFilterOperator(operator)) handleChange(filter.id, { operator });
                                 }}
-                                className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 w-24 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
                             >
                                 {FILTER_OPERATORS.map(op => (
                                     <option key={op} value={op}>{op}</option>
@@ -285,61 +293,60 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                                 onChange={(e) => handleChange(filter.id, { value: e.target.value })}
                                 disabled={!needsValue}
                                 placeholder={!needsValue ? "" : t('viewer.filterValuePlaceholder', { defaultValue: 'Value' })}
-                                className={`flex-1 px-2 py-1 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
 
-                            {/* Remove Button (if > 1 rows) */}
-                            <button
-                                type="button"
-                                onClick={() => handleRemoveRow(filter.id)}
-                                className={iconButtonClass}
-                                title="Remove condition"
-                            >
-                                <Minus size={16} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => handleRemoveRow(filter.id)}
+                                    className={iconButtonClass}
+                                    title="Remove condition"
+                                >
+                                    <Minus size={16} />
+                                </button>
+                                {isLast && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={handleAddRow}
+                                            className={iconButtonClass}
+                                            title={t('common.addCondition', { defaultValue: 'Add Condition' })}
+                                        >
+                                            <Plus size={16} />
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="btn-primary px-3 py-1 text-sm h-8 gap-2 ml-1"
+                                        >
+                                            <Play size={14} className="fill-current" />
+                                            {t('common.apply', { defaultValue: 'Apply' })}
+                                        </button>
+                                        {activeFilter && (
+                                            <button
+                                                type="button"
+                                                onClick={handleClear}
+                                                className={iconButtonClass}
+                                                title={t('common.clear', { defaultValue: 'Clear' })}
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     );
                 })}
 
                 {invalid && (
-                    <p className="mt-1 pl-[80px] text-xs text-red-600 dark:text-red-400" role="alert">
+                    <p className="col-span-full pl-[5.5rem] text-xs text-red-600 dark:text-red-400" role="alert">
                         {t(EXPECTS_MESSAGE_KEY[invalid.expects], {
                             column: invalid.column,
                             value: invalid.value,
                         })}
                     </p>
                 )}
-                <div className="flex items-center justify-between mt-2 pl-[80px]">
-                    <button
-                        type="button"
-                        onClick={handleAddRow}
-                        className="flex items-center text-xs font-medium px-2 py-1 rounded transition-colors text-slate-600 hover:bg-slate-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                        <Plus size={14} className="mr-1" />
-                        {t('common.addCondition', { defaultValue: 'Add Condition' })}
-                    </button>
-
-                    <div className="flex gap-2">
-                        <button
-                            type="submit"
-                            className="btn-primary px-3 py-1 text-sm h-8 gap-2"
-                        >
-                            <Play size={14} className="fill-current" />
-                            {t('common.apply', { defaultValue: 'Apply' })}
-                        </button>
-
-                        {activeFilter && (
-                            <button
-                                type="button"
-                                onClick={handleClear}
-                                className="p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700"
-                                title={t('common.clear', { defaultValue: 'Clear' })}
-                            >
-                                <X size={16} />
-                            </button>
-                        )}
-                    </div>
-                </div>
             </form>
         </div>
     );
