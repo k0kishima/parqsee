@@ -233,7 +233,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
     return (
-        <div className="px-6 py-2 border-t flex flex-col gap-2 border-slate-200 bg-slate-50 dark:border-gray-700 dark:bg-gray-800/50">
+        <div className="px-6 py-2 flex flex-col gap-2 bg-slate-50 dark:bg-gray-800/50">
             <form onSubmit={handleSubmit}>
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);

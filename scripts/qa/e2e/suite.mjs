@@ -14,7 +14,7 @@ async function openFile(page, path, { expectTab = true } = {}) {
 }
 const act = (page) => page.locator('div[style*="position: absolute"][style*="display: flex"]');
 const footer = (page) => act(page).locator('text=/Showing .* entries/').first().textContent().catch(() => null);
-const summary = (page) => act(page).locator('h1 + p').first().textContent().catch(() => null);
+const summary = (page) => act(page).locator('text=/^[\\d,]+ rows × \\d+ columns$/').first().textContent().catch(() => null);
 const dataError = (page) => act(page).locator('text=The condition could not be run').isVisible().catch(() => false);
 const activeTabName = (page) => act(page).locator('h1').first().textContent().catch(() => null);
 const tabNames = (page) => page.evaluate(() => [...document.querySelectorAll('[title="Close tab"]')].map(b => b.parentElement?.querySelector('span')?.textContent));

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -26,11 +27,20 @@ interface DataViewerProps {
    * — or in the SQL view of the same tab — opened its search bar.
    */
   isActiveRef?: RefObject<boolean>;
+  /**
+   * Where the file's actions (row count, search, refresh, export) go: the
+   * tab's toolbar, on the row of the Content / Query switch, so the grid
+   * starts right under the filter bar instead of under a title bar that
+   * repeated the tab's name. `null` is a host that has not mounted yet
+   * (nothing is rendered, so the actions never flash in place first);
+   * `undefined` is no host at all, and they render in place.
+   */
+  toolbarSlot?: HTMLElement | null;
 }
 
 const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
 
-function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef, toolbarSlot }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
 
@@ -307,87 +317,80 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     );
   }
 
-  const headerBg = 'bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700';
+  const actionButton = 'inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600';
+  const whileLoading = loading ? 'opacity-50 cursor-not-allowed' : '';
 
+  const actions = (
+    <>
+      {metadata && (
+        <span className="text-xs whitespace-nowrap truncate text-slate-500 dark:text-gray-400">
+          {t('viewer.summary', { rows: totalRows.toLocaleString(), columns: metadata.num_columns })}
+        </span>
+      )}
+      {/* Inline, so an open search never covers the buttons beside it. */}
+      <SearchBar
+        isOpen={isSearchOpen}
+        searchTerm={searchTerm}
+        onSearchSubmit={handleSearchSubmit}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setSearchTerm("");
+          setCurrentMatchIndex(0);
+          setIsSearching(false);
+        }}
+        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+        totalMatches={searchMatches.length}
+        onNext={handleNextMatch}
+        onPrevious={handlePreviousMatch}
+        isSearching={isSearching}
+        focusTrigger={searchFocusTrigger}
+      />
+      <button
+        onClick={() => setIsSearchOpen(true)}
+        className={actionButton}
+        title="Search (⌘F / Ctrl+F)"
+      >
+        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        {t('viewer.search')}
+      </button>
+      <button
+        onClick={handleRefresh}
+        disabled={loading}
+        title="Refresh file"
+        className={`${actionButton} ${whileLoading}`}
+      >
+        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        {t('viewer.refresh')}
+      </button>
+      <button
+        onClick={() => setIsExportModalOpen(true)}
+        disabled={loading}
+        className={`${actionButton} ${whileLoading}`}
+      >
+        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        {t('viewer.export')}
+      </button>
+    </>
+  );
 
   return (
     <div className="h-full flex flex-col relative bg-slate-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className={`shadow-sm border-b ${headerBg}`}>
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-gray-100">
-                {fileName}
-              </h1>
-              {metadata && (
-                <p className="text-sm mt-0.5 text-slate-600 dark:text-gray-400">
-                  {t('viewer.summary', { rows: totalRows.toLocaleString(), columns: metadata.num_columns })}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            {/* Inline, so an open search never covers the buttons beside it. */}
-            <SearchBar
-              isOpen={isSearchOpen}
-              searchTerm={searchTerm}
-              onSearchSubmit={handleSearchSubmit}
-              onClose={() => {
-                setIsSearchOpen(false);
-                setSearchTerm("");
-                setCurrentMatchIndex(0);
-                setIsSearching(false);
-              }}
-              currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
-              totalMatches={searchMatches.length}
-              onNext={handleNextMatch}
-              onPrevious={handlePreviousMatch}
-              isSearching={isSearching}
-              focusTrigger={searchFocusTrigger}
-            />
-            <button
-              onClick={() => setIsSearchOpen(true)}
-              className="inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
-              title="Search (⌘F / Ctrl+F)"
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              {t('viewer.search')}
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              title="Refresh file"
-              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${loading
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-                } bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600`}
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {t('viewer.refresh')}
-            </button>
-            <button
-              onClick={() => setIsExportModalOpen(true)}
-              disabled={loading}
-              className={`inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors ${loading
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-                } bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600`}
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              {t('viewer.export')}
-            </button>
-
-          </div>
+      {/* The visible name is the tab's; this one is for assistive technology. */}
+      <h1 className="sr-only">{fileName}</h1>
+      {toolbarSlot === undefined ? (
+        <div className="px-2 py-1 flex items-center justify-end gap-2 border-b bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700">
+          {actions}
         </div>
+      ) : toolbarSlot && createPortal(actions, toolbarSlot)}
 
-        {/* Filter Bar - Sequel Pro Style */}
+      {/* Filter Bar - Sequel Pro Style */}
+      <div className="shadow-sm border-b border-slate-200 dark:border-gray-700">
         <FilterBar
           columns={metadata?.columns || []}
           onFilterChange={handleFilterChange}

@@ -55,6 +55,9 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
 
   // Local state if onStateChange is not provided (though it should be)
   const [localViewMode, setLocalViewMode] = useState<'browse' | 'query'>('browse');
+  // The toolbar element DataViewer portals its actions into (see its
+  // `toolbarSlot`); state, not a ref, so the viewer renders once it exists.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
 
   const viewMode = savedState?.viewMode || localViewMode;
 
@@ -129,6 +132,14 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           <Database size={14} />
           <span>{t('viewer.tabs.query')}</span>
         </button>
+        {/* The browse view's row count, search, refresh and export land
+            here, on the same row as the switch. Hidden with the browse view
+            so the query view's toolbar is just the switch. */}
+        <div
+          ref={setToolbarSlot}
+          className="ml-auto flex items-center gap-2 min-w-0 pr-1"
+          style={{ display: viewMode === 'browse' ? 'flex' : 'none' }}
+        />
       </div>
 
 
@@ -143,6 +154,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
             initialState={viewerInitialState}
             onStateChange={handleViewerStateChange}
             isActiveRef={browseIsActiveRef}
+            toolbarSlot={toolbarSlot}
           />
         </div>
         <div
