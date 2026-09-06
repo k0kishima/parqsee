@@ -108,7 +108,9 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
-- `layout` — tab bar
+- `layout` — tab bar, with the right-click menu over a tab (close it, close
+  the others, close the ones to its right; the bulk entries go through
+  `closeTabs` in one dispatch)
 - `settings` — the settings dialog (language, theme, restore tabs, purchase;
   every control applies at once). The grid's own display settings are not
   here: rows per page is in the pagination bar, row density and column
@@ -413,7 +415,7 @@ store (a purchase approved elsewhere, a refund).
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
 screen's sample link and Recent Files' Clear all, the viewer's view
-options, the workspace
+options, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
