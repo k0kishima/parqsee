@@ -304,8 +304,10 @@ store (a purchase approved elsewhere, a refund).
     plain path for a file it has no bookmark for. The webview opens it
     through the ordinary path — a tab like any other, counted against the
     free tier's limit, kept in the session — but never calls `remember_file`
-    for it: the Welcome screen links to it, and Recent Files is capped at
-    five of the user's own files.
+    for it: the Welcome screen links to it, and Recent Files is for the
+    user's own files (`MAX_RECENT`, 20, in `services/access/store.rs`; the
+    Welcome screen shows the first five and folds the rest, the top row's
+    panel shows them all with a search box).
     `bookmarks.json` also records the last export folder (`last_export`),
     which only decides where the next save panel starts — the panel grants
     the write. Its bookmark is best effort: the save panel grants the chosen
