@@ -41,6 +41,7 @@ export type TabLimit = number | null;
 export type WorkspaceTabsAction =
   | { type: 'open'; tab: Tab; limit?: TabLimit }
   | { type: 'close'; tabId: string }
+  | { type: 'closeMany'; tabIds: readonly string[] }
   | { type: 'select'; tabId: string }
   | { type: 'patchState'; tabId: string; patch: Partial<TabState> }
   | { type: 'restore'; tabs: RestoredTab[]; activePath: string | null; limit?: TabLimit };
@@ -49,6 +50,7 @@ export function reduceWorkspaceTabs(state: WorkspaceTabs, action: WorkspaceTabsA
   switch (action.type) {
     case 'open': return openTab(state, action.tab, action.limit ?? null);
     case 'close': return closeTab(state, action.tabId).state;
+    case 'closeMany': return closeTabs(state, action.tabIds).state;
     case 'select': return selectTab(state, action.tabId);
     case 'patchState': return patchTabState(state, action.tabId, action.patch);
     case 'restore': return restoreTabs(state, action.tabs, action.activePath, action.limit ?? null);
@@ -79,18 +81,50 @@ export function openTab(state: WorkspaceTabs, tab: Tab, limit: TabLimit = null):
  * no other tab shows it any more, so the caller can drop its backend cache.
  */
 export function closeTab(state: WorkspaceTabs, tabId: string): { state: WorkspaceTabs; evictPath: string | null } {
+  const { state: next, evictPaths } = closeTabs(state, [tabId]);
+  return { state: next, evictPath: evictPaths[0] ?? null };
+}
+
+/**
+ * Remove every tab in `tabIds` in one step — what the tab bar's Close Others
+ * and Close to the Right do. When the active tab is among them, the nearest
+ * surviving tab to its right takes over, or the last surviving one; so
+ * closing the others activates the tab the menu was opened on. Ids that are
+ * not open are ignored. `evictPaths` lists the closed files no remaining tab
+ * shows, each once, for the caller to drop from the backend cache.
+ */
+export function closeTabs(state: WorkspaceTabs, tabIds: readonly string[]): { state: WorkspaceTabs; evictPaths: string[] } {
+  const doomed = new Set(tabIds.filter(id => state.tabs.some(t => t.id === id)));
+  if (doomed.size === 0) return { state, evictPaths: [] };
+
+  const tabs = state.tabs.filter(t => !doomed.has(t.id));
+  const tabStates = Object.fromEntries(
+    Object.entries(state.tabStates).filter(([id]) => !doomed.has(id))
+  );
+
+  let activeTabId = state.activeTabId;
+  if (activeTabId !== null && doomed.has(activeTabId)) {
+    const from = state.tabs.findIndex(t => t.id === activeTabId);
+    const successor = state.tabs.slice(from + 1).find(t => !doomed.has(t.id));
+    activeTabId = successor?.id ?? tabs[tabs.length - 1]?.id ?? null;
+  }
+
+  const remaining = new Set(tabs.map(t => t.path));
+  const closedPaths = state.tabs.filter(t => doomed.has(t.id)).map(t => t.path);
+  const evictPaths = [...new Set(closedPaths)].filter(path => !remaining.has(path));
+
+  return { state: { tabs, activeTabId, tabStates }, evictPaths };
+}
+
+/** The ids of every tab but `tabId`, in order. */
+export function otherTabIds(state: WorkspaceTabs, tabId: string): string[] {
+  return state.tabs.filter(t => t.id !== tabId).map(t => t.id);
+}
+
+/** The ids of the tabs sitting to the right of `tabId`, in order. */
+export function tabIdsAfter(state: WorkspaceTabs, tabId: string): string[] {
   const index = state.tabs.findIndex(t => t.id === tabId);
-  if (index === -1) return { state, evictPath: null };
-  const closed = state.tabs[index];
-  const tabs = state.tabs.filter(t => t.id !== tabId);
-  const { [tabId]: _closedState, ...tabStates } = state.tabStates;
-
-  const activeTabId = state.activeTabId !== tabId
-    ? state.activeTabId
-    : tabs.length > 0 ? tabs[Math.min(index, tabs.length - 1)].id : null;
-  const evictPath = tabs.some(t => t.path === closed.path) ? null : closed.path;
-
-  return { state: { tabs, activeTabId, tabStates }, evictPath };
+  return index === -1 ? [] : state.tabs.slice(index + 1).map(t => t.id);
 }
 
 /** Make `tabId` active; an id that is not open leaves the state as it is. */
