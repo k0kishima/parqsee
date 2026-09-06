@@ -40,7 +40,11 @@
             "remove": "Remove from recent files",
             "unavailable": "No longer available",
             "clear": "Clear all",
-            "confirmClear": "Remove every file from Recent Files?"
+            "confirmClear": "Remove every file from Recent Files?",
+            "search": "Search recent files",
+            "noMatches": "No recent files match.",
+            "showAll": "Show all ({{count}})",
+            "showLess": "Show fewer"
         },
         "features": {
             "performance": {
