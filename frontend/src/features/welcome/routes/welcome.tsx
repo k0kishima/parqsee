@@ -1,5 +1,5 @@
 import React from 'react';
-import { WelcomeHeader } from '../components/welcome-header';
+import { AppHeader } from '../../layout';
 import { DropZone } from '../components/drop-zone';
 import { RecentFilesList } from '../components/recent-files-list';
 import { FeatureHighlights } from '../components/feature-highlights';
@@ -34,7 +34,15 @@ interface WelcomeProps extends WelcomeContentProps {
 export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample, onOpenSettings }) => {
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-gray-900">
-            <WelcomeHeader onBrowse={onBrowse} onOpenSettings={onOpenSettings} />
+            {/* The workspace's top row, so opening the first folder or file
+                does not swap one header for a taller one with a different
+                set of controls. There is no explorer yet, so no toggle. */}
+            <AppHeader
+                isSidebarOpen={false}
+                onOpenFile={onBrowse}
+                onOpenFolder={onOpenFolder}
+                onOpenSettings={onOpenSettings}
+            />
             <div className="flex-1 overflow-auto p-8">
                 <WelcomeContent onFileSelect={onFileSelect} onBrowse={onBrowse} onOpenFolder={onOpenFolder} onOpenSample={onOpenSample} />
             </div>

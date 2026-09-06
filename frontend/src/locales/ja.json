@@ -11,6 +11,7 @@
     "showSidebar": "サイドバーを表示",
     "hideSidebar": "サイドバーを隠す",
     "resizeSidebar": "ドラッグで幅を変更、ダブルクリックで既定に戻す",
+    "sidebarUnavailable": "フォルダを開くとファイルエクスプローラーを表示できます",
     "export": "エクスポート",
     "appName": "Parqsee",
     "apply": "適用",
