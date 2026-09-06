@@ -566,28 +566,50 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
 });
 
 // ---------------------------------------------------------------- S8 settings
+// The dialog applies every change at once and closes on Escape / ✕ / the
+// backdrop; there is no Save. The grid's own display settings (density,
+// column types) are in the viewer's View options, Clear all is on the
+// Welcome screen's Recent Files heading.
 await scenario('S8-settings', async ({ page, bridge }) => {
   await page.click('[title^="Settings"]');
   await page.waitForSelector('h2:has-text("Settings")');
-  await page.locator('select').nth(0).selectOption('ja');
-  await page.click('button:has-text("Save Changes")'); await page.waitForTimeout(300);
-  check('S8.ja', await page.locator('text=最近のファイル').isVisible() || await page.locator('text=ここに Parquet').isVisible() || (await page.evaluate(() => document.body.innerText)).includes('ファイル'), `body sample: ${(await page.evaluate(() => document.body.innerText)).slice(0, 80).replace(/\n/g, ' ')}`);
+  await page.locator('select').nth(0).selectOption('ja'); await page.waitForTimeout(300);
+  check('S8.ja', (await page.evaluate(() => document.body.innerText)).includes('ファイル'), `applies at once; body sample: ${(await page.evaluate(() => document.body.innerText)).slice(0, 80).replace(/\n/g, ' ')}`);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-settings')));
   check('S8.persist', saved.language === 'ja', JSON.stringify(saved));
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  check('S8.escapeCloses', (await page.locator('h2:has-text("設定")').count()) === 0 && (await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-settings')).language)) === 'ja', 'Escape closes the dialog and keeps the change');
   await page.reload(); await page.waitForTimeout(500);
   check('S8.reloadJa', (await page.evaluate(() => document.body.innerText)).includes('ファイル'), 'language survives reload');
   await page.click('[title^="設定"]');
   await page.waitForTimeout(200);
-  await page.locator('select').nth(0).selectOption('en');
-  // theme dark via buttons
-  const themeBtn = page.locator('button:has-text("Dark"), button:has-text("ダーク")').first();
+  await page.locator('select').nth(0).selectOption('en'); await page.waitForTimeout(200);
+  // theme dark via the segmented control
+  const themeBtn = page.locator('[role=dialog] button:has-text("Dark")').first();
   if (await themeBtn.count()) await themeBtn.click(); else report('S8.themeCtl', 'OBSERVE', 'no Dark button; skipping');
-  await page.click('button:has-text("Save Changes"), button:has-text("変更を保存")'); await page.waitForTimeout(300);
-  check('S8.dark', await page.evaluate(() => document.documentElement.classList.contains('dark')), 'html.dark applied');
+  await page.waitForTimeout(300);
+  check('S8.dark', await page.evaluate(() => document.documentElement.classList.contains('dark')), 'html.dark applied at once');
+  check('S8.noViewerSettings', !/Rows per page|Row Density|Column Type/.test(await page.locator('[role=dialog]').innerText()), 'the grid\'s own settings are not in the dialog');
+  check('S8.purchaseHidden', (await page.locator('[data-testid="purchase-status"]').count()) === 0, 'no purchase section in a build without a store (has_store false)');
+  await page.locator('[role=dialog] [title="Close"]').click(); await page.waitForTimeout(200);
+  check('S8.closeButton', (await page.locator('h2:has-text("Settings")').count()) === 0, '✕ closes the dialog');
   await page.screenshot({ path: `${OUT}/shots/S8-dark-welcome.png` });
-  // rows per page via settings + query view interaction
+  // view options in the viewer: density and column types apply at once
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
   await page.screenshot({ path: `${OUT}/shots/S8-dark-viewer.png` });
+  await act(page).locator('[title="View options"]').click(); await page.waitForTimeout(100);
+  await act(page).locator('[role=radio]:has-text("Compact")').click(); await page.waitForTimeout(100);
+  await act(page).locator('[role=radio]:has-text("Physical")').click(); await page.waitForTimeout(300);
+  const viewSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-settings')));
+  check('S8.viewOptions', viewSaved.rowDensity === 'compact' && viewSaved.typeDisplay === 'physical', JSON.stringify({ rowDensity: viewSaved.rowDensity, typeDisplay: viewSaved.typeDisplay }));
+  check('S8.physicalTypes', (await act(page).locator('th').allInnerTexts()).some(x => /INT64|INT32|BYTE_ARRAY/.test(x)), 'header labels switch to the physical types');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(100);
+  check('S8.viewOptionsEscape', (await act(page).locator('[role=dialog][aria-label="View options"]').count()) === 0, 'Escape closes the popover');
+  await act(page).locator('[title="View options"]').click(); await page.waitForTimeout(100);
+  await act(page).locator('[role=radio]:has-text("Comfortable")').click();
+  await act(page).locator('[role=radio]:has-text("Logical")').click();
+  await page.mouse.click(5, 300); await page.waitForTimeout(100);
+  check('S8.viewOptionsOutside', (await act(page).locator('[role=dialog][aria-label="View options"]').count()) === 0, 'a click elsewhere closes the popover');
   await act(page).locator('button:has-text("Query")').click(); await page.waitForTimeout(100);
   // change rows per page through footer select is hidden in query view; use the other tab? settings unreachable -> change via localStorage event? Instead test: in query view, change rpp by switching to content? Skip; test that changing rpp resets view mode:
   await act(page).locator('button:has-text("Content")').click();
@@ -597,19 +619,18 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   await rpp.selectOption('100', { force: true }).catch(() => {});
   await page.waitForTimeout(500);
   report('S8.rppInQueryView', 'OBSERVE', `query view visible before=${qVisibleBefore} after rows/page change=${await page.locator('textarea').isVisible()}`);
-  // Cancel discards
+  // clear recent files from the Welcome screen, after a confirmation
   for (let i = 0; i < 1; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
-  await page.click('[title^="Settings"]');
-  await page.locator('select').nth(0).selectOption('ja');
-  await page.click('button:has-text("Cancel")'); await page.waitForTimeout(200);
-  check('S8.cancel', !(await page.evaluate(() => document.body.innerText)).includes('最近'), 'cancel discards language change');
-  // clear recent files confirm
-  await page.click('[title^="Settings"]');
-  page.once('dialog', d => d.accept());
-  await page.evaluate(() => { window.confirm = () => true; });
-  await page.click('button:has-text("Clear Recent Files")'); await page.waitForTimeout(200);
-  await page.click('button:has-text("Save Changes")'); await page.waitForTimeout(200);
-  check('S8.clearRecent', (await bridge.call('list_recent_files')).length === 0, 'recent cleared in the store');
+  check('S8.recentBefore', (await bridge.call('list_recent_files')).length > 0, 'a recent entry to clear');
+  // Through the dialog plugin, not window.confirm: under Tauri the plugin
+  // replaces window.confirm with an async function, whose Promise is truthy
+  // on Cancel too. The harness answers plugin:dialog|confirm itself.
+  await page.evaluate(() => { window.__dialog.confirm = false; });
+  await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
+  check('S8.clearRecentDeclined', (await bridge.call('list_recent_files')).length > 0 && (await page.evaluate(() => window.__confirms.length)) === 1, 'the native confirmation was asked once, and declining keeps the list');
+  await page.evaluate(() => { window.__dialog.confirm = true; });
+  await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
+  check('S8.clearRecent', (await bridge.call('list_recent_files')).length === 0 && (await page.locator('button:has-text("Clear all")').count()) === 0, 'recent cleared in the store, the button gone with the list');
   // corrupt localStorage
   await page.evaluate(() => { localStorage.setItem('parqsee-settings', '{"rowsPerPage":"x"}'); });
   await page.reload(); await page.waitForTimeout(800);

@@ -64,7 +64,9 @@ window.__cbs = {};
 window.__listeners = {};
 window.__notifications = [];
 window.__alerts = [];
-window.__dialog = { save: null, open: null };
+// \`confirm\` answers the native OK / Cancel panel the app asks before a
+// destructive action (lib/dialog.ts); the real plugin shows a sheet.
+window.__dialog = { save: null, open: null, confirm: true };
 window.__delays = {};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(event, id) { const l = window.__listeners[event] || []; window.__listeners[event] = l.filter(x => x.id !== id); } };
 let cbId = 0;
@@ -87,6 +89,7 @@ window.__TAURI_INTERNALS__ = {
         }
         case 'plugin:dialog|save': return window.__dialog.save;
         case 'plugin:dialog|open': return window.__dialog.open;
+        case 'plugin:dialog|confirm': window.__confirms = (window.__confirms || []).concat(args.message); return window.__dialog.confirm;
         case 'plugin:notification|notify': window.__notifications.push(args.options); return null;
         case 'plugin:notification|is_permission_granted': return true;
         case 'plugin:notification|request_permission': return 'granted';

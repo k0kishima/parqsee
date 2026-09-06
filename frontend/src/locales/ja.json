@@ -5,7 +5,6 @@
     "openFolder": "フォルダを開く",
     "recentFiles": "最近開いたファイル",
     "cancel": "キャンセル",
-    "saveChanges": "変更を保存",
     "close": "閉じる",
     "closeTab": "タブを閉じる",
     "showSidebar": "サイドバーを表示",
@@ -29,7 +28,9 @@
     "recentFiles": {
       "empty": "最近開いたファイルはありません。",
       "remove": "履歴から削除",
-      "unavailable": "見つかりません"
+      "unavailable": "見つかりません",
+      "clear": "すべて削除",
+      "confirmClear": "最近開いたファイルの履歴をすべて削除しますか？"
     },
     "features": {
       "performance": {
@@ -49,35 +50,13 @@
   "settings": {
     "title": "設定",
     "language": "言語",
-    "languageDesc": "インターフェースの言語を選択してください",
     "theme": "テーマ",
     "themeOptions": {
       "light": "ライト",
       "dark": "ダーク",
       "system": "システム"
     },
-    "rowsPerPage": "1ページあたりの行数",
-    "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
-    "rowDensity": "行の密度",
-    "rowDensityDesc": "グリッドの 1 行あたりの高さ",
-    "rowDensityOptions": {
-        "comfortable": "標準",
-        "compact": "コンパクト"
-    },
-    "typeDisplay": "列の型表示",
-    "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
-    "typeDisplayOptions": {
-      "logical": "論理型 (DATEなど)",
-      "physical": "物理型 (INT32など)",
-      "both": "両方"
-    },
-    "showRecentFiles": "最近開いたファイルを表示",
-    "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
-    "clearRecentFiles": "履歴を削除",
-    "confirmClearRecent": "本当にすべての履歴を削除しますか？",
-    "startup": "起動時",
-    "restoreTabs": "前回のタブを復元する",
-    "restoreTabsDesc": "終了時に開いていたファイルをタブごと開き直します"
+    "restoreTabs": "前回のタブを復元する"
   },
   "viewer": {
     "search": "検索",
@@ -114,7 +93,21 @@
       "error": "エラー"
     },
     "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
-    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。"
+    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。",
+    "viewOptions": {
+      "title": "表示オプション",
+      "rowDensity": "行の密度",
+      "rowDensityOptions": {
+        "comfortable": "標準",
+        "compact": "コンパクト"
+      },
+      "typeDisplay": "列の型表示",
+      "typeDisplayOptions": {
+        "logical": "論理型 (DATEなど)",
+        "physical": "物理型 (INT32など)",
+        "both": "両方"
+      }
+    }
   },
   "fileExplorer": {
     "searchPlaceholder": "ファイルを検索...",
@@ -185,8 +178,7 @@
       "title": "購入",
       "unlocked": "フル版 — 購入済み",
       "free": "無料版 · 同時に開けるタブは {{count}} 枚まで",
-      "history": "apple.com で購入履歴を見る",
-      "desc": "購入は Apple アカウントに紐づき、同じアカウントでサインインしたどの Mac でも復元できます。"
+      "history": "apple.com で購入履歴を見る"
     }
   }
 }

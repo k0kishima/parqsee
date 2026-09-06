@@ -13,7 +13,6 @@ export const ROW_DENSITY_CLASSES = {
 export interface Settings {
   theme: Theme;
   rowsPerPage: number;
-  showRecentFiles: boolean;
   typeDisplay: TypeDisplay;
   language: Language;
   /** Reopen the tabs of the last session at launch. */
@@ -24,7 +23,6 @@ export interface Settings {
 export const defaultSettings: Settings = {
   theme: 'system',
   rowsPerPage: 50,  // Reduced default for better performance
-  showRecentFiles: true,
   typeDisplay: 'logical',
   language: 'en',
   restoreTabs: true,

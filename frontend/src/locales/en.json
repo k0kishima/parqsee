@@ -5,7 +5,6 @@
         "openFolder": "Open Folder",
         "recentFiles": "Recent Files",
         "cancel": "Cancel",
-        "saveChanges": "Save Changes",
         "close": "Close",
         "closeTab": "Close tab",
         "showSidebar": "Show sidebar",
@@ -29,7 +28,9 @@
         "recentFiles": {
             "empty": "No recent files yet.",
             "remove": "Remove from recent files",
-            "unavailable": "No longer available"
+            "unavailable": "No longer available",
+            "clear": "Clear all",
+            "confirmClear": "Remove every file from Recent Files?"
         },
         "features": {
             "performance": {
@@ -49,35 +50,13 @@
     "settings": {
         "title": "Settings",
         "language": "Language",
-        "languageDesc": "Choose your preferred language for the interface",
         "theme": "Theme",
         "themeOptions": {
             "light": "Light",
             "dark": "Dark",
             "system": "System"
         },
-        "rowsPerPage": "Rows per page",
-        "rowsPerPageDesc": "Number of rows to display per page in the data viewer",
-        "rowDensity": "Row Density",
-        "rowDensityDesc": "How much vertical space each row of the grid takes",
-        "rowDensityOptions": {
-            "comfortable": "Comfortable",
-            "compact": "Compact"
-        },
-        "typeDisplay": "Column Type Display",
-        "typeDisplayDesc": "Choose how to display column data types in the viewer",
-        "typeDisplayOptions": {
-            "logical": "Logical",
-            "physical": "Physical",
-            "both": "Both"
-        },
-        "showRecentFiles": "Show recent files",
-        "recentFilesDesc": "Recent files are limited to the most recent 5 files",
-        "clearRecentFiles": "Clear Recent Files",
-        "confirmClearRecent": "Are you sure you want to clear all recent files?",
-        "startup": "Startup",
-        "restoreTabs": "Restore tabs from the last session",
-        "restoreTabsDesc": "Reopen the files that were open when you quit, in their tabs"
+        "restoreTabs": "Restore tabs from the last session"
     },
     "viewer": {
         "search": "Search",
@@ -114,7 +93,21 @@
             "error": "Error"
         },
         "filterNeedsNumber": "Column \"{{column}}\" is numeric; \"{{value}}\" is not a number.",
-        "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false."
+        "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false.",
+        "viewOptions": {
+            "title": "View options",
+            "rowDensity": "Row Density",
+            "rowDensityOptions": {
+                "comfortable": "Comfortable",
+                "compact": "Compact"
+            },
+            "typeDisplay": "Column Type Display",
+            "typeDisplayOptions": {
+                "logical": "Logical",
+                "physical": "Physical",
+                "both": "Both"
+            }
+        }
     },
     "fileExplorer": {
         "searchPlaceholder": "Filter files...",
@@ -185,8 +178,7 @@
             "title": "Purchase",
             "unlocked": "Full version — unlocked",
             "free": "Free version · up to {{count}} tabs at a time",
-            "history": "Purchase history on apple.com",
-            "desc": "The purchase is tied to your Apple Account and can be restored on any Mac signed in with it."
+            "history": "Purchase history on apple.com"
         }
     }
 }

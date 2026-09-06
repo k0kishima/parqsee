@@ -7,6 +7,7 @@ import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
+import { ViewOptions } from "./view-options";
 import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
@@ -345,6 +346,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         isSearching={isSearching}
         focusTrigger={searchFocusTrigger}
       />
+      <ViewOptions buttonClassName={`${actionButton} px-2`} />
       <button
         onClick={() => setIsSearchOpen(true)}
         className={actionButton}

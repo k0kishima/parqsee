@@ -109,7 +109,10 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
 - `layout` — tab bar
-- `settings` — settings modal
+- `settings` — the settings dialog (language, theme, restore tabs, purchase;
+  every control applies at once). The grid's own display settings are not
+  here: rows per page is in the pagination bar, row density and column
+  types in `file-viewer`'s view options
 - `license` — the upgrade prompt (`UpgradePrompt`), the Free badge, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds `FREE_TAB_LIMIT`, the tab-limit derivation and the reducer
 
 ## Key Commands
@@ -359,7 +362,8 @@ store (a purchase approved elsewhere, a refund).
     `AlwaysUnlocked` serves every other build — the default
     `pnpm tauri build`, `pnpm tauri dev`, `cargo test --lib`, the e2e
     bridge, Windows / Linux — so nothing outside the store build ever
-    shows the limit or the upgrade prompt. The state is unit-tested with
+    shows the limit or the upgrade prompt; `IapStatus.has_store` is false
+    there, and Settings › Purchase renders nothing. The state is unit-tested with
     a fake provider; the real store is checked by hand
     (`docs/MANUAL_QA.md`, MQ-12, which also says how to sign the store
     build so StoreKit uses the sandbox).
@@ -396,11 +400,20 @@ store (a purchase approved elsewhere, a refund).
     the webview only asks after its listener is registered and the session
     restore has finished, or the restored tabs take the active tab back from
     the file the user just double-clicked.
+15. Never call `window.confirm` (or `window.alert` for a decision). The
+    dialog plugin's init script replaces `window.confirm` with an `async`
+    function over the native OK / Cancel panel, so it returns a Promise —
+    truthy whichever button is pressed — and `if (confirm(...))` runs the
+    action on Cancel. Ask through `lib/dialog.ts` (`confirmDestructive`),
+    which awaits the plugin under Tauri and the synchronous original in a
+    plain browser (vitest, the e2e harness, which answers
+    `plugin:dialog|confirm` from `window.__dialog.confirm`).
 
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
-screen's sample link, the workspace
+screen's sample link and Recent Files' Clear all, the viewer's view
+options, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,

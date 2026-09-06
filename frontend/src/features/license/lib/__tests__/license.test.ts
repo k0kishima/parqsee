@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FREE_TAB_LIMIT, tabLimitFor, fullProduct } from '../license';
 import type { IapStatus, IapProduct } from '../../api';
 
-const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, ...partial });
+const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, has_store: true, ...partial });
 
 describe('tabLimitFor', () => {
     it('is the free limit until the full version is owned', () => {
