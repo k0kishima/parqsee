@@ -103,7 +103,14 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 `routes/` and (where it talks to Rust) `api/`, and re-exports through
 `index.ts`:
 
-- `welcome` — landing screen: drop zone, recent files, feature highlights; `api/` for recent files. Also `RecentFilesPopover`, the same list as a panel under the top row's clock button (the Welcome list is out of reach once a tab is open); `layout` imports it by file, not through the index, which would cycle back through the Welcome route
+- `welcome` — landing screen: drop zone, recent files (the first five, the
+  rest behind Show all), feature highlights; `api/` for recent files. Also
+  `RecentFilesPopover`, the same list as a panel under the top row's clock
+  button (the Welcome list is out of reach once a tab is open): every
+  entry, a search box over name and path (Enter opens the first match),
+  and the parent folder after the name when two entries share a file
+  name (`lib/recent-file-labels.ts`). `layout` imports the panel by file,
+  not through the index, which would cycle back through the Welcome route
 - `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
@@ -420,8 +427,9 @@ store (a purchase approved elsewhere, a refund).
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
-screen's sample link and Recent Files' Clear all, the Recent Files panel
-and its button in the top row, the viewer's view
+screen's sample link, Recent Files' Clear all and its fold past five, the
+Recent Files panel (search, same-name folders) and its button in the top
+row, the viewer's view
 options, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
@@ -432,7 +440,8 @@ cancelled / failed / pending purchases, the upgrade prompt),
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN, the read-only SQL view, result truncation, export,
-the bookmark store, the URL-to-path conversion and the launch handover in
+the bookmark store, a listing's probe running off the FileAccess lock, the
+URL-to-path conversion and the launch handover in
 `services::opened`, the sample's lookup and the committed file's shape in
 `services::sample`, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
