@@ -308,6 +308,41 @@ describe('FileExplorer', () => {
       expect(screen.getByText('data.parquet')).toBeInTheDocument();
     });
 
+    it('keeps a collapsed root collapsed when another root is opened', async () => {
+      const user = userEvent.setup();
+      listByPath({
+        '/test': sampleEntries,
+        '/b': [{ path: '/b/y.parquet', name: 'y.parquet', is_directory: false, is_parquet: true, size: 1 }],
+        '/c': [{ path: '/c/z.parquet', name: 'z.parquet', is_directory: false, is_parquet: true, size: 1 }],
+      });
+      const { rerender } = render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('data.parquet')).toBeInTheDocument());
+      // The breadcrumb names the root too; the tree row is the span.
+      await user.click(screen.getByText('test', { selector: 'span' }));
+      expect(screen.queryByText('data.parquet')).not.toBeInTheDocument();
+
+      const b = { path: '/b', name: 'b' };
+      rerender(<FileExplorer {...defaultProps} roots={[testRoot, b]} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('y.parquet')).toBeInTheDocument());
+      expect(screen.queryByText('data.parquet')).not.toBeInTheDocument();
+
+      await user.click(screen.getByText('b', { selector: 'span' }));
+      rerender(<FileExplorer {...defaultProps} roots={[testRoot, b, { path: '/c', name: 'c' }]} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('z.parquet')).toBeInTheDocument());
+      expect(screen.queryByText('data.parquet')).not.toBeInTheDocument();
+      expect(screen.queryByText('y.parquet')).not.toBeInTheDocument();
+    });
+
+    it('reveals the active file once its folder is opened as a root', async () => {
+      listByPath({ '/test': sampleEntries, '/test/subdir': subdirEntries });
+      const { rerender } = render(<FileExplorer {...defaultProps} roots={[]} currentPath="/test/subdir/nested.parquet" />);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(mockListDirectory).not.toHaveBeenCalled();
+
+      rerender(<FileExplorer {...defaultProps} roots={[testRoot]} currentPath="/test/subdir/nested.parquet" />);
+      await waitFor(() => expect(screen.getByText('nested.parquet').closest('div')).toHaveClass('bg-selected'));
+    });
+
     it('leaves the tree alone for a file outside every root', async () => {
       const { rerender } = render(<FileExplorer {...defaultProps} currentPath="/test/data.parquet" />);
       await waitFor(() => expect(screen.getByText('data.parquet')).toBeInTheDocument());

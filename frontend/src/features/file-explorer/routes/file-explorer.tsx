@@ -139,16 +139,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     }
   }, [loadSubDirectory]);
 
+  // The root the active tab's file lies in, as a path so that opening or
+  // closing some other root does not change it.
+  const currentRootPath = useMemo(
+    () => (currentPath ? roots.find(r => isWithin(r.path, currentPath))?.path : undefined),
+    [roots, currentPath]
+  );
+
   // The active tab's file is highlighted and, when it lies in a workspace
   // root, brought into view. A file outside every root (dropped, or picked
   // with ⌘O) leaves the tree alone: under the sandbox its folder cannot be
-  // listed anyway.
+  // listed anyway. This must not depend on `roots` itself: it would run
+  // again whenever another root is opened or closed and re-expand the
+  // folders down to the active file after the user collapsed them.
   useEffect(() => {
     if (!currentPath) return;
     setSelectedFile(currentPath);
-    const root = roots.find(r => isWithin(r.path, currentPath));
-    if (root) reveal(root.path, dirname(currentPath));
-  }, [currentPath, roots, reveal]);
+    if (currentRootPath) reveal(currentRootPath, dirname(currentPath));
+  }, [currentPath, currentRootPath, reveal]);
 
   const toggleDirectory = useCallback((entry: FileEntry) => {
     setExpandedDirs(prev => {
