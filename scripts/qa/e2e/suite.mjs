@@ -642,17 +642,12 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   await rpp.selectOption('100', { force: true }).catch(() => {});
   await page.waitForTimeout(500);
   report('S8.rppInQueryView', 'OBSERVE', `query view visible before=${qVisibleBefore} after rows/page change=${await page.locator('textarea').isVisible()}`);
-  // clear recent files from the Welcome screen, after a confirmation
+  // clear recent files from the Welcome screen: one click, no confirmation
   for (let i = 0; i < 1; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S8.recentBefore', (await bridge.call('list_recent_files')).length > 0, 'a recent entry to clear');
-  // Through the dialog plugin, not window.confirm: under Tauri the plugin
-  // replaces window.confirm with an async function, whose Promise is truthy
-  // on Cancel too. The harness answers plugin:dialog|confirm itself.
-  await page.evaluate(() => { window.__dialog.confirm = false; });
+  await page.evaluate(() => { window.__confirms = []; });
   await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
-  check('S8.clearRecentDeclined', (await bridge.call('list_recent_files')).length > 0 && (await page.evaluate(() => window.__confirms.length)) === 1, 'the native confirmation was asked once, and declining keeps the list');
-  await page.evaluate(() => { window.__dialog.confirm = true; });
-  await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
+  check('S8.clearRecentNoConfirm', (await page.evaluate(() => (window.__confirms || []).length)) === 0, 'no confirmation: Clear all matches File › Open Recent › Clear Menu');
   check('S8.clearRecent', (await bridge.call('list_recent_files')).length === 0 && (await page.locator('button:has-text("Clear all")').count()) === 0, 'recent cleared in the store, the button gone with the list');
   // corrupt localStorage
   await page.evaluate(() => { localStorage.setItem('parqsee-settings', '{"rowsPerPage":"x"}'); });

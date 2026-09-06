@@ -389,6 +389,21 @@ impl FileAccess {
             .collect()
     }
 
+    /// Recent Files as recorded — path and name, newest first — with no
+    /// probe: what the File › Open Recent menu lists (see `crate::menu`).
+    pub fn recent_entries(&self) -> Vec<(String, String)> {
+        self.lock()
+            .map(|state| {
+                state
+                    .store
+                    .recent
+                    .iter()
+                    .map(|r| (r.path.clone(), r.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn forget_file(&self, path: &str) {
         if let Ok(mut state) = self.lock() {
             if state.store.remove_recent(path) {
@@ -917,8 +932,15 @@ mod tests {
         assert!(!access.file_exists(&file));
         assert_eq!(fake.stops(), fake.starts(), "probes drop their grant");
 
+        assert_eq!(
+            access.recent_entries(),
+            [(file.clone(), "a.parquet".to_string())],
+            "listed as recorded, without a probe"
+        );
+        assert_eq!(fake.starts(), fake.stops());
         access.forget_file(&file);
         assert!(access.recent_files().is_empty());
+        assert!(access.recent_entries().is_empty());
         assert!(BookmarkStore::load_from(&dir.join("bookmarks.json"))
             .recent
             .is_empty());

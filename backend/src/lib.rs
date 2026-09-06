@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod menu;
 pub mod models;
 pub mod services;
 
@@ -15,6 +16,8 @@ use tauri::{DragDropEvent, Emitter, Manager};
 /// equivalent wins over the webview's keydown — so ⌘W closed the only
 /// window instead of the tab. This menu owns ⌘W / ⌘O / ⌘, itself and
 /// forwards them to the frontend as a `menu` event carrying the item id.
+/// File › Open Recent is the exception: its items are handled in Rust
+/// (see `menu.rs`) and reach the webview as `file-drop`.
 #[cfg(target_os = "macos")]
 fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -55,6 +58,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
         &[
             &open,
             &open_folder,
+            &menu::build_recent_submenu(app)?,
             &PredefinedMenuItem::separator(app)?,
             &close_tab,
             &reopen_tab,
@@ -191,9 +195,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(build_menu(app)?)?;
+                menu::refresh_recent_menu(app.handle());
                 app.on_menu_event(|app, event| {
-                    if let Err(e) = app.emit("menu", event.id().0.clone()) {
-                        eprintln!("failed to forward menu event {}: {}", event.id().0, e);
+                    let id = event.id().0.as_str();
+                    if menu::handle_recent_menu_event(app, id) {
+                        return;
+                    }
+                    if let Err(e) = app.emit("menu", id.to_string()) {
+                        eprintln!("failed to forward menu event {id}: {e}");
                     }
                 });
             }

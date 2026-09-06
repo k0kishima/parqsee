@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesPopover } from '../recent-files-popover';
 
@@ -71,17 +71,15 @@ describe('RecentFilesPopover', () => {
     expect(screen.queryByText('/data/gone.parquet')).not.toBeInTheDocument();
   });
 
-  it('clears the whole list after a confirmation, and shows the empty state', async () => {
+  it('clears the whole list at once, with no confirmation', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const confirm = vi.spyOn(window, 'confirm');
     renderPopover();
 
     await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
-    await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
-    expect(mockClear).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
-    await waitFor(() => expect(mockClear).toHaveBeenCalledTimes(1));
+    expect(mockClear).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('offers nothing to clear when the list is empty', () => {

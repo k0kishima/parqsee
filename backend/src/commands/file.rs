@@ -59,10 +59,13 @@ pub async fn check_file_exists(
 /// refresh a tab; only a user-initiated open should bump the list.
 #[tauri::command]
 pub async fn remember_file(
+    app: tauri::AppHandle,
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<RecentFile, String> {
-    access.remember_file(&path)
+    let recent = access.remember_file(&path)?;
+    crate::menu::refresh_recent_menu(&app);
+    Ok(recent)
 }
 
 #[tauri::command]
@@ -74,16 +77,22 @@ pub async fn list_recent_files(
 
 #[tauri::command]
 pub async fn remove_recent_file(
+    app: tauri::AppHandle,
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<(), String> {
     access.forget_file(&path);
+    crate::menu::refresh_recent_menu(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn clear_recent_files(access: tauri::State<'_, Arc<FileAccess>>) -> Result<(), String> {
+pub async fn clear_recent_files(
+    app: tauri::AppHandle,
+    access: tauri::State<'_, Arc<FileAccess>>,
+) -> Result<(), String> {
     access.clear_recent();
+    crate::menu::refresh_recent_menu(&app);
     Ok(())
 }
 

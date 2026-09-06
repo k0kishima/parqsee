@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesList } from '../recent-files-list';
 
@@ -18,17 +18,15 @@ describe('RecentFilesList', () => {
     files = [file('a.parquet'), file('b.parquet')];
   });
 
-  it('clears the whole list from its heading, after a confirmation', async () => {
+  it('clears the whole list from its heading, with no confirmation', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const confirm = vi.spyOn(window, 'confirm');
     render(<RecentFilesList onFileSelect={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
-    // The confirmation is awaited (under Tauri it is a native, async panel).
-    await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
-    expect(mockClear).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
-    await waitFor(() => expect(mockClear).toHaveBeenCalledTimes(1));
+
+    expect(mockClear).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('shows the first five and folds the rest behind Show all', async () => {

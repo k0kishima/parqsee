@@ -4,7 +4,6 @@ import { FileText, Search, X } from 'lucide-react';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 import { formatFileSize } from '../../../lib/format';
-import { confirmDestructive } from '../../../lib/dialog';
 import { matchesRecentFile, recentFileLabels } from '../lib/recent-file-labels';
 
 interface RecentFilesPopoverProps {
@@ -69,9 +68,7 @@ export const RecentFilesPopover: React.FC<RecentFilesPopoverProps> = ({ onFileSe
                 <span className="text-xs font-medium text-secondary">{t('common.recentFiles')}</span>
                 {recentFiles.length > 0 && (
                     <button
-                        onClick={async () => {
-                            if (await confirmDestructive(t('welcome.recentFiles.confirmClear'))) clearRecentFiles();
-                        }}
+                        onClick={clearRecentFiles}
                         className="text-xs text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors"
                     >
                         {t('welcome.recentFiles.clear')}
