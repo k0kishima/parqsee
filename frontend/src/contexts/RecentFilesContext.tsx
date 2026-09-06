@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../lib/tauri';
 import {
   RecentFile,
@@ -41,6 +42,17 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
     listRecentFiles()
       .then(setRecentFiles)
       .catch(error => console.error('Failed to list recent files:', error));
+  }, []);
+
+  // File › Open Recent › Clear Menu clears the store in Rust (see menu.rs)
+  // and says so; the mirror follows. A pick from that menu needs nothing
+  // here: it arrives as `file-drop` and is an ordinary open.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen('recent-files-cleared', () => setRecentFiles([]));
+    return () => {
+      unlisten.then(fn => fn());
+    };
   }, []);
 
   // The cap is the backend's (`MAX_RECENT` in services/access/store.rs):

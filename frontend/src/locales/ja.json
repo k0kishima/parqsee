@@ -40,7 +40,6 @@
       "remove": "履歴から削除",
       "unavailable": "見つかりません",
       "clear": "すべて削除",
-      "confirmClear": "最近開いたファイルの履歴をすべて削除しますか？",
       "search": "最近開いたファイルを検索",
       "noMatches": "一致するファイルはありません。",
       "showAll": "すべて表示（{{count}}）",
