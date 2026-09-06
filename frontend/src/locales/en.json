@@ -18,6 +18,13 @@
         "addCondition": "Add Condition",
         "dismiss": "Dismiss"
     },
+    "tabs": {
+        "contextMenu": {
+            "close": "Close Tab",
+            "closeOthers": "Close Other Tabs",
+            "closeToRight": "Close Tabs to the Right"
+        }
+    },
     "welcome": {
         "dropZone": {
             "title": "Drop your Parquet file here",

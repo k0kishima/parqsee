@@ -28,6 +28,7 @@ import {
     EMPTY_WORKSPACE_TABS,
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
+    closeTabs as closeTabsTransition,
     activeTab as activeTabOf,
     adjacentTabId,
     nthTabId,
@@ -76,6 +77,8 @@ interface WorkspaceContextType {
     openFolderDialog: () => Promise<void>;
     removeWorkspaceRoot: (path: string) => void;
     closeTab: (tabId: string) => void;
+    /** Close every tab in `tabIds` at once; ids that are not open are ignored. */
+    closeTabs: (tabIds: readonly string[]) => void;
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
     toggleSettings: (isOpen: boolean) => void;
@@ -241,6 +244,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'close', tabId });
         if (evictPath) {
             evictCacheQuietly(evictPath);
+        }
+    }, []);
+
+    /**
+     * Close several tabs in one step — the tab bar's Close Others and Close
+     * to the Right. One dispatch, so the active tab is chosen once over the
+     * whole set rather than hopping through the tabs on the way out.
+     */
+    const handleTabsClose = useCallback((tabIds: readonly string[]) => {
+        const { evictPaths } = closeTabsTransition(workspaceTabsRef.current, tabIds);
+        dispatch({ type: 'closeMany', tabIds });
+        for (const path of evictPaths) {
+            evictCacheQuietly(path);
         }
     }, []);
 
@@ -485,6 +501,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         openFolderDialog,
         removeWorkspaceRoot,
         closeTab: handleTabClose,
+        closeTabs: handleTabsClose,
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),
         toggleSettings: setIsSettingsOpen,

@@ -7,6 +7,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         'common.fileExplorer': 'File Explorer',
+        'common.closeTab': 'Close tab',
         'common.openFolder': 'Open Folder',
         'fileExplorer.searchPlaceholder': 'Filter files...',
         'fileExplorer.clearSearch': 'Clear search',
@@ -16,6 +17,9 @@ vi.mock('react-i18next', () => ({
         'fileExplorer.empty': 'Open a folder to browse Parquet files',
         'fileExplorer.removeFolder': 'Remove folder from workspace',
         'fileExplorer.loadError': 'Cannot read this folder: {{reason}}',
+        'tabs.contextMenu.close': 'Close Tab',
+        'tabs.contextMenu.closeOthers': 'Close Other Tabs',
+        'tabs.contextMenu.closeToRight': 'Close Tabs to the Right',
       };
       const text = translations[key] ?? key;
       return text.replace(/\{\{(\w+)\}\}/g, (_, name) => String(options?.[name] ?? ''));

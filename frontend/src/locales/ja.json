@@ -18,6 +18,13 @@
     "addCondition": "条件を追加",
     "dismiss": "閉じる"
   },
+  "tabs": {
+    "contextMenu": {
+      "close": "タブを閉じる",
+      "closeOthers": "他のタブを閉じる",
+      "closeToRight": "右側のタブを閉じる"
+    }
+  },
   "welcome": {
     "dropZone": {
       "title": "Parquet ファイルをここにドロップ",

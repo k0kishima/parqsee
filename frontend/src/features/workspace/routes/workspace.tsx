@@ -18,6 +18,7 @@ export const Workspace = () => {
         openParquetFile,
         openSampleFile,
         closeTab,
+        closeTabs,
         selectTab,
         toggleSidebar,
         toggleSettings,
@@ -73,6 +74,7 @@ export const Workspace = () => {
                             activeTabId={activeTabId}
                             onTabSelect={selectTab}
                             onTabClose={closeTab}
+                            onTabsClose={closeTabs}
                             isSidebarOpen={isSidebarOpen}
                             onToggleSidebar={toggleSidebar}
                             onOpenFile={openFileDialog}
