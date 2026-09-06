@@ -84,6 +84,11 @@ pub trait StoreProvider: Send + Sync {
     /// Start delivering transaction updates to `sink` for the rest of the
     /// process. Called once.
     fn start_updates(&self, sink: UpdateSink);
+    /// Whether there is a store behind this provider; only [`AlwaysUnlocked`]
+    /// says no, and the purchase screens then stay out of the way.
+    fn has_store(&self) -> bool {
+        true
+    }
 }
 
 /// The provider of every build that has no store: it owns the full version.
@@ -107,6 +112,9 @@ impl StoreProvider for AlwaysUnlocked {
         })
     }
     fn start_updates(&self, _sink: UpdateSink) {}
+    fn has_store(&self) -> bool {
+        false
+    }
 }
 
 const NOT_AVAILABLE: &str = "Purchases are not available in this build";
@@ -122,13 +130,13 @@ struct Snapshot {
 
 /// Derive the status from what the account owns: unlocked when the full
 /// version is among the entitlements, free otherwise.
-pub fn derive_status(entitlements: &[Entitlement], store_error: Option<String>) -> IapStatus {
+pub fn derive_status(entitlements: &[Entitlement], store_error: Option<String>, has_store: bool) -> IapStatus {
     let state = if entitlements.iter().any(|e| e.product_id == PRODUCT_FULL) {
         IapState::Unlocked
     } else {
         IapState::Free
     };
-    IapStatus { state, store_error }
+    IapStatus { state, store_error, has_store }
 }
 
 /// Tauri managed state (as `Arc<License>`). See the module docs.
@@ -185,7 +193,7 @@ impl License {
     /// The status from the current snapshot, without waiting for `init`.
     fn status_now(&self) -> IapStatus {
         let snapshot = self.snapshot.borrow().clone().unwrap_or_default();
-        derive_status(&snapshot.entitlements, snapshot.error)
+        derive_status(&snapshot.entitlements, snapshot.error, self.provider.has_store())
     }
 
     /// The current status; waits for the launch-time read to finish.
@@ -194,7 +202,7 @@ impl License {
         let ready = tokio::time::timeout(INIT_TIMEOUT, rx.wait_for(|s| s.is_some())).await;
         match ready {
             Ok(Ok(_)) => self.status_now(),
-            _ => derive_status(&[], Some("the App Store did not answer in time".to_string())),
+            _ => derive_status(&[], Some("the App Store did not answer in time".to_string()), self.provider.has_store()),
         }
     }
 
@@ -250,16 +258,16 @@ mod tests {
 
     #[test]
     fn nothing_owned_is_free() {
-        let s = derive_status(&[], None);
-        assert_eq!((s.state, s.store_error), (IapState::Free, None));
+        let s = derive_status(&[], None, true);
+        assert_eq!((s.state, s.store_error, s.has_store), (IapState::Free, None, true));
     }
 
     #[test]
     fn owning_the_full_version_is_unlocked_whatever_else_is_owned() {
-        assert_eq!(derive_status(&[full()], None).state, IapState::Unlocked);
-        assert_eq!(derive_status(&[other("parqsee.trial14"), full()], None).state, IapState::Unlocked);
+        assert_eq!(derive_status(&[full()], None, true).state, IapState::Unlocked);
+        assert_eq!(derive_status(&[other("parqsee.trial14"), full()], None, true).state, IapState::Unlocked);
         // A product this build does not know does not unlock anything.
-        assert_eq!(derive_status(&[other("parqsee.trial14")], None).state, IapState::Free);
+        assert_eq!(derive_status(&[other("parqsee.trial14")], None, true).state, IapState::Free);
     }
 
     /// A store whose answers the test sets, and that hands out its update sink.
@@ -457,7 +465,8 @@ mod tests {
     async fn a_build_without_a_store_is_unlocked_and_sells_nothing() {
         let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
         license.init().await;
-        assert_eq!(license.status().await.state, IapState::Unlocked);
+        let status = license.status().await;
+        assert_eq!((status.state, status.has_store), (IapState::Unlocked, false));
         assert_eq!(license.products().await.unwrap(), vec![]);
         assert_eq!(license.purchase(PRODUCT_FULL).await.unwrap_err(), NOT_AVAILABLE);
         assert_eq!(license.restore().await.unwrap_err(), NOT_AVAILABLE);

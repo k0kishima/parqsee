@@ -145,6 +145,10 @@ pub struct IapStatus {
     /// Set when the entitlements could not be read from the App Store; the
     /// app is then on the free tier and the screens can say why.
     pub store_error: Option<String>,
+    /// Whether this build talks to a store at all. False in every build
+    /// without one (the plain `pnpm tauri build`, dev, the e2e bridge), where
+    /// the app is unlocked and the purchase screens have nothing to show.
+    pub has_store: bool,
 }
 
 /// A product as the App Store describes it in the user's storefront —

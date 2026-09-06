@@ -10,16 +10,21 @@ import { FREE_TAB_LIMIT } from '../lib/license';
 const PURCHASE_HISTORY_URL = 'https://reportaproblem.apple.com/';
 
 /**
- * Settings → Purchase: the state in one line, Buy / Restore while on the
- * free tier, and the way to Apple's purchase history.
+ * Settings › Purchase, as a row of the settings dialog: the state in one
+ * line with the way to Apple's purchase history under it, plus Buy /
+ * Restore while on the free tier. The explanation of what the purchase
+ * is lives in the upgrade prompt. Renders nothing in a build without a
+ * store, where there is nothing to buy or restore.
  */
 export function PurchaseSettings() {
     const { t } = useTranslation();
     const { status, unlocked, products, product, loadProducts, busy, error, pending, buy, restore } = useLicense();
 
     useEffect(() => {
-        if (products === null && !unlocked) loadProducts();
-    }, [products, unlocked, loadProducts]);
+        if (status.has_store && products === null && !unlocked) loadProducts();
+    }, [status.has_store, products, unlocked, loadProducts]);
+
+    if (!status.has_store) return null;
 
     const line = unlocked
         ? t('license.settings.unlocked')
@@ -31,36 +36,34 @@ export function PurchaseSettings() {
     };
 
     return (
-        <div>
-            <label className="block text-sm font-medium text-secondary mb-2">
-                {t('license.settings.title')}
-            </label>
-            <div className="space-y-3">
-                <p className="text-sm text-primary" data-testid="purchase-status">{line}</p>
-                {status.store_error && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                        {t('license.storeError', { reason: status.store_error })}
-                    </p>
-                )}
+        <div className="px-6 py-3 space-y-2">
+            <div className="flex items-center justify-between gap-6">
+                <div className="min-w-0">
+                    <p className="text-sm text-primary" data-testid="purchase-status">{line}</p>
+                    <button onClick={openHistory} className="inline-flex items-center gap-1 text-xs text-tertiary hover:text-blue-500 transition-colors">
+                        {t('license.settings.history')}
+                        <ExternalLink size={12} />
+                    </button>
+                </div>
                 {!unlocked && (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                         <button onClick={buy} disabled={busy !== null} className="btn-primary disabled:opacity-50">
                             {product ? t('license.buyFor', { price: product.display_price }) : t('license.buy')}
                         </button>
                         <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
                             {t('license.restore')}
                         </button>
-                        {busy && <span className="text-xs text-tertiary">{t('license.working')}</span>}
                     </div>
                 )}
-                {pending && <p className="text-xs text-amber-600 dark:text-amber-400">{t('license.pending')}</p>}
-                {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-                <button onClick={openHistory} className="inline-flex items-center gap-1 text-xs text-secondary hover:text-blue-500 transition-colors">
-                    {t('license.settings.history')}
-                    <ExternalLink size={12} />
-                </button>
-                <p className="text-xs text-tertiary">{t('license.settings.desc')}</p>
             </div>
+            {busy && <p className="text-xs text-tertiary">{t('license.working')}</p>}
+            {status.store_error && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {t('license.storeError', { reason: status.store_error })}
+                </p>
+            )}
+            {pending && <p className="text-xs text-amber-600 dark:text-amber-400">{t('license.pending')}</p>}
+            {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
     );
 }

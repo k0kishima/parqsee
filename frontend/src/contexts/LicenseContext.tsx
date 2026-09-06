@@ -15,7 +15,7 @@ import { reduceLicense, INITIAL_LICENSE, LicenseAction } from '../features/licen
 export type { IapStatus, IapProduct, LicenseAction };
 
 /** What a build without a store answers, so the browser fallback behaves like one. */
-const UNLOCKED: IapStatus = { state: 'unlocked', store_error: null };
+const UNLOCKED: IapStatus = { state: 'unlocked', store_error: null, has_store: false };
 
 interface LicenseContextType {
     status: IapStatus;
@@ -65,7 +65,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             .catch(error => {
                 console.error('Failed to read the purchase state:', error);
                 // The free tier, with the reason: the app stays usable.
-                dispatch({ type: 'status', status: { state: 'free', store_error: toErrorMessage(error) } });
+                dispatch({ type: 'status', status: { state: 'free', store_error: toErrorMessage(error), has_store: true } });
             });
     }, []);
 

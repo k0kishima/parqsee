@@ -6,4 +6,10 @@ export type IapStatus = { state: IapState,
  * Set when the entitlements could not be read from the App Store; the
  * app is then on the free tier and the screens can say why.
  */
-store_error: string | null, };
+store_error: string | null, 
+/**
+ * Whether this build talks to a store at all. False in every build
+ * without one (the plain `pnpm tauri build`, dev, the e2e bridge), where
+ * the app is unlocked and the purchase screens have nothing to show.
+ */
+has_store: boolean, };

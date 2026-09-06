@@ -25,7 +25,7 @@ vi.mock('../../features/license/api', () => ({
     onIapStatus: vi.fn(() => Promise.resolve(() => {})),
 }));
 
-const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, ...partial });
+const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, has_store: true, ...partial });
 const FREE = status({});
 const UNLOCKED = status({ state: 'unlocked' });
 const PRODUCTS: IapProduct[] = [

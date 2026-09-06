@@ -5,7 +5,6 @@
     "openFolder": "フォルダを開く",
     "recentFiles": "最近開いたファイル",
     "cancel": "キャンセル",
-    "saveChanges": "変更を保存",
     "close": "閉じる",
     "closeTab": "タブを閉じる",
     "showSidebar": "サイドバーを表示",
@@ -49,7 +48,6 @@
   "settings": {
     "title": "設定",
     "language": "言語",
-    "languageDesc": "インターフェースの言語を選択してください",
     "theme": "テーマ",
     "themeOptions": {
       "light": "ライト",
@@ -61,8 +59,8 @@
     "rowDensity": "行の密度",
     "rowDensityDesc": "グリッドの 1 行あたりの高さ",
     "rowDensityOptions": {
-        "comfortable": "標準",
-        "compact": "コンパクト"
+      "comfortable": "標準",
+      "compact": "コンパクト"
     },
     "typeDisplay": "列の型表示",
     "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
@@ -75,9 +73,7 @@
     "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
     "clearRecentFiles": "履歴を削除",
     "confirmClearRecent": "本当にすべての履歴を削除しますか？",
-    "startup": "起動時",
-    "restoreTabs": "前回のタブを復元する",
-    "restoreTabsDesc": "終了時に開いていたファイルをタブごと開き直します"
+    "restoreTabs": "前回のタブを復元する"
   },
   "viewer": {
     "search": "検索",
@@ -185,8 +181,7 @@
       "title": "購入",
       "unlocked": "フル版 — 購入済み",
       "free": "無料版 · 同時に開けるタブは {{count}} 枚まで",
-      "history": "apple.com で購入履歴を見る",
-      "desc": "購入は Apple アカウントに紐づき、同じアカウントでサインインしたどの Mac でも復元できます。"
+      "history": "apple.com で購入履歴を見る"
     }
   }
 }

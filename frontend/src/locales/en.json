@@ -5,7 +5,6 @@
         "openFolder": "Open Folder",
         "recentFiles": "Recent Files",
         "cancel": "Cancel",
-        "saveChanges": "Save Changes",
         "close": "Close",
         "closeTab": "Close tab",
         "showSidebar": "Show sidebar",
@@ -49,7 +48,6 @@
     "settings": {
         "title": "Settings",
         "language": "Language",
-        "languageDesc": "Choose your preferred language for the interface",
         "theme": "Theme",
         "themeOptions": {
             "light": "Light",
@@ -75,9 +73,7 @@
         "recentFilesDesc": "Recent files are limited to the most recent 5 files",
         "clearRecentFiles": "Clear Recent Files",
         "confirmClearRecent": "Are you sure you want to clear all recent files?",
-        "startup": "Startup",
-        "restoreTabs": "Restore tabs from the last session",
-        "restoreTabsDesc": "Reopen the files that were open when you quit, in their tabs"
+        "restoreTabs": "Restore tabs from the last session"
     },
     "viewer": {
         "search": "Search",
@@ -185,8 +181,7 @@
             "title": "Purchase",
             "unlocked": "Full version — unlocked",
             "free": "Free version · up to {{count}} tabs at a time",
-            "history": "Purchase history on apple.com",
-            "desc": "The purchase is tied to your Apple Account and can be restored on any Mac signed in with it."
+            "history": "Purchase history on apple.com"
         }
     }
 }
