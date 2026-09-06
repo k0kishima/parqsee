@@ -28,7 +28,9 @@
         "recentFiles": {
             "empty": "No recent files yet.",
             "remove": "Remove from recent files",
-            "unavailable": "No longer available"
+            "unavailable": "No longer available",
+            "clear": "Clear all",
+            "confirmClear": "Remove every file from Recent Files?"
         },
         "features": {
             "performance": {
@@ -54,10 +56,6 @@
             "dark": "Dark",
             "system": "System"
         },
-        "showRecentFiles": "Show recent files",
-        "recentFilesDesc": "Recent files are limited to the most recent 5 files",
-        "clearRecentFiles": "Clear Recent Files",
-        "confirmClearRecent": "Are you sure you want to clear all recent files?",
         "restoreTabs": "Restore tabs from the last session"
     },
     "viewer": {

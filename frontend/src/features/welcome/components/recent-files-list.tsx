@@ -1,6 +1,5 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../../contexts/SettingsContext';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
 import { formatFileSize } from '../../../lib/format';
 
@@ -9,22 +8,31 @@ interface RecentFilesListProps {
 }
 
 export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }) => {
-    const { settings } = useSettings();
-    const { recentFiles, removeRecentFile } = useRecentFiles();
+    const { recentFiles, removeRecentFile, clearRecentFiles } = useRecentFiles();
     const { t } = useTranslation();
-
-    if (!settings?.showRecentFiles) {
-        return null;
-    }
 
     return (
         <div className="mt-12">
-            <h3 className="text-lg font-semibold mb-4 flex items-center text-slate-800 dark:text-gray-200">
-                <svg className="w-5 h-5 mr-2 text-slate-400 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {t('common.recentFiles')}
-            </h3>
+            <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold flex items-center text-slate-800 dark:text-gray-200">
+                    <svg className="w-5 h-5 mr-2 text-slate-400 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {t('common.recentFiles')}
+                </h3>
+                {/* Each entry has its own ✕; this is the whole list at once.
+                    It used to live in Settings, a screen away from the list. */}
+                {recentFiles.length > 0 && (
+                    <button
+                        onClick={() => {
+                            if (confirm(t('welcome.recentFiles.confirmClear'))) clearRecentFiles();
+                        }}
+                        className="text-sm text-slate-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition-colors"
+                    >
+                        {t('welcome.recentFiles.clear')}
+                    </button>
+                )}
+            </div>
             <div className="space-y-2">
                 {recentFiles.length === 0 ? (
                     <p className="text-sm text-slate-500 dark:text-gray-500">{t('welcome.recentFiles.empty')}</p>

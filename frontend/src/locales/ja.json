@@ -28,7 +28,9 @@
     "recentFiles": {
       "empty": "最近開いたファイルはありません。",
       "remove": "履歴から削除",
-      "unavailable": "見つかりません"
+      "unavailable": "見つかりません",
+      "clear": "すべて削除",
+      "confirmClear": "最近開いたファイルの履歴をすべて削除しますか？"
     },
     "features": {
       "performance": {
@@ -54,10 +56,6 @@
       "dark": "ダーク",
       "system": "システム"
     },
-    "showRecentFiles": "最近開いたファイルを表示",
-    "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
-    "clearRecentFiles": "履歴を削除",
-    "confirmClearRecent": "本当にすべての履歴を削除しますか？",
     "restoreTabs": "前回のタブを復元する"
   },
   "viewer": {
