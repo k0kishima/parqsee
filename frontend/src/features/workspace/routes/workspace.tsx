@@ -1,10 +1,9 @@
 import { useCallback } from 'react';
 import { useWorkspace } from '../../../contexts/WorkspaceContext';
 import { FileExplorer } from '../../file-explorer';
-import { TabBar } from '../../layout';
+import { AppHeader, TabBar } from '../../layout';
 import { TabContent } from '../../file-viewer';
 import { WelcomeContent } from '../../welcome';
-import { Header } from '../components/header';
 import { Sidebar } from '../components/sidebar';
 
 export const Workspace = () => {
@@ -50,7 +49,7 @@ export const Workspace = () => {
                     // next to the tree. The header is the top row only here;
                     // with tabs, the tab bar carries its controls.
                     <>
-                    <Header
+                    <AppHeader
                         isSidebarOpen={isSidebarOpen}
                         onToggleSidebar={toggleSidebar}
                         onOpenFile={openFileDialog}

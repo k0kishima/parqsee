@@ -7,10 +7,21 @@ import { UpgradePrompt } from '../features/license';
 
 export const AppRouter = () => {
     const {
-        tabs, roots, isSettingsOpen, toggleSettings, openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
+        tabs, roots, isReady, isSettingsOpen, toggleSettings, openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
     const { upgradeOpen, showUpgrade } = useLicense();
+
+    // The workspace roots and the last session's tabs each arrive from their
+    // own command, so painting before both are in shows the Welcome screen,
+    // then the workspace, then the tabs — a window that rearranges itself
+    // twice at every launch without the user having touched anything. Wait
+    // for them and paint the layout once. What is waited on is two metadata
+    // reads plus reopening the restored files, so this is the window's own
+    // surface and nothing else; a spinner would only flash.
+    if (!isReady) {
+        return <div className="h-screen bg-slate-50 dark:bg-gray-900" />;
+    }
 
     return (
         <>

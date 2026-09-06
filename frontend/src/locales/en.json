@@ -11,6 +11,7 @@
         "showSidebar": "Show sidebar",
         "hideSidebar": "Hide sidebar",
         "resizeSidebar": "Drag to resize, double-click to reset",
+        "sidebarUnavailable": "Open a folder to use the file explorer",
         "export": "Export",
         "appName": "Parqsee",
         "apply": "Apply",
@@ -21,29 +22,27 @@
     "welcome": {
         "dropZone": {
             "title": "Drop your Parquet file here",
-            "subtitle": "or click the button below to browse",
-            "browse": "Browse Files",
-            "hint": "Supports .parquet files • ⌘O opens a file, ⌘⇧O a folder",
+            "subtitle": "or use the buttons below",
             "noFile": "No Parquet file at hand?",
             "openSample": "Open the sample file"
         },
         "recentFiles": {
-            "empty": "No recent files yet. Open a Parquet file to see it here.",
+            "empty": "No recent files yet.",
             "remove": "Remove from recent files",
             "unavailable": "No longer available"
         },
         "features": {
             "performance": {
-                "title": "Fast Performance",
-                "desc": "Native Rust backend for blazing fast file processing"
+                "title": "Fast",
+                "desc": "Native Rust — files open right away"
             },
             "usability": {
                 "title": "Easy to Use",
-                "desc": "Simple drag & drop interface with keyboard shortcuts"
+                "desc": "Drag and drop, plus keyboard shortcuts"
             },
             "largeFiles": {
                 "title": "Large Files",
-                "desc": "Efficient pagination for handling massive datasets"
+                "desc": "Tens of millions of rows, a page at a time"
             }
         }
     },

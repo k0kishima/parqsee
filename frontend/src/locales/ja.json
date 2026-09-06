@@ -11,6 +11,7 @@
     "showSidebar": "サイドバーを表示",
     "hideSidebar": "サイドバーを隠す",
     "resizeSidebar": "ドラッグで幅を変更、ダブルクリックで既定に戻す",
+    "sidebarUnavailable": "フォルダを開くとファイルエクスプローラーを表示できます",
     "export": "エクスポート",
     "appName": "Parqsee",
     "apply": "適用",
@@ -21,29 +22,27 @@
   "welcome": {
     "dropZone": {
       "title": "Parquet ファイルをここにドロップ",
-      "subtitle": "または下のボタンをクリックして参照",
-      "browse": "ファイルを参照",
-      "hint": "対応形式: .parquet • ⌘O でファイル、⌘⇧O でフォルダを開く",
+      "subtitle": "または下のボタンから開く",
       "noFile": "Parquet ファイルが手元にない場合は",
       "openSample": "サンプルファイルを開く"
     },
     "recentFiles": {
-      "empty": "最近開いたファイルはありません。Parquet ファイルを開くとここに表示されます。",
+      "empty": "最近開いたファイルはありません。",
       "remove": "履歴から削除",
       "unavailable": "見つかりません"
     },
     "features": {
       "performance": {
-        "title": "高速なパフォーマンス",
-        "desc": "Rust 製バックエンドによる爆速ファイル処理"
+        "title": "高速",
+        "desc": "ネイティブエンジンで、開いてすぐ表示"
       },
       "usability": {
-        "title": "使いやすい UI",
-        "desc": "ドラッグ＆ドロップとキーボードショートカットに対応"
+        "title": "かんたん操作",
+        "desc": "ドラッグ＆ドロップとショートカットに対応"
       },
       "largeFiles": {
-        "title": "巨大ファイル対応",
-        "desc": "効率的なページネーションで大規模データセットも快適"
+        "title": "大容量ファイル対応",
+        "desc": "数千万行でもページ単位で軽快に閲覧"
       }
     }
   },

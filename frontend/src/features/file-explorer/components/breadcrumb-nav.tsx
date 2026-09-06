@@ -35,7 +35,7 @@ export function BreadcrumbNav({ root, dir, onNavigate }: BreadcrumbNavProps) {
   if (breadcrumbSegments.length === 0) return null;
 
   return (
-    <nav aria-label="breadcrumb" className="flex items-center mt-1 text-xs overflow-hidden" title={dir}>
+    <nav aria-label="breadcrumb" className="flex items-center text-xs overflow-hidden" title={dir}>
       {visibleBreadcrumbs.segments.map((segment, index) => {
         const isLast = index === visibleBreadcrumbs.segments.length - 1;
         const showEllipsis = visibleBreadcrumbs.truncated && index === 0;

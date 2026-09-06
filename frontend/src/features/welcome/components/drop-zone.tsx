@@ -86,25 +86,26 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOp
                     {t('welcome.dropZone.subtitle')}
                 </p>
 
+                {/* The shortcuts sit on the buttons that do the same thing,
+                    rather than in a hint line below them. */}
                 <div className="flex items-center justify-center gap-3">
                     <button
                         onClick={onBrowse}
                         className="btn-primary"
                     >
-                        {t('welcome.dropZone.browse')}
+                        {t('common.openFile')}
+                        <span className="ml-2 text-xs opacity-60">⌘O</span>
                     </button>
                     <button
                         onClick={onOpenFolder}
                         className="btn-secondary"
                     >
                         {t('common.openFolder')}
+                        <span className="ml-2 text-xs opacity-60">⌘⇧O</span>
                     </button>
                 </div>
 
                 <p className="mt-6 text-xs text-slate-400 dark:text-gray-500">
-                    {t('welcome.dropZone.hint')}
-                </p>
-                <p className="mt-2 text-xs text-slate-400 dark:text-gray-500">
                     {t('welcome.dropZone.noFile')}{' '}
                     <button
                         type="button"
