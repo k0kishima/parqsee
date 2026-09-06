@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, XSquare, ChevronsRight } from 'lucide-react';
+import { X, XSquare, ChevronsRight, Copy, FolderOpen } from 'lucide-react';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 
 export interface TabContextMenuProps {
   /** Viewport coordinates of the right-click. */
   x: number;
   y: number;
+  /** The right-clicked tab's file, for the two entries that act on it. */
+  path: string;
   /** False when the tab is the only one open. */
   canCloseOthers: boolean;
   /** False when the tab is the last one in the bar. */
@@ -21,8 +24,9 @@ export interface TabContextMenuProps {
 const EDGE_MARGIN = 8;
 
 /**
- * The tab bar's right-click menu, Chrome's set minus what this app has no
- * notion of (pinning, muting, moving to a window).
+ * The tab bar's right-click menu: what to do with the file the tab shows,
+ * then Chrome's close entries minus what this app has no notion of
+ * (pinning, muting, moving to a window).
  *
  * Positioned `fixed` at the click: the tab bar scrolls horizontally and is
  * only one row tall, so a menu placed inside it would be clipped by that
@@ -32,6 +36,7 @@ const EDGE_MARGIN = 8;
 export const TabContextMenu: React.FC<TabContextMenuProps> = ({
   x,
   y,
+  path,
   canCloseOthers,
   canCloseToRight,
   onCloseTab,
@@ -69,6 +74,22 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
     'document'
   );
 
+  const copyPath = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(path);
+    } catch (error) {
+      console.error('Failed to copy path:', error);
+    }
+  }, [path]);
+
+  const revealInFinder = useCallback(async () => {
+    try {
+      await revealItemInDir(path);
+    } catch (error) {
+      console.error('Failed to reveal in Finder:', error);
+    }
+  }, [path]);
+
   const item = (
     label: string,
     Icon: typeof X,
@@ -98,6 +119,9 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
       className="fixed z-50 min-w-[180px] rounded-md shadow-lg border border-primary bg-primary py-1"
       style={{ left: position.x, top: position.y }}
     >
+      {item(t('tabs.contextMenu.copyPath'), Copy, true, copyPath)}
+      {item(t('tabs.contextMenu.revealInFinder'), FolderOpen, true, revealInFinder)}
+      <div role="separator" className="my-1 border-t border-primary" />
       {item(t('tabs.contextMenu.close'), X, true, onCloseTab)}
       {item(t('tabs.contextMenu.closeOthers'), XSquare, canCloseOthers, onCloseOthers)}
       {item(t('tabs.contextMenu.closeToRight'), ChevronsRight, canCloseToRight, onCloseToRight)}

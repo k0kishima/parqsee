@@ -106,6 +106,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
         <TabContextMenu
           x={menu.x}
           y={menu.y}
+          path={tabs[menuIndex].path}
           canCloseOthers={tabs.length > 1}
           canCloseToRight={menuIndex < tabs.length - 1}
           onCloseTab={() => onTabClose(menu.tabId)}

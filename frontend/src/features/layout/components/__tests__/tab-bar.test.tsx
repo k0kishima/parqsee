@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { TabBar } from '../tab-bar';
 import { LicenseProvider } from '../../../../contexts/LicenseContext';
 import type { Tab } from '../../../../contexts/WorkspaceContext';
@@ -47,6 +48,8 @@ describe('TabBar context menu', () => {
     await openMenuOn(user, 'b.parquet');
 
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      'Copy Path',
+      'Reveal in Finder',
       'Close Tab',
       'Close Other Tabs',
       'Close Tabs to the Right',
@@ -104,6 +107,30 @@ describe('TabBar context menu', () => {
     expect(screen.getByRole('menuitem', { name: 'Close Other Tabs' })).toBeDisabled();
     expect(screen.getByRole('menuitem', { name: 'Close Tabs to the Right' })).toBeDisabled();
     expect(screen.getByRole('menuitem', { name: 'Close Tab' })).toBeEnabled();
+  });
+
+  it('copies the right-clicked tab\'s path', async () => {
+    const user = userEvent.setup();
+    // navigator.clipboard is read-only, so it is replaced rather than assigned.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, writable: true, configurable: true });
+    renderBar();
+
+    await openMenuOn(user, 'b.parquet');
+    await user.click(screen.getByRole('menuitem', { name: 'Copy Path' }));
+
+    expect(writeText).toHaveBeenCalledWith('/data/b.parquet');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('reveals the right-clicked tab\'s file in Finder', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await openMenuOn(user, 'b.parquet');
+    await user.click(screen.getByRole('menuitem', { name: 'Reveal in Finder' }));
+
+    expect(vi.mocked(revealItemInDir)).toHaveBeenCalledWith('/data/b.parquet');
   });
 
   it('goes away on Escape and on a click outside, closing nothing', async () => {

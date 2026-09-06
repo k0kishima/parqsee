@@ -20,6 +20,8 @@
     },
     "tabs": {
         "contextMenu": {
+            "copyPath": "Copy Path",
+            "revealInFinder": "Reveal in Finder",
             "close": "Close Tab",
             "closeOthers": "Close Other Tabs",
             "closeToRight": "Close Tabs to the Right"

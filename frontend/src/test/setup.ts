@@ -17,6 +17,8 @@ vi.mock('react-i18next', () => ({
         'fileExplorer.empty': 'Open a folder to browse Parquet files',
         'fileExplorer.removeFolder': 'Remove folder from workspace',
         'fileExplorer.loadError': 'Cannot read this folder: {{reason}}',
+        'tabs.contextMenu.copyPath': 'Copy Path',
+        'tabs.contextMenu.revealInFinder': 'Reveal in Finder',
         'tabs.contextMenu.close': 'Close Tab',
         'tabs.contextMenu.closeOthers': 'Close Other Tabs',
         'tabs.contextMenu.closeToRight': 'Close Tabs to the Right',
