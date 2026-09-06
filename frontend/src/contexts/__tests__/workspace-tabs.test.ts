@@ -75,7 +75,7 @@ describe('closeTab', () => {
   });
 
   it('leaves everything alone for an unknown id', () => {
-    expect(closeTab(three, 'zzz')).toEqual({ state: three, evictPath: null });
+    expect(closeTab(three, 'zzz')).toEqual({ state: three, evictPath: null, closed: [] });
   });
 
   it('ends with no active tab when the last tab goes', () => {
@@ -114,6 +114,15 @@ describe('closeTabs', () => {
     expect(state.activeTabId).toBe('d');
   });
 
+  it('reports the closed tabs in bar order, each with the state it had', () => {
+    const { closed } = closeTabs(five, ['d', 'a']);
+    expect(closed).toEqual([
+      { path: '/data/a.parquet', name: 'a.parquet', state: { currentPage: 2 } },
+      { path: '/data/d.parquet', name: 'd.parquet', state: { viewMode: 'query' } },
+    ]);
+    expect(closeTabs(five, ['b']).closed[0].state).toEqual({});
+  });
+
   it('reports each closed file once, and only when no remaining tab shows it', () => {
     const shared: WorkspaceTabs = { ...five, tabs: [...five.tabs, tab('a2', '/data/a.parquet')] };
     const { evictPaths } = closeTabs(shared, ['a', 'a2', 'b']);
@@ -122,7 +131,7 @@ describe('closeTabs', () => {
   });
 
   it('ignores ids that are not open and returns the same state when none are', () => {
-    expect(closeTabs(five, ['zzz'])).toEqual({ state: five, evictPaths: [] });
+    expect(closeTabs(five, ['zzz'])).toEqual({ state: five, evictPaths: [], closed: [] });
     expect(closeTabs(five, ['zzz']).state).toBe(five);
     expect(closeTabs(five, ['a', 'zzz']).state.tabs.map(t => t.id)).toEqual(['b', 'c', 'd', 'e']);
   });

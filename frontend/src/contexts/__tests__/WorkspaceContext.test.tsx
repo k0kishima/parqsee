@@ -158,6 +158,100 @@ describe('WorkspaceProvider tabs', () => {
   });
 });
 
+describe('WorkspaceProvider reopening closed tabs', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    license.tabLimit = null;
+    vi.mocked(rememberFile).mockClear();
+  });
+
+  afterEach(() => {
+    license.tabLimit = null;
+  });
+
+  it('brings the last closed tab back with the state it was closed on', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    const [, b] = result.current.tabs;
+    act(() => result.current.setTabState(b.id, { viewMode: 'query', currentPage: 4, activeFilter: 'x > 1' }));
+    act(() => result.current.closeTab(b.id));
+    vi.mocked(rememberFile).mockClear();
+
+    expect(result.current.canReopenClosedTab).toBe(true);
+    await act(() => result.current.reopenClosedTab());
+
+    const reopened = result.current.tabs[1];
+    expect(reopened.path).toBe('/data/b.parquet');
+    expect(result.current.activeTab?.path).toBe('/data/b.parquet');
+    expect(result.current.tabStates[reopened.id]).toEqual({ viewMode: 'query', currentPage: 4, activeFilter: 'x > 1' });
+    // A tab that comes back is not a newly opened file: Recent Files keeps its order.
+    expect(vi.mocked(rememberFile)).not.toHaveBeenCalled();
+  });
+
+  it('walks back through the closes, newest first, and stops when there are none', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    const [a, b, c] = result.current.tabs;
+    act(() => result.current.closeTab(a.id));
+    act(() => result.current.closeTab(c.id));
+    act(() => result.current.closeTab(b.id));
+
+    await act(() => result.current.reopenClosedTab());
+    await act(() => result.current.reopenClosedTab());
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/b.parquet', '/data/c.parquet', '/data/a.parquet']);
+    expect(result.current.canReopenClosedTab).toBe(false);
+  });
+
+  it('brings a group closed at once back left to right', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    const [a, b, c] = result.current.tabs;
+    act(() => result.current.closeTabs([a.id, c.id]));
+
+    expect(result.current.tabs.map(t => t.id)).toEqual([b.id]);
+
+    await act(() => result.current.reopenClosedTab());
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/b.parquet', '/data/a.parquet', '/data/c.parquet']);
+  });
+
+  it('skips a closed tab whose file is open again', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    const [a, b] = result.current.tabs;
+    act(() => result.current.closeTab(a.id));
+    act(() => result.current.closeTab(b.id));
+    await act(() => result.current.openParquetFile('/data/b.parquet'));
+
+    expect(result.current.canReopenClosedTab).toBe(true);
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/b.parquet', '/data/a.parquet']);
+    expect(result.current.canReopenClosedTab).toBe(false);
+  });
+
+  it('has nothing to reopen before anything is closed', async () => {
+    const result = await openTabs('/data/a.parquet');
+
+    expect(result.current.canReopenClosedTab).toBe(false);
+    await act(() => result.current.reopenClosedTab());
+    expect(result.current.tabs).toHaveLength(1);
+  });
+
+  it('refuses to reopen past the free tier\'s limit, with the upgrade prompt', async () => {
+    license.tabLimit = 2;
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    const [, b] = result.current.tabs;
+    act(() => result.current.closeTab(b.id));
+    await act(() => result.current.openParquetFile('/data/c.parquet'));
+    license.showUpgrade.mockClear();
+
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/c.parquet']);
+    expect(license.showUpgrade).toHaveBeenCalled();
+  });
+});
+
 describe('WorkspaceProvider workspace roots', () => {
   beforeEach(() => {
     vi.mocked(listWorkspaceRoots).mockClear();

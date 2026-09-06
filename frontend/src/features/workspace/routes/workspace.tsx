@@ -19,6 +19,8 @@ export const Workspace = () => {
         openSampleFile,
         closeTab,
         closeTabs,
+        reopenClosedTab,
+        canReopenClosedTab,
         selectTab,
         toggleSidebar,
         toggleSettings,
@@ -75,6 +77,8 @@ export const Workspace = () => {
                             onTabSelect={selectTab}
                             onTabClose={closeTab}
                             onTabsClose={closeTabs}
+                            onReopenClosedTab={reopenClosedTab}
+                            canReopenClosedTab={canReopenClosedTab}
                             isSidebarOpen={isSidebarOpen}
                             onToggleSidebar={toggleSidebar}
                             onOpenFile={openFileDialog}

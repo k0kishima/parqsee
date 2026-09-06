@@ -16,6 +16,7 @@ const handlers = {
   onTabSelect: vi.fn(),
   onTabClose: vi.fn(),
   onTabsClose: vi.fn(),
+  onReopenClosedTab: vi.fn(),
   onToggleSidebar: vi.fn(),
   onOpenFile: vi.fn(),
   onOpenFolder: vi.fn(),
@@ -23,10 +24,16 @@ const handlers = {
 };
 
 // The bar's right end carries the Free badge, which reads the license.
-const renderBar = (list: Tab[] = tabs) =>
+const renderBar = (list: Tab[] = tabs, canReopen = true) =>
   render(
     <LicenseProvider>
-      <TabBar tabs={list} activeTabId={list[0]?.id ?? null} isSidebarOpen {...handlers} />
+        <TabBar
+        tabs={list}
+        activeTabId={list[0]?.id ?? null}
+        isSidebarOpen
+        canReopenClosedTab={canReopen}
+        {...handlers}
+      />
     </LicenseProvider>
   );
 
@@ -53,6 +60,7 @@ describe('TabBar context menu', () => {
       'Close Tab',
       'Close Other Tabs',
       'Close Tabs to the Right',
+      'Reopen Closed Tab⇧⌘T',
     ]);
     expect(handlers.onTabSelect).not.toHaveBeenCalled();
   });
@@ -131,6 +139,25 @@ describe('TabBar context menu', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Reveal in Finder' }));
 
     expect(vi.mocked(revealItemInDir)).toHaveBeenCalledWith('/data/b.parquet');
+  });
+
+  it('reopens the last closed tab', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await openMenuOn(user, 'b.parquet');
+    await user.click(screen.getByRole('menuitem', { name: /Reopen Closed Tab/ }));
+
+    expect(handlers.onReopenClosedTab).toHaveBeenCalled();
+  });
+
+  it('disables Reopen while nothing has been closed', async () => {
+    const user = userEvent.setup();
+    renderBar(tabs, false);
+
+    await openMenuOn(user, 'b.parquet');
+
+    expect(screen.getByRole('menuitem', { name: /Reopen Closed Tab/ })).toBeDisabled();
   });
 
   it('goes away on Escape and on a click outside, closing nothing', async () => {

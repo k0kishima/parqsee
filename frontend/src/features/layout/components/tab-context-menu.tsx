@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, XSquare, ChevronsRight, Copy, FolderOpen } from 'lucide-react';
+import { X, XSquare, ChevronsRight, Copy, FolderOpen, RotateCcw } from 'lucide-react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 
@@ -14,9 +14,12 @@ export interface TabContextMenuProps {
   canCloseOthers: boolean;
   /** False when the tab is the last one in the bar. */
   canCloseToRight: boolean;
+  /** False when no closed tab is waiting to be reopened. */
+  canReopenClosed: boolean;
   onCloseTab: () => void;
   onCloseOthers: () => void;
   onCloseToRight: () => void;
+  onReopenClosed: () => void;
   onDismiss: () => void;
 }
 
@@ -39,9 +42,11 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
   path,
   canCloseOthers,
   canCloseToRight,
+  canReopenClosed,
   onCloseTab,
   onCloseOthers,
   onCloseToRight,
+  onReopenClosed,
   onDismiss,
 }) => {
   const { t } = useTranslation();
@@ -94,7 +99,8 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
     label: string,
     Icon: typeof X,
     enabled: boolean,
-    action: () => void
+    action: () => void,
+    shortcut?: string
   ) => (
     <button
       role="menuitem"
@@ -109,6 +115,7 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
     >
       <Icon className="w-3.5 h-3.5 mr-2 flex-shrink-0" />
       {label}
+      {shortcut && <span className="ml-auto pl-4 text-tertiary">{shortcut}</span>}
     </button>
   );
 
@@ -125,6 +132,8 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
       {item(t('tabs.contextMenu.close'), X, true, onCloseTab)}
       {item(t('tabs.contextMenu.closeOthers'), XSquare, canCloseOthers, onCloseOthers)}
       {item(t('tabs.contextMenu.closeToRight'), ChevronsRight, canCloseToRight, onCloseToRight)}
+      <div role="separator" className="my-1 border-t border-primary" />
+      {item(t('tabs.contextMenu.reopenClosed'), RotateCcw, canReopenClosed, onReopenClosed, '⇧⌘T')}
     </div>
   );
 };

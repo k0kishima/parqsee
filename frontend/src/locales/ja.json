@@ -24,7 +24,8 @@
       "revealInFinder": "Finderで表示",
       "close": "タブを閉じる",
       "closeOthers": "他のタブを閉じる",
-      "closeToRight": "右側のタブを閉じる"
+      "closeToRight": "右側のタブを閉じる",
+      "reopenClosed": "閉じたタブを開く"
     }
   },
   "welcome": {

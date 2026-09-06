@@ -22,6 +22,7 @@ vi.mock('react-i18next', () => ({
         'tabs.contextMenu.close': 'Close Tab',
         'tabs.contextMenu.closeOthers': 'Close Other Tabs',
         'tabs.contextMenu.closeToRight': 'Close Tabs to the Right',
+        'tabs.contextMenu.reopenClosed': 'Reopen Closed Tab',
       };
       const text = translations[key] ?? key;
       return text.replace(/\{\{(\w+)\}\}/g, (_, name) => String(options?.[name] ?? ''));

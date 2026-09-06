@@ -24,7 +24,8 @@
             "revealInFinder": "Reveal in Finder",
             "close": "Close Tab",
             "closeOthers": "Close Other Tabs",
-            "closeToRight": "Close Tabs to the Right"
+            "closeToRight": "Close Tabs to the Right",
+            "reopenClosed": "Reopen Closed Tab"
         }
     },
     "welcome": {

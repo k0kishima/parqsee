@@ -12,6 +12,9 @@ interface TabBarProps {
   onTabClose: (tabId: string) => void;
   /** Close several tabs at once — the right-click menu's bulk entries. */
   onTabsClose: (tabIds: readonly string[]) => void;
+  /** Bring back the last closed tab; disabled when there is none. */
+  onReopenClosedTab: () => void;
+  canReopenClosedTab: boolean;
   /**
    * The tab bar is the window's top row: the sidebar toggle sits at its
    * left end and Open File / Open Folder / Settings at its right, where the
@@ -24,7 +27,7 @@ interface TabBarProps {
   onOpenSettings: () => void;
 }
 
-const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabsClose, isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }) => {
+const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabsClose, onReopenClosedTab, canReopenClosedTab, isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }) => {
   const { t } = useTranslation();
   // The right-clicked tab and where the menu goes; null while it is closed.
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
@@ -109,9 +112,11 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
           path={tabs[menuIndex].path}
           canCloseOthers={tabs.length > 1}
           canCloseToRight={menuIndex < tabs.length - 1}
+          canReopenClosed={canReopenClosedTab}
           onCloseTab={() => onTabClose(menu.tabId)}
           onCloseOthers={() => onTabsClose(tabs.filter(tab => tab.id !== menu.tabId).map(tab => tab.id))}
           onCloseToRight={() => onTabsClose(tabs.slice(menuIndex + 1).map(tab => tab.id))}
+          onReopenClosed={onReopenClosedTab}
           onDismiss={dismissMenu}
         />
       )}
@@ -128,6 +133,8 @@ export const TabBar = React.memo(TabBarComponent, (prevProps, nextProps) => {
     prevProps.onTabSelect === nextProps.onTabSelect &&
     prevProps.onTabClose === nextProps.onTabClose &&
     prevProps.onTabsClose === nextProps.onTabsClose &&
+    prevProps.onReopenClosedTab === nextProps.onReopenClosedTab &&
+    prevProps.canReopenClosedTab === nextProps.canReopenClosedTab &&
     prevProps.isSidebarOpen === nextProps.isSidebarOpen &&
     prevProps.onToggleSidebar === nextProps.onToggleSidebar &&
     prevProps.onOpenFile === nextProps.onOpenFile &&
