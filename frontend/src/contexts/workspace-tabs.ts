@@ -23,6 +23,17 @@ export interface WorkspaceTabs {
 
 export const EMPTY_WORKSPACE_TABS: WorkspaceTabs = { tabs: [], activeTabId: null, tabStates: {} };
 
+/**
+ * A tab that was closed, kept so it can be reopened. The id is not: a
+ * reopened tab is a new tab, and only what the file and the view were is
+ * worth carrying over.
+ */
+export interface ClosedTab {
+  path: string;
+  name: string;
+  state: TabState;
+}
+
 /** A tab reopened from the last session, with the state it was saved with. */
 export interface RestoredTab {
   tab: Tab;
@@ -39,16 +50,18 @@ export interface RestoredTab {
 export type TabLimit = number | null;
 
 export type WorkspaceTabsAction =
-  | { type: 'open'; tab: Tab; limit?: TabLimit }
+  | { type: 'open'; tab: Tab; limit?: TabLimit; state?: TabState }
   | { type: 'close'; tabId: string }
+  | { type: 'closeMany'; tabIds: readonly string[] }
   | { type: 'select'; tabId: string }
   | { type: 'patchState'; tabId: string; patch: Partial<TabState> }
   | { type: 'restore'; tabs: RestoredTab[]; activePath: string | null; limit?: TabLimit };
 
 export function reduceWorkspaceTabs(state: WorkspaceTabs, action: WorkspaceTabsAction): WorkspaceTabs {
   switch (action.type) {
-    case 'open': return openTab(state, action.tab, action.limit ?? null);
+    case 'open': return openTab(state, action.tab, action.limit ?? null, action.state);
     case 'close': return closeTab(state, action.tabId).state;
+    case 'closeMany': return closeTabs(state, action.tabIds).state;
     case 'select': return selectTab(state, action.tabId);
     case 'patchState': return patchTabState(state, action.tabId, action.patch);
     case 'restore': return restoreTabs(state, action.tabs, action.activePath, action.limit ?? null);
@@ -65,12 +78,20 @@ export function hasRoomForTab(openCount: number, limit: TabLimit): boolean {
  * Activate the tab showing `tab.path`, adding `tab` if no tab shows it yet.
  * A new tab that would go past `limit` is not added and the state is
  * returned as it is (activating an existing tab never needs room).
+ * `tabState` seeds the new tab's view state — a tab being reopened comes
+ * back on the page and filter it was closed on; a tab that was already
+ * open keeps the state it has.
  */
-export function openTab(state: WorkspaceTabs, tab: Tab, limit: TabLimit = null): WorkspaceTabs {
+export function openTab(state: WorkspaceTabs, tab: Tab, limit: TabLimit = null, tabState?: TabState): WorkspaceTabs {
   const existing = state.tabs.find(t => t.path === tab.path);
   if (existing) return { ...state, activeTabId: existing.id };
   if (!hasRoomForTab(state.tabs.length, limit)) return state;
-  return { ...state, tabs: [...state.tabs, tab], activeTabId: tab.id };
+  return {
+    ...state,
+    tabs: [...state.tabs, tab],
+    activeTabId: tab.id,
+    tabStates: tabState ? { ...state.tabStates, [tab.id]: tabState } : state.tabStates,
+  };
 }
 
 /**
@@ -78,19 +99,54 @@ export function openTab(state: WorkspaceTabs, tab: Tab, limit: TabLimit = null):
  * (or the new last tab) becomes active. `evictPath` is the closed file when
  * no other tab shows it any more, so the caller can drop its backend cache.
  */
-export function closeTab(state: WorkspaceTabs, tabId: string): { state: WorkspaceTabs; evictPath: string | null } {
+export function closeTab(state: WorkspaceTabs, tabId: string): { state: WorkspaceTabs; evictPath: string | null; closed: ClosedTab[] } {
+  const { state: next, evictPaths, closed } = closeTabs(state, [tabId]);
+  return { state: next, evictPath: evictPaths[0] ?? null, closed };
+}
+
+/**
+ * Remove every tab in `tabIds` in one step — what the tab bar's Close Others
+ * and Close to the Right do. When the active tab is among them, the nearest
+ * surviving tab to its right takes over, or the last surviving one; so
+ * closing the others activates the tab the menu was opened on. Ids that are
+ * not open are ignored. `evictPaths` lists the closed files no remaining tab
+ * shows, each once, for the caller to drop from the backend cache, and
+ * `closed` the tabs that went, in the order they sat in the bar, each with
+ * the state it had — what the caller needs to reopen them.
+ */
+export function closeTabs(state: WorkspaceTabs, tabIds: readonly string[]): { state: WorkspaceTabs; evictPaths: string[]; closed: ClosedTab[] } {
+  const doomed = new Set(tabIds.filter(id => state.tabs.some(t => t.id === id)));
+  if (doomed.size === 0) return { state, evictPaths: [], closed: [] };
+
+  const tabs = state.tabs.filter(t => !doomed.has(t.id));
+  const tabStates = Object.fromEntries(
+    Object.entries(state.tabStates).filter(([id]) => !doomed.has(id))
+  );
+
+  let activeTabId = state.activeTabId;
+  if (activeTabId !== null && doomed.has(activeTabId)) {
+    const from = state.tabs.findIndex(t => t.id === activeTabId);
+    const successor = state.tabs.slice(from + 1).find(t => !doomed.has(t.id));
+    activeTabId = successor?.id ?? tabs[tabs.length - 1]?.id ?? null;
+  }
+
+  const remaining = new Set(tabs.map(t => t.path));
+  const closedTabs = state.tabs.filter(t => doomed.has(t.id));
+  const evictPaths = [...new Set(closedTabs.map(t => t.path))].filter(path => !remaining.has(path));
+  const closed = closedTabs.map(t => ({ path: t.path, name: t.name, state: state.tabStates[t.id] ?? {} }));
+
+  return { state: { tabs, activeTabId, tabStates }, evictPaths, closed };
+}
+
+/** The ids of every tab but `tabId`, in order. */
+export function otherTabIds(state: WorkspaceTabs, tabId: string): string[] {
+  return state.tabs.filter(t => t.id !== tabId).map(t => t.id);
+}
+
+/** The ids of the tabs sitting to the right of `tabId`, in order. */
+export function tabIdsAfter(state: WorkspaceTabs, tabId: string): string[] {
   const index = state.tabs.findIndex(t => t.id === tabId);
-  if (index === -1) return { state, evictPath: null };
-  const closed = state.tabs[index];
-  const tabs = state.tabs.filter(t => t.id !== tabId);
-  const { [tabId]: _closedState, ...tabStates } = state.tabStates;
-
-  const activeTabId = state.activeTabId !== tabId
-    ? state.activeTabId
-    : tabs.length > 0 ? tabs[Math.min(index, tabs.length - 1)].id : null;
-  const evictPath = tabs.some(t => t.path === closed.path) ? null : closed.path;
-
-  return { state: { tabs, activeTabId, tabStates }, evictPath };
+  return index === -1 ? [] : state.tabs.slice(index + 1).map(t => t.id);
 }
 
 /** Make `tabId` active; an id that is not open leaves the state as it is. */

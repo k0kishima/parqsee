@@ -4,6 +4,9 @@ import {
   WorkspaceTabs,
   openTab,
   closeTab,
+  closeTabs,
+  otherTabIds,
+  tabIdsAfter,
   selectTab,
   patchTabState,
   adjacentTabId,
@@ -72,12 +75,81 @@ describe('closeTab', () => {
   });
 
   it('leaves everything alone for an unknown id', () => {
-    expect(closeTab(three, 'zzz')).toEqual({ state: three, evictPath: null });
+    expect(closeTab(three, 'zzz')).toEqual({ state: three, evictPath: null, closed: [] });
   });
 
   it('ends with no active tab when the last tab goes', () => {
     const { state } = closeTab({ ...EMPTY_WORKSPACE_TABS, tabs: [tab('a')], activeTabId: 'a' }, 'a');
     expect(state).toEqual(EMPTY_WORKSPACE_TABS);
+  });
+});
+
+describe('closeTabs', () => {
+  const five: WorkspaceTabs = {
+    tabs: [tab('a'), tab('b'), tab('c'), tab('d'), tab('e')],
+    activeTabId: 'b',
+    tabStates: { a: { currentPage: 2 }, d: { viewMode: 'query' } },
+  };
+
+  it('closes the others and leaves the tab the menu was opened on active', () => {
+    const { state } = closeTabs(five, otherTabIds(five, 'd'));
+    expect(state.tabs.map(t => t.id)).toEqual(['d']);
+    expect(state.activeTabId).toBe('d');
+    expect(state.tabStates).toEqual({ d: { viewMode: 'query' } });
+  });
+
+  it('closes the tabs to the right and keeps the active one when it survives', () => {
+    const { state } = closeTabs(five, tabIdsAfter(five, 'c'));
+    expect(state.tabs.map(t => t.id)).toEqual(['a', 'b', 'c']);
+    expect(state.activeTabId).toBe('b');
+  });
+
+  it('falls back to the last surviving tab when the active one had no tab left to its right', () => {
+    const { state } = closeTabs({ ...five, activeTabId: 'e' }, tabIdsAfter(five, 'c'));
+    expect(state.activeTabId).toBe('c');
+  });
+
+  it('activates the nearest surviving tab to the right of the closed active one', () => {
+    const { state } = closeTabs(five, ['b', 'c']);
+    expect(state.activeTabId).toBe('d');
+  });
+
+  it('reports the closed tabs in bar order, each with the state it had', () => {
+    const { closed } = closeTabs(five, ['d', 'a']);
+    expect(closed).toEqual([
+      { path: '/data/a.parquet', name: 'a.parquet', state: { currentPage: 2 } },
+      { path: '/data/d.parquet', name: 'd.parquet', state: { viewMode: 'query' } },
+    ]);
+    expect(closeTabs(five, ['b']).closed[0].state).toEqual({});
+  });
+
+  it('reports each closed file once, and only when no remaining tab shows it', () => {
+    const shared: WorkspaceTabs = { ...five, tabs: [...five.tabs, tab('a2', '/data/a.parquet')] };
+    const { evictPaths } = closeTabs(shared, ['a', 'a2', 'b']);
+    expect(evictPaths).toEqual(['/data/a.parquet', '/data/b.parquet']);
+    expect(closeTabs(shared, ['a']).evictPaths).toEqual([]);
+  });
+
+  it('ignores ids that are not open and returns the same state when none are', () => {
+    expect(closeTabs(five, ['zzz'])).toEqual({ state: five, evictPaths: [], closed: [] });
+    expect(closeTabs(five, ['zzz']).state).toBe(five);
+    expect(closeTabs(five, ['a', 'zzz']).state.tabs.map(t => t.id)).toEqual(['b', 'c', 'd', 'e']);
+  });
+
+  it('ends with no active tab when every tab goes', () => {
+    expect(closeTabs(five, five.tabs.map(t => t.id)).state).toEqual(EMPTY_WORKSPACE_TABS);
+  });
+});
+
+describe('otherTabIds / tabIdsAfter', () => {
+  it('lists the other tabs and the ones to the right, in order', () => {
+    expect(otherTabIds(three, 'b')).toEqual(['a', 'c']);
+    expect(tabIdsAfter(three, 'a')).toEqual(['b', 'c']);
+    expect(tabIdsAfter(three, 'c')).toEqual([]);
+  });
+
+  it('has nothing to the right of a tab that is not open', () => {
+    expect(tabIdsAfter(three, 'zzz')).toEqual([]);
   });
 });
 
@@ -213,7 +285,9 @@ describe('reduceWorkspaceTabs', () => {
     state = reduceWorkspaceTabs(state, { type: 'open', tab: tab('b') });
     state = reduceWorkspaceTabs(state, { type: 'patchState', tabId: 'a', patch: { currentPage: 4 } });
     state = reduceWorkspaceTabs(state, { type: 'select', tabId: 'a' });
+    state = reduceWorkspaceTabs(state, { type: 'open', tab: tab('c') });
     state = reduceWorkspaceTabs(state, { type: 'close', tabId: 'b' });
+    state = reduceWorkspaceTabs(state, { type: 'closeMany', tabIds: ['c'] });
     state = reduceWorkspaceTabs(state, { type: 'restore', tabs: [{ tab: tab('r'), state: { viewMode: 'query' } }], activePath: '/data/r.parquet' });
     expect(state).toEqual({ tabs: [tab('a'), tab('r')], activeTabId: 'r', tabStates: { a: { currentPage: 4 }, r: { viewMode: 'query' } } });
   });

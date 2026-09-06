@@ -22,12 +22,14 @@ import {
 } from '../features/workspace/api';
 import {
     Tab,
+    ClosedTab,
     WorkspaceTabs,
     RestoredTab,
     SessionSnapshot,
     EMPTY_WORKSPACE_TABS,
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
+    closeTabs as closeTabsTransition,
     activeTab as activeTabOf,
     adjacentTabId,
     nthTabId,
@@ -76,6 +78,12 @@ interface WorkspaceContextType {
     openFolderDialog: () => Promise<void>;
     removeWorkspaceRoot: (path: string) => void;
     closeTab: (tabId: string) => void;
+    /** Close every tab in `tabIds` at once; ids that are not open are ignored. */
+    closeTabs: (tabIds: readonly string[]) => void;
+    /** Reopen the last closed tab with the state it was closed on (⇧⌘T). */
+    reopenClosedTab: () => Promise<void>;
+    /** False when the reopen history holds nothing that is not open again. */
+    canReopenClosedTab: boolean;
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
     toggleSettings: (isOpen: boolean) => void;
@@ -96,6 +104,9 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
+/** How many closed tabs ⇧⌘T can walk back through. */
+const CLOSED_TAB_HISTORY = 10;
+
 let nextTabSerial = 0;
 /** Unique per tab; Date.now() alone collided when two files opened in one tick. */
 const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
@@ -108,6 +119,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // child both act on the latest tabs rather than on a stale snapshot.
     const [workspaceTabs, dispatch] = useReducer(reduceWorkspaceTabs, EMPTY_WORKSPACE_TABS);
     const { tabs, activeTabId, tabStates } = workspaceTabs;
+    // The tabs closed in this session, newest last, capped: what ⇧⌘T and
+    // the tab menu's Reopen give back. Not persisted — a relaunch restores
+    // the tabs that were open, and undoing a close from before it would be
+    // undoing something the user cannot see any more.
+    const [closedTabs, setClosedTabs] = useState<readonly ClosedTab[]>([]);
     // The last rendered tabs, for decisions made in stable callbacks.
     const workspaceTabsRef = useRef(workspaceTabs);
     workspaceTabsRef.current = workspaceTabs;
@@ -233,16 +249,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    /**
+     * Push what a close removed onto the reopen history. A group closed at
+     * once (Close Others, Close to the Right) goes on back to front, so
+     * repeated reopens bring the tabs back left to right, in the order they
+     * sat in the bar.
+     */
+    const rememberClosedTabs = useCallback((closed: readonly ClosedTab[]) => {
+        if (closed.length === 0) return;
+        setClosedTabs(prev => [...prev, ...[...closed].reverse()].slice(-CLOSED_TAB_HISTORY));
+    }, []);
+
     const handleTabClose = useCallback((tabId: string) => {
         // Whether the file is still shown elsewhere is read from the last
         // render: closes come from user events, never in the same tick as
         // the open that could make this one render stale.
-        const { evictPath } = closeTabTransition(workspaceTabsRef.current, tabId);
+        const { evictPath, closed } = closeTabTransition(workspaceTabsRef.current, tabId);
         dispatch({ type: 'close', tabId });
+        rememberClosedTabs(closed);
         if (evictPath) {
             evictCacheQuietly(evictPath);
         }
-    }, []);
+    }, [rememberClosedTabs]);
+
+    /**
+     * Close several tabs in one step — the tab bar's Close Others and Close
+     * to the Right. One dispatch, so the active tab is chosen once over the
+     * whole set rather than hopping through the tabs on the way out.
+     */
+    const handleTabsClose = useCallback((tabIds: readonly string[]) => {
+        const { evictPaths, closed } = closeTabsTransition(workspaceTabsRef.current, tabIds);
+        dispatch({ type: 'closeMany', tabIds });
+        rememberClosedTabs(closed);
+        for (const path of evictPaths) {
+            evictCacheQuietly(path);
+        }
+    }, [rememberClosedTabs]);
 
     /**
      * Open `path` in a tab: the free tier's limit first, then the backend.
@@ -251,7 +293,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * (the Welcome screen links to it, and its bundle path is not one of
      * the user's files).
      */
-    const openFile = useCallback(async (path: string, { remember }: { remember: boolean }) => {
+    const openFile = useCallback(async (path: string, { remember, state }: { remember: boolean; state?: TabState }) => {
         try {
             if (isTauri()) {
                 // The free tier's limit, before anything is asked of the
@@ -287,6 +329,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                     type: 'open',
                     tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) },
                     limit: tabLimitRef.current,
+                    state,
                 });
             }
             // Browser fallback: there is no backend to open the file with.
@@ -297,6 +340,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [upsertRecentFile, removeRecentFile, showUpgrade]);
 
     const openParquetFile = useCallback((path: string) => openFile(path, { remember: true }), [openFile]);
+
+    /**
+     * Reopen the most recently closed tab, on the page and filter it was
+     * closed on — ⇧⌘T. Entries for files that are open again are dropped on
+     * the way: the user closed one, opened it another way, and asking for
+     * the last closed tab then means the one before it. Reopening is an
+     * ordinary open, so a missing file and the free tier's limit are handled
+     * as they are anywhere else, and Recent Files keeps its order (the file
+     * was recorded when it was first opened).
+     */
+    const reopenClosedTab = useCallback(async () => {
+        const openPaths = new Set(workspaceTabsRef.current.tabs.map(t => t.path));
+        const history = [...closedTabs];
+        let entry: ClosedTab | undefined;
+        while ((entry = history.pop())) {
+            if (!openPaths.has(entry.path)) break;
+        }
+        setClosedTabs(history);
+        if (!entry) return;
+        await openFile(entry.path, { remember: false, state: entry.state });
+    }, [closedTabs, openFile]);
 
     const openSampleFile = useCallback(async () => {
         if (!isTauri()) {
@@ -370,6 +434,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (activeTabId) {
                 handleTabClose(activeTabId);
             }
+        } else if (isModifierPressed(e) && e.shiftKey && e.key.toLowerCase() === 't') {
+            e.preventDefault();
+            reopenClosedTab();
         } else if (isModifierPressed(e) && e.shiftKey && e.key.toLowerCase() === 'o') {
             e.preventDefault();
             openFolderDialog();
@@ -395,7 +462,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const target = nthTabId(workspaceTabs, parseInt(e.key));
             if (target) handleTabSelect(target);
         }
-    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog, openFolderDialog]));
+    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog, openFolderDialog, reopenClosedTab]));
 
     // Native menu items (see build_menu in lib.rs)
     useEffect(() => {
@@ -405,13 +472,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 case 'open-file': openFileDialog(); break;
                 case 'open-folder': openFolderDialog(); break;
                 case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
+                case 'reopen-tab': reopenClosedTab(); break;
                 case 'settings': setIsSettingsOpen(true); break;
             }
         });
         return () => {
             unlisten.then(fn => fn());
         };
-    }, [activeTabId, handleTabClose, openFileDialog, openFolderDialog]);
+    }, [activeTabId, handleTabClose, openFileDialog, openFolderDialog, reopenClosedTab]);
 
     /**
      * Files the app is handed from outside the window: dropped on it, and
@@ -469,6 +537,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [dropListenerReady, sessionReady]);
 
     const activeTab = activeTabOf(workspaceTabs);
+    const canReopenClosedTab = closedTabs.some(entry => !tabs.some(tab => tab.path === entry.path));
 
     const value = {
         currentFile: activeTab?.path ?? null,
@@ -485,6 +554,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         openFolderDialog,
         removeWorkspaceRoot,
         closeTab: handleTabClose,
+        closeTabs: handleTabsClose,
+        reopenClosedTab,
+        canReopenClosedTab,
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),
         toggleSettings: setIsSettingsOpen,

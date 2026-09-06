@@ -43,11 +43,22 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     let open_folder =
         MenuItem::with_id(app, "open-folder", "Open Folder…", true, Some("CmdOrCtrl+Shift+O"))?;
     let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    // Always enabled: whether there is a tab to bring back is the webview's
+    // to know (it owns the history), and a native item's enabled state
+    // cannot follow it without a command round trip per close.
+    let reopen_tab =
+        MenuItem::with_id(app, "reopen-tab", "Reopen Closed Tab", true, Some("CmdOrCtrl+Shift+T"))?;
     let file = Submenu::with_items(
         app,
         "File",
         true,
-        &[&open, &open_folder, &PredefinedMenuItem::separator(app)?, &close_tab],
+        &[
+            &open,
+            &open_folder,
+            &PredefinedMenuItem::separator(app)?,
+            &close_tab,
+            &reopen_tab,
+        ],
     )?;
 
     let edit = Submenu::with_items(
