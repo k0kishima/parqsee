@@ -20,6 +20,7 @@ const handlers = {
   onToggleSidebar: vi.fn(),
   onOpenFile: vi.fn(),
   onOpenFolder: vi.fn(),
+  onOpenRecentFile: vi.fn(),
   onOpenSettings: vi.fn(),
 };
 
