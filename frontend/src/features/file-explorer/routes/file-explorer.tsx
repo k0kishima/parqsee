@@ -6,6 +6,7 @@ import type { WorkspaceRoot } from '../../workspace/api';
 import { ContextMenu } from '../components/context-menu';
 import { BreadcrumbNav } from '../components/breadcrumb-nav';
 import { ExplorerEntry } from '../components/explorer-entry';
+import { TOP_ROW_HEIGHT } from '../../layout';
 import { toErrorMessage } from '../../../lib/tauri';
 import { ancestorsWithin, dirname, isWithin } from '../../../lib/path';
 
@@ -199,25 +200,30 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       ref={containerRef}
       className={`relative bg-primary border-primary border-r overflow-y-auto ${className}`}
     >
-      <div className="p-3 border-b border-primary">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-secondary">{t('common.fileExplorer')}</h3>
-          <button
-            onClick={onOpenFolder}
-            className="p-1 rounded hover:bg-tertiary text-tertiary hover:text-primary"
-            title={`${t('common.openFolder')} (⌘⇧O)`}
-          >
-            <FolderOpen className="w-4 h-4" />
-          </button>
-        </div>
-        {selectedRoot && selectedFile && (
+      {/* As tall as the panel's own top row, so the two headings and the
+          two borders line up across the divider. The breadcrumb is a row
+          of its own for the same reason: inside this one it would make the
+          sidebar's header taller than the panel's whenever a file is
+          selected. */}
+      <div className={`px-3 flex items-center justify-between border-b border-primary ${TOP_ROW_HEIGHT}`}>
+        <h3 className="text-sm font-semibold text-secondary">{t('common.fileExplorer')}</h3>
+        <button
+          onClick={onOpenFolder}
+          className="p-1 rounded hover:bg-tertiary text-tertiary hover:text-primary"
+          title={`${t('common.openFolder')} (⌘⇧O)`}
+        >
+          <FolderOpen className="w-4 h-4" />
+        </button>
+      </div>
+      {selectedRoot && selectedFile && (
+        <div className="px-3 py-1.5 border-b border-primary">
           <BreadcrumbNav
             root={selectedRoot}
             dir={dirname(selectedFile)}
             onNavigate={dir => reveal(selectedRoot.path, dir)}
           />
-        )}
-      </div>
+        </div>
+      )}
       {roots.length === 0 ? (
         <div className="px-4 py-8 text-center">
           <p className="text-xs text-tertiary mb-3">{t('fileExplorer.empty')}</p>
