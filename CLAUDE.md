@@ -108,9 +108,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
-- `layout` — tab bar, with the right-click menu over a tab (close it, close
-  the others, close the ones to its right; the bulk entries go through
-  `closeTabs` in one dispatch)
+- `layout` — tab bar, with the right-click menu over a tab: copy path,
+  reveal in Finder, close it, close the others, close the ones to its
+  right, reopen the last closed tab. The bulk closes go through
+  `closeTabs` in one dispatch; the reopen history (the last 10 closes of
+  the session, with each tab's view state) lives in `WorkspaceContext`
+  and is not persisted
 - `settings` — the settings dialog (language, theme, restore tabs, purchase;
   every control applies at once). The grid's own display settings are not
   here: rows per page is in the pagination bar, row density and column
@@ -192,7 +195,8 @@ The frontend also listens for a `file-drop` event emitted from
 handler, which is how a file opened from Finder, the Dock or `open -a`
 arrives — for a `menu` event carrying the id
 of the native menu item that was chosen (`open-file`, `open-folder`,
-`close-tab`, `settings`) — `build_menu` in `lib.rs` owns ⌘O / ⌘⇧O / ⌘W / ⌘,
+`close-tab`, `reopen-tab`, `settings`) — `build_menu` in `lib.rs` owns
+⌘O / ⌘⇧O / ⌘W / ⇧⌘T / ⌘,
 because a native key equivalent beats the webview's keydown handler — and
 for `iap-status`, the new `IapStatus` after a transaction update from the
 store (a purchase approved elsewhere, a refund).
@@ -417,7 +421,7 @@ Vitest + Testing Library cover the file-explorer feature, the Welcome
 screen's sample link and Recent Files' Clear all, the viewer's view
 options, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
-and at restore), the license context and its pure parts (tab-limit
+and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
 cancelled / failed / pending purchases, the upgrade prompt),
 `lib/path`, `lib/column-widths` and
