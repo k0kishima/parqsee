@@ -544,7 +544,9 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   // Browse button via dialog
   for (let i = 0; i < 2; i++) { await page.locator('[title="Close tab"]').first().click().catch(() => {}); await page.waitForTimeout(150); }
   await page.evaluate((p) => { window.__dialog.open = p; }, C);
-  await page.click('button:has-text("Browse Files")'); await page.waitForTimeout(500); await waitGrid(page);
+  // Scoped to the drop zone: its button and the header's now carry the same
+  // "Open File" label, so an unscoped has-text matches both.
+  await page.locator('[class*="border-dashed"] button:has-text("Open File")').click(); await page.waitForTimeout(500); await waitGrid(page);
   check('S7.browse', (await activeTabName(page)) === 'dict.parquet', `browse dialog opens file: ${await activeTabName(page)}`);
   // Cmd+O in workspace?
   await page.evaluate((p) => { window.__dialog.open = p; }, A);
