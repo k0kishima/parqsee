@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
 import { formatFileSize } from '../../../lib/format';
+import { confirmDestructive } from '../../../lib/dialog';
 
 interface RecentFilesListProps {
     onFileSelect: (path: string) => void;
@@ -24,8 +25,8 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                     It used to live in Settings, a screen away from the list. */}
                 {recentFiles.length > 0 && (
                     <button
-                        onClick={() => {
-                            if (confirm(t('welcome.recentFiles.confirmClear'))) clearRecentFiles();
+                        onClick={async () => {
+                            if (await confirmDestructive(t('welcome.recentFiles.confirmClear'))) clearRecentFiles();
                         }}
                         className="text-sm text-slate-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition-colors"
                     >

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesList } from '../recent-files-list';
 
@@ -24,9 +24,11 @@ describe('RecentFilesList', () => {
     render(<RecentFilesList onFileSelect={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
+    // The confirmation is awaited (under Tauri it is a native, async panel).
+    await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
     expect(mockClear).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'welcome.recentFiles.clear' }));
-    expect(mockClear).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockClear).toHaveBeenCalledTimes(1));
   });
 
   it('offers nothing to clear when the list is empty', () => {

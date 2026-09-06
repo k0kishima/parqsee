@@ -622,10 +622,13 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   // clear recent files from the Welcome screen, after a confirmation
   for (let i = 0; i < 1; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S8.recentBefore', (await bridge.call('list_recent_files')).length > 0, 'a recent entry to clear');
-  await page.evaluate(() => { window.confirm = () => false; });
+  // Through the dialog plugin, not window.confirm: under Tauri the plugin
+  // replaces window.confirm with an async function, whose Promise is truthy
+  // on Cancel too. The harness answers plugin:dialog|confirm itself.
+  await page.evaluate(() => { window.__dialog.confirm = false; });
   await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
-  check('S8.clearRecentDeclined', (await bridge.call('list_recent_files')).length > 0, 'declining the confirmation keeps the list');
-  await page.evaluate(() => { window.confirm = () => true; });
+  check('S8.clearRecentDeclined', (await bridge.call('list_recent_files')).length > 0 && (await page.evaluate(() => window.__confirms.length)) === 1, 'the native confirmation was asked once, and declining keeps the list');
+  await page.evaluate(() => { window.__dialog.confirm = true; });
   await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
   check('S8.clearRecent', (await bridge.call('list_recent_files')).length === 0 && (await page.locator('button:has-text("Clear all")').count()) === 0, 'recent cleared in the store, the button gone with the list');
   // corrupt localStorage

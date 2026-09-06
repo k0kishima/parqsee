@@ -400,6 +400,14 @@ store (a purchase approved elsewhere, a refund).
     the webview only asks after its listener is registered and the session
     restore has finished, or the restored tabs take the active tab back from
     the file the user just double-clicked.
+15. Never call `window.confirm` (or `window.alert` for a decision). The
+    dialog plugin's init script replaces `window.confirm` with an `async`
+    function over the native OK / Cancel panel, so it returns a Promise —
+    truthy whichever button is pressed — and `if (confirm(...))` runs the
+    action on Cancel. Ask through `lib/dialog.ts` (`confirmDestructive`),
+    which awaits the plugin under Tauri and the synchronous original in a
+    plain browser (vitest, the e2e harness, which answers
+    `plugin:dialog|confirm` from `window.__dialog.confirm`).
 
 ## Testing
 
