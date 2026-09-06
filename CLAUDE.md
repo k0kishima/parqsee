@@ -103,12 +103,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 `routes/` and (where it talks to Rust) `api/`, and re-exports through
 `index.ts`:
 
-- `welcome` — landing screen: drop zone, recent files, feature highlights; `api/` for recent files
+- `welcome` — landing screen: drop zone, recent files, feature highlights; `api/` for recent files. Also `RecentFilesPopover`, the same list as a panel under the top row's clock button (the Welcome list is out of reach once a tab is open); `layout` imports it by file, not through the index, which would cycle back through the Welcome route
 - `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
 - `query` — SQL editor and result grid
-- `layout` — tab bar, with the right-click menu over a tab: copy path,
+- `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
   right, reopen the last closed tab. The bulk closes go through
   `closeTabs` in one dispatch; the reopen history (the last 10 closes of
@@ -418,7 +418,8 @@ store (a purchase approved elsewhere, a refund).
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
-screen's sample link and Recent Files' Clear all, the viewer's view
+screen's sample link and Recent Files' Clear all, the Recent Files panel
+and its button in the top row, the viewer's view
 options, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
@@ -452,7 +453,8 @@ drives the Vite dev server against the real backend through
 `backend/examples/bridge.rs` (a stdin/stdout JSON bridge calling the same
 service functions the commands call, over an unsandboxed store under
 `PARQSEE_DATA_DIR`). Run it after backend or frontend changes that touch
-paging, filters, export, the explorer, workspace roots, recent files, the
+paging, filters, export, the explorer, workspace roots, recent files (S7,
+the top row's panel included), the
 session (S11: tabs back across a relaunch, a deleted file's tab skipped and
 named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
 warm start through the `file-drop` event), the bundled sample (S13: opened
