@@ -54,21 +54,6 @@
       "dark": "ダーク",
       "system": "システム"
     },
-    "rowsPerPage": "1ページあたりの行数",
-    "rowsPerPageDesc": "データビューアーに表示する1ページあたりの行数",
-    "rowDensity": "行の密度",
-    "rowDensityDesc": "グリッドの 1 行あたりの高さ",
-    "rowDensityOptions": {
-      "comfortable": "標準",
-      "compact": "コンパクト"
-    },
-    "typeDisplay": "列の型表示",
-    "typeDisplayDesc": "ビューアーでの列のデータ型の表示方法を選択",
-    "typeDisplayOptions": {
-      "logical": "論理型 (DATEなど)",
-      "physical": "物理型 (INT32など)",
-      "both": "両方"
-    },
     "showRecentFiles": "最近開いたファイルを表示",
     "recentFilesDesc": "最近開いたファイルは最大5件まで保存されます",
     "clearRecentFiles": "履歴を削除",
@@ -110,7 +95,21 @@
       "error": "エラー"
     },
     "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
-    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。"
+    "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。",
+    "viewOptions": {
+      "title": "表示オプション",
+      "rowDensity": "行の密度",
+      "rowDensityOptions": {
+        "comfortable": "標準",
+        "compact": "コンパクト"
+      },
+      "typeDisplay": "列の型表示",
+      "typeDisplayOptions": {
+        "logical": "論理型 (DATEなど)",
+        "physical": "物理型 (INT32など)",
+        "both": "両方"
+      }
+    }
   },
   "fileExplorer": {
     "searchPlaceholder": "ファイルを検索...",

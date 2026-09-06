@@ -54,21 +54,6 @@
             "dark": "Dark",
             "system": "System"
         },
-        "rowsPerPage": "Rows per page",
-        "rowsPerPageDesc": "Number of rows to display per page in the data viewer",
-        "rowDensity": "Row Density",
-        "rowDensityDesc": "How much vertical space each row of the grid takes",
-        "rowDensityOptions": {
-            "comfortable": "Comfortable",
-            "compact": "Compact"
-        },
-        "typeDisplay": "Column Type Display",
-        "typeDisplayDesc": "Choose how to display column data types in the viewer",
-        "typeDisplayOptions": {
-            "logical": "Logical",
-            "physical": "Physical",
-            "both": "Both"
-        },
         "showRecentFiles": "Show recent files",
         "recentFilesDesc": "Recent files are limited to the most recent 5 files",
         "clearRecentFiles": "Clear Recent Files",
@@ -110,7 +95,21 @@
             "error": "Error"
         },
         "filterNeedsNumber": "Column \"{{column}}\" is numeric; \"{{value}}\" is not a number.",
-        "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false."
+        "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false.",
+        "viewOptions": {
+            "title": "View options",
+            "rowDensity": "Row Density",
+            "rowDensityOptions": {
+                "comfortable": "Comfortable",
+                "compact": "Compact"
+            },
+            "typeDisplay": "Column Type Display",
+            "typeDisplayOptions": {
+                "logical": "Logical",
+                "physical": "Physical",
+                "both": "Both"
+            }
+        }
     },
     "fileExplorer": {
         "searchPlaceholder": "Filter files...",
