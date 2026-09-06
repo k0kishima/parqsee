@@ -553,7 +553,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await page.keyboard.press('Meta+o'); await page.waitForTimeout(500);
   report('S7.cmdOInWorkspace', 'OBSERVE', `Cmd+O with a tab open -> tabs=${await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length)}`);
   // settings reachable?
-  report('S7.settingsInWorkspace', 'OBSERVE', `settings button in workspace: ${await page.locator('[title="Settings"]').count()}`);
+  report('S7.settingsInWorkspace', 'OBSERVE', `settings button in workspace: ${await page.locator('[title^="Settings"]').count()}`);
   // per-tab state isolation: filter in one tab doesn't leak
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
   const form = act(page).locator('form').first();
@@ -567,7 +567,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
 
 // ---------------------------------------------------------------- S8 settings
 await scenario('S8-settings', async ({ page, bridge }) => {
-  await page.click('[title="Settings"]');
+  await page.click('[title^="Settings"]');
   await page.waitForSelector('h2:has-text("Settings")');
   await page.locator('select').nth(0).selectOption('ja');
   await page.click('button:has-text("Save Changes")'); await page.waitForTimeout(300);
@@ -576,7 +576,7 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   check('S8.persist', saved.language === 'ja', JSON.stringify(saved));
   await page.reload(); await page.waitForTimeout(500);
   check('S8.reloadJa', (await page.evaluate(() => document.body.innerText)).includes('ファイル'), 'language survives reload');
-  await page.click('[title="設定"]').catch(async () => page.locator('button').filter({ has: page.locator('svg') }).nth(1).click());
+  await page.click('[title^="設定"]');
   await page.waitForTimeout(200);
   await page.locator('select').nth(0).selectOption('en');
   // theme dark via buttons
@@ -599,12 +599,12 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   report('S8.rppInQueryView', 'OBSERVE', `query view visible before=${qVisibleBefore} after rows/page change=${await page.locator('textarea').isVisible()}`);
   // Cancel discards
   for (let i = 0; i < 1; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
-  await page.click('[title="Settings"]');
+  await page.click('[title^="Settings"]');
   await page.locator('select').nth(0).selectOption('ja');
   await page.click('button:has-text("Cancel")'); await page.waitForTimeout(200);
   check('S8.cancel', !(await page.evaluate(() => document.body.innerText)).includes('最近'), 'cancel discards language change');
   // clear recent files confirm
-  await page.click('[title="Settings"]');
+  await page.click('[title^="Settings"]');
   page.once('dialog', d => d.accept());
   await page.evaluate(() => { window.confirm = () => true; });
   await page.click('button:has-text("Clear Recent Files")'); await page.waitForTimeout(200);
