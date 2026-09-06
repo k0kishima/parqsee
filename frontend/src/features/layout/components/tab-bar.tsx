@@ -24,10 +24,11 @@ interface TabBarProps {
   onToggleSidebar: () => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
+  onOpenRecentFile: (path: string) => void;
   onOpenSettings: () => void;
 }
 
-const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabsClose, onReopenClosedTab, canReopenClosedTab, isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }) => {
+const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabsClose, onReopenClosedTab, canReopenClosedTab, isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenRecentFile, onOpenSettings }) => {
   const { t } = useTranslation();
   // The right-clicked tab and where the menu goes; null while it is closed.
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
@@ -102,7 +103,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
         })}
       </div>
       <div className="flex items-center px-2">
-        <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
+        <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenRecentFile={onOpenRecentFile} onOpenSettings={onOpenSettings} />
       </div>
 
       {menu && menuIndex !== -1 && (
@@ -139,6 +140,7 @@ export const TabBar = React.memo(TabBarComponent, (prevProps, nextProps) => {
     prevProps.onToggleSidebar === nextProps.onToggleSidebar &&
     prevProps.onOpenFile === nextProps.onOpenFile &&
     prevProps.onOpenFolder === nextProps.onOpenFolder &&
+    prevProps.onOpenRecentFile === nextProps.onOpenRecentFile &&
     prevProps.onOpenSettings === nextProps.onOpenSettings &&
     prevProps.tabs.length === nextProps.tabs.length &&
     prevProps.tabs.every((tab, i) => tab.id === nextProps.tabs[i].id && tab.name === nextProps.tabs[i].name)

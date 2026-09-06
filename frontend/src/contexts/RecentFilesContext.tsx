@@ -18,7 +18,6 @@ interface RecentFilesContextType {
 }
 
 const RecentFilesContext = createContext<RecentFilesContextType | undefined>(undefined);
-const MAX_RECENT_FILES = 5;
 /** Where the list lived before it moved into the backend's store. */
 const LEGACY_STORAGE_KEY = 'parqsee-recent-files';
 
@@ -44,8 +43,12 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
       .catch(error => console.error('Failed to list recent files:', error));
   }, []);
 
+  // The cap is the backend's (`MAX_RECENT` in services/access/store.rs):
+  // the entry it drops is the one the next listing leaves out, and holding
+  // a copy of the number here only made the mirror disagree with the store
+  // until the next launch whenever the two drifted apart.
   const upsertRecentFile = useCallback((file: RecentFile) => {
-    setRecentFiles(prev => [file, ...prev.filter(f => f.path !== file.path)].slice(0, MAX_RECENT_FILES));
+    setRecentFiles(prev => [file, ...prev.filter(f => f.path !== file.path)]);
   }, []);
 
   const clearRecentFiles = useCallback(() => {

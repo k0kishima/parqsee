@@ -41,6 +41,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpen
                 isSidebarOpen={false}
                 onOpenFile={onBrowse}
                 onOpenFolder={onOpenFolder}
+                onOpenRecentFile={onFileSelect}
                 onOpenSettings={onOpenSettings}
             />
             <div className="flex-1 overflow-auto p-8">

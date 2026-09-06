@@ -57,6 +57,7 @@ export const Workspace = () => {
                         onToggleSidebar={toggleSidebar}
                         onOpenFile={openFileDialog}
                         onOpenFolder={openFolderDialog}
+                        onOpenRecentFile={openParquetFile}
                         onOpenSettings={openSettings}
                     />
                     <div className="flex-1 overflow-auto p-8 bg-slate-50 dark:bg-gray-900">
@@ -83,6 +84,7 @@ export const Workspace = () => {
                             onToggleSidebar={toggleSidebar}
                             onOpenFile={openFileDialog}
                             onOpenFolder={openFolderDialog}
+                            onOpenRecentFile={openParquetFile}
                             onOpenSettings={openSettings}
                         />
 

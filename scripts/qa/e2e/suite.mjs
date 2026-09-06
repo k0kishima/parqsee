@@ -510,6 +510,20 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   // same basename in different dirs
   await openFile(page, `${FIX}/paths/dir with space/inner.parquet`);
   check('S7.pathsWithSpace', (await visibleGrid(page)).length === 3);
+  // Recent Files from the top row while tabs are open: the Welcome list is
+  // out of reach here, the clock button drops the same list as a panel.
+  const recentPanel = page.locator('[role="dialog"][aria-label="Recent Files"]');
+  await page.click('[title="Recent Files"]'); await page.waitForTimeout(200);
+  const panelNames = await recentPanel.locator('li').evaluateAll(lis => lis.map(li => li.querySelector('span span').textContent));
+  // Newest first: every open — a file already in a tab included — moves the file to the front.
+  check('S7.recentPanel', panelNames.join(',') === 'inner.parquet,one_row.parquet,nan.parquet,dict.parquet', `panel=${panelNames}`);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+  check('S7.recentPanelEscape', (await recentPanel.count()) === 0, 'Escape closes the panel');
+  // Pick the newest entry from another tab: its tab comes to the front and the list order is unchanged for the checks below.
+  await page.keyboard.press('Meta+1'); await page.waitForTimeout(200);
+  await page.click('[title="Recent Files"]'); await page.waitForTimeout(200);
+  await recentPanel.locator('li', { hasText: 'inner.parquet' }).locator('button').first().click(); await page.waitForTimeout(400);
+  check('S7.recentPanelPick', (await recentPanel.count()) === 0 && (await tabs()).length === 4 && (await activeTabName(page)) === 'inner.parquet', `tabs=${await tabs()} active=${await activeTabName(page)}`);
   // Close all -> welcome, recent files
   for (let i = 0; i < 4; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S7.welcome', await page.locator('text=Drop your Parquet file here').isVisible(), 'welcome after closing all tabs');

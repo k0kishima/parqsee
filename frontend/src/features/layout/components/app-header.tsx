@@ -12,6 +12,7 @@ interface AppHeaderProps {
     onToggleSidebar?: () => void;
     onOpenFile: () => void;
     onOpenFolder: () => void;
+    onOpenRecentFile: (path: string) => void;
     onOpenSettings: () => void;
 }
 
@@ -20,7 +21,7 @@ interface AppHeaderProps {
  * the workspace alike. With tabs, the tab bar is the row and carries the
  * same controls at the same ends (see `TabBar`).
  */
-export const AppHeader = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenSettings }: AppHeaderProps) => {
+export const AppHeader = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenRecentFile, onOpenSettings }: AppHeaderProps) => {
     const { t } = useTranslation();
     return (
         <div className={`px-2 flex items-center border-b bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 ${TOP_ROW_HEIGHT}`}>
@@ -33,7 +34,7 @@ export const AppHeader = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFo
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('common.appName')}</span>
             </div>
             <div className="ml-auto">
-                <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
+                <HeaderActions onOpenFile={onOpenFile} onOpenFolder={onOpenFolder} onOpenRecentFile={onOpenRecentFile} onOpenSettings={onOpenSettings} />
             </div>
         </div>
     );

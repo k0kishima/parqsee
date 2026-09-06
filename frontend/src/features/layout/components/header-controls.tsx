@@ -1,6 +1,10 @@
-import { Menu, File, FolderOpen, Settings } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Menu, File, FolderOpen, History, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FreeBadge } from '../../license';
+// The component file, not the feature's index: the index re-exports the
+// Welcome route, which renders `AppHeader` from here.
+import { RecentFilesPopover } from '../../welcome/components/recent-files-popover';
 
 const iconButtonBase = 'p-2 rounded-md transition-colors text-gray-600 dark:text-gray-300';
 const iconButton = `${iconButtonBase} hover:bg-gray-100 dark:hover:bg-gray-700`;
@@ -43,16 +47,22 @@ export const SidebarToggle = ({ isOpen, onToggle }: SidebarToggleProps) => {
 interface HeaderActionsProps {
     onOpenFile: () => void;
     onOpenFolder: () => void;
+    /** Open a file picked in the Recent Files panel. */
+    onOpenRecentFile: (path: string) => void;
     onOpenSettings: () => void;
 }
 
 /**
  * The right end of the top row: the Free badge and Open File / Open Folder /
- * Settings. The same group whether the row is the header (no tabs) or the
- * tab bar, so the buttons never move.
+ * Recent Files / Settings. The same group whether the row is the header (no
+ * tabs) or the tab bar, so the buttons never move. Recent Files drops a
+ * panel under its button — the Welcome screen's list is out of reach the
+ * moment a tab is open.
  */
-export const HeaderActions = ({ onOpenFile, onOpenFolder, onOpenSettings }: HeaderActionsProps) => {
+export const HeaderActions = ({ onOpenFile, onOpenFolder, onOpenRecentFile, onOpenSettings }: HeaderActionsProps) => {
     const { t } = useTranslation();
+    const [isRecentOpen, setIsRecentOpen] = useState(false);
+    const closeRecent = useCallback(() => setIsRecentOpen(false), []);
     return (
         <div className="flex items-center gap-1">
             <FreeBadge />
@@ -62,6 +72,19 @@ export const HeaderActions = ({ onOpenFile, onOpenFolder, onOpenSettings }: Head
             <button onClick={onOpenFolder} className={iconButton} title={`${t('common.openFolder')} (⌘⇧O)`}>
                 <FolderOpen className="w-5 h-5" />
             </button>
+            {/* The wrapper anchors the panel; the panel treats a click on
+                anything inside it (this button included) as not-outside. */}
+            <div className="relative">
+                <button
+                    onClick={() => setIsRecentOpen(open => !open)}
+                    className={`${iconButton} ${isRecentOpen ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                    title={t('common.recentFiles')}
+                    aria-expanded={isRecentOpen}
+                >
+                    <History className="w-5 h-5" />
+                </button>
+                {isRecentOpen && <RecentFilesPopover onFileSelect={onOpenRecentFile} onClose={closeRecent} />}
+            </div>
             <button onClick={onOpenSettings} className={iconButton} title={`${t('settings.title')} (⌘,)`}>
                 <Settings className="w-5 h-5" />
             </button>
