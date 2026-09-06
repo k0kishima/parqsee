@@ -192,17 +192,24 @@ impl FileAccess {
     ) -> Result<Resolved, String> {
         let resolved = self.provider.resolve(bookmark)?;
         if resolved.stale {
-            match self.provider.create(&resolved.path) {
-                Ok(Some(fresh)) => {
-                    if state.store.set_bookmark(path, fresh) {
-                        self.save_or_log(state);
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => eprintln!("could not refresh the stale bookmark for {path}: {e}"),
-            }
+            self.refresh_stale(state, path, &resolved.path);
         }
         Ok(resolved)
+    }
+
+    /// Re-create the bookmark recorded under `path` from where the item is
+    /// now (`at`), and save. Best effort: a failure keeps the stale one,
+    /// which still resolved.
+    fn refresh_stale(&self, state: &mut State, path: &str, at: &Path) {
+        match self.provider.create(at) {
+            Ok(Some(fresh)) => {
+                if state.store.set_bookmark(path, fresh) {
+                    self.save_or_log(state);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("could not refresh the stale bookmark for {path}: {e}"),
+        }
     }
 
     fn restore_roots(&self) {
@@ -276,17 +283,7 @@ impl FileAccess {
     /// Whether `path` exists, resolving its bookmark for the duration of
     /// the check when one is recorded and not held.
     pub fn file_exists(&self, path: &str) -> bool {
-        let Ok(mut state) = self.lock() else {
-            return false;
-        };
-        if state.held.contains_key(path) || state.store.bookmark_for(path).is_none() {
-            return Path::new(path).exists();
-        }
-        match self.resolve_recorded(&mut state, path) {
-            Ok(Some(resolved)) => resolved.path == Path::new(path) && resolved.path.exists(),
-            Ok(None) => Path::new(path).exists(),
-            Err(_) => false,
-        }
+        self.probe(path)
     }
 
     /// Record a file the user just opened so Recent Files can reopen it after
@@ -339,34 +336,55 @@ impl FileAccess {
     /// must exist. Under the sandbox `exists` alone says nothing — `stat`
     /// succeeds on paths the app cannot open — so the bookmark decides. A
     /// grant taken for the probe ends with it.
-    fn probe(&self, state: &mut State, path: &str) -> bool {
-        if state.held.contains_key(path) {
-            return Path::new(path).exists();
-        }
-        match self.resolve_recorded(state, path) {
-            Ok(Some(resolved)) => resolved.path == Path::new(path) && resolved.path.exists(),
-            Ok(None) => Path::new(path).exists(),
+    ///
+    /// The bookmark is resolved with the state unlocked. Resolving is a
+    /// platform call that can take long — a volume that is gone, a network
+    /// share that is not mounted any more — and a listing that probes
+    /// twenty entries must not keep the opens and the session restore
+    /// waiting on the same lock while it does. The lock is taken twice
+    /// instead: once to read what is recorded, once more only if the stale
+    /// bookmark is to be refreshed.
+    fn probe(&self, path: &str) -> bool {
+        let bookmark = {
+            let Ok(state) = self.lock() else {
+                return false;
+            };
+            if state.held.contains_key(path) {
+                return Path::new(path).exists();
+            }
+            match state.store.bookmark_for(path) {
+                Some(bookmark) => bookmark.to_vec(),
+                None => return Path::new(path).exists(),
+            }
+        };
+        match self.provider.resolve(&bookmark) {
+            Ok(resolved) => {
+                if resolved.stale {
+                    if let Ok(mut state) = self.lock() {
+                        self.refresh_stale(&mut state, path, &resolved.path);
+                    }
+                }
+                resolved.path == Path::new(path) && resolved.path.exists()
+            }
             Err(_) => false,
         }
     }
 
-    /// Recent Files, newest first, each probed for availability.
+    /// Recent Files, newest first, each probed for availability. The list
+    /// is copied out under the lock; the probes run without it.
     pub fn recent_files(&self) -> Vec<RecentFile> {
-        let Ok(mut state) = self.lock() else {
-            return Vec::new();
+        let entries = match self.lock() {
+            Ok(state) => state.store.recent.clone(),
+            Err(_) => return Vec::new(),
         };
-        let entries = state.store.recent.clone();
         entries
             .into_iter()
-            .map(|entry| {
-                let available = self.probe(&mut state, &entry.path);
-                RecentFile {
-                    path: entry.path,
-                    name: entry.name,
-                    size: entry.size,
-                    last_accessed: entry.last_accessed,
-                    available,
-                }
+            .map(|entry| RecentFile {
+                available: self.probe(&entry.path),
+                path: entry.path,
+                name: entry.name,
+                size: entry.size,
+                last_accessed: entry.last_accessed,
             })
             .collect()
     }
@@ -532,13 +550,9 @@ impl FileAccess {
     /// the rest. The store is left as it is — the next `save_session`, once
     /// the tabs are open again, is what drops the missing ones.
     pub fn session_tabs(&self) -> SessionTabs {
-        let Ok(mut state) = self.lock() else {
-            return SessionTabs {
-                tabs: Vec::new(),
-                active: None,
-            };
-        };
-        let Some(session) = state.store.session.clone() else {
+        // Copied out under the lock; the probes run without it (see `probe`).
+        let session = self.lock().ok().and_then(|state| state.store.session.clone());
+        let Some(session) = session else {
             return SessionTabs {
                 tabs: Vec::new(),
                 active: None,
@@ -547,14 +561,11 @@ impl FileAccess {
         let tabs = session
             .tabs
             .into_iter()
-            .map(|entry| {
-                let available = self.probe(&mut state, &entry.path);
-                SessionTab {
-                    path: entry.path,
-                    name: entry.name,
-                    state: entry.state,
-                    available,
-                }
+            .map(|entry| SessionTab {
+                available: self.probe(&entry.path),
+                path: entry.path,
+                name: entry.name,
+                state: entry.state,
             })
             .collect();
         SessionTabs {
@@ -681,6 +692,8 @@ mod tests {
     use super::fake::FakeBookmarks;
     use super::*;
     use crate::services::test_support::temp_path;
+    use std::sync::{Arc, Condvar};
+    use std::time::Duration;
 
     fn fixture(name: &str) -> (PathBuf, String) {
         let dir = temp_path("access", name);
@@ -795,6 +808,85 @@ mod tests {
 
         let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
         assert_eq!(saved.recent.len(), 1);
+    }
+
+    /// `FakeBookmarks` whose `resolve` waits at a gate the test opens,
+    /// standing in for a bookmark that takes long to resolve.
+    struct GatedBookmarks {
+        inner: FakeBookmarks,
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        /// Signalled when a resolve has reached the gate.
+        entered: std::sync::mpsc::Sender<()>,
+    }
+
+    impl BookmarkProvider for GatedBookmarks {
+        fn create(&self, path: &Path) -> Result<Option<Vec<u8>>, String> {
+            self.inner.create(path)
+        }
+
+        fn resolve(&self, bookmark: &[u8]) -> Result<Resolved, String> {
+            let _ = self.entered.send(());
+            let (open, woken) = &*self.gate;
+            let mut open = open.lock().unwrap();
+            while !*open {
+                open = woken.wait(open).unwrap();
+            }
+            self.inner.resolve(bookmark)
+        }
+    }
+
+    #[test]
+    fn a_listing_does_not_hold_the_lock_while_a_bookmark_resolves() {
+        let (dir, file) = fixture("slow-resolve");
+        let other = s(&dir.join("data").join("b.parquet"));
+        std::fs::write(&other, b"parquet").unwrap();
+        let fake = FakeBookmarks::default();
+        let gate = Arc::new((Mutex::new(true), Condvar::new()));
+        let (entered, reached) = std::sync::mpsc::channel();
+        let access = Arc::new(FileAccess::load(
+            Box::new(GatedBookmarks {
+                inner: fake.clone(),
+                gate: Arc::clone(&gate),
+                entered,
+            }),
+            Some(&dir),
+        ));
+        access.remember_file(&file).unwrap();
+        access.release(&file);
+        let _ = reached.try_recv();
+
+        // Close the gate: the listing's probe of `file` now blocks inside resolve.
+        *gate.0.lock().unwrap() = false;
+        let listing = {
+            let access = Arc::clone(&access);
+            std::thread::spawn(move || access.recent_files())
+        };
+        reached
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the listing reached the resolve");
+
+        // Meanwhile the existence check before an open (a file with no
+        // bookmark: dropped or picked this session) needs the lock too, and
+        // must not wait for the listing.
+        let (done, finished) = std::sync::mpsc::channel();
+        {
+            let access = Arc::clone(&access);
+            let other = other.clone();
+            std::thread::spawn(move || {
+                let _ = done.send((access.file_exists(&other), access.roots().len()));
+            });
+        }
+        let checked = finished
+            .recv_timeout(Duration::from_secs(5))
+            .expect("file_exists finished while the listing was resolving");
+        assert_eq!(checked, (true, 0));
+
+        *gate.0.lock().unwrap() = true;
+        gate.1.notify_all();
+        let listed = listing.join().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].available);
+        assert_eq!(fake.stops(), fake.starts(), "the probe dropped its grant");
     }
 
     #[test]

@@ -517,8 +517,17 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   const panelNames = await recentPanel.locator('li').evaluateAll(lis => lis.map(li => li.querySelector('span span').textContent));
   // Newest first: every open — a file already in a tab included — moves the file to the front.
   check('S7.recentPanel', panelNames.join(',') === 'inner.parquet,one_row.parquet,nan.parquet,dict.parquet', `panel=${panelNames}`);
+  // The search box narrows by name or path; Enter opens the first match.
+  await page.keyboard.type('nan'); await page.waitForTimeout(150);
+  check('S7.recentPanelSearch', (await recentPanel.locator('li').count()) === 1 && (await recentPanel.locator('li').textContent()).includes('nan.parquet'), `rows=${await recentPanel.locator('li').count()}`);
+  await page.keyboard.type('zzz'); await page.waitForTimeout(150);
+  check('S7.recentPanelNoMatch', (await recentPanel.locator('li').count()) === 0 && await recentPanel.locator('text=No recent files match.').isVisible(), 'no rows, a note instead');
   await page.keyboard.press('Escape'); await page.waitForTimeout(150);
   check('S7.recentPanelEscape', (await recentPanel.count()) === 0, 'Escape closes the panel');
+  await page.keyboard.press('Meta+1'); await page.waitForTimeout(200);
+  await page.click('[title="Recent Files"]'); await page.waitForTimeout(200);
+  await page.keyboard.type('inner'); await page.keyboard.press('Enter'); await page.waitForTimeout(400);
+  check('S7.recentPanelEnter', (await recentPanel.count()) === 0 && (await activeTabName(page)) === 'inner.parquet', `active=${await activeTabName(page)}`);
   // Pick the newest entry from another tab: its tab comes to the front and the list order is unchanged for the checks below.
   await page.keyboard.press('Meta+1'); await page.waitForTimeout(200);
   await page.click('[title="Recent Files"]'); await page.waitForTimeout(200);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
 import { formatFileSize } from '../../../lib/format';
@@ -8,9 +8,19 @@ interface RecentFilesListProps {
     onFileSelect: (path: string) => void;
 }
 
+/**
+ * How many entries the Welcome screen shows before folding the rest behind
+ * "Show all": the store keeps twenty (`MAX_RECENT`), which as full-width
+ * cards would push the feature highlights off the screen.
+ */
+export const WELCOME_RECENT_LIMIT = 5;
+
 export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }) => {
     const { recentFiles, removeRecentFile, clearRecentFiles } = useRecentFiles();
     const { t } = useTranslation();
+    const [showAll, setShowAll] = useState(false);
+    const folded = recentFiles.length > WELCOME_RECENT_LIMIT && !showAll;
+    const shown = folded ? recentFiles.slice(0, WELCOME_RECENT_LIMIT) : recentFiles;
 
     return (
         <div className="mt-12">
@@ -38,7 +48,7 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                 {recentFiles.length === 0 ? (
                     <p className="text-sm text-slate-500 dark:text-gray-500">{t('welcome.recentFiles.empty')}</p>
                 ) : (
-                    recentFiles.map((file) => (
+                    shown.map((file) => (
                         <div
                             key={file.path}
                             className={`w-full flex items-center rounded-lg border transition-all group bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:shadow-none ${file.available ? '' : 'opacity-60'}`}
@@ -94,6 +104,14 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                     ))
                 )}
             </div>
+            {recentFiles.length > WELCOME_RECENT_LIMIT && (
+                <button
+                    onClick={() => setShowAll(open => !open)}
+                    className="mt-3 text-sm text-slate-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors"
+                >
+                    {folded ? t('welcome.recentFiles.showAll', { count: recentFiles.length }) : t('welcome.recentFiles.showLess')}
+                </button>
+            )}
         </div>
     );
 };

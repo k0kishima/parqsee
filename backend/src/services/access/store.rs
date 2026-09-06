@@ -13,8 +13,11 @@ use base64::Engine;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
 
-/// How many recent files are kept, newest first.
-pub const MAX_RECENT: usize = 5;
+/// How many recent files are kept, newest first. Under the sandbox an
+/// entry is also what lets its file be reopened without picking it again,
+/// so the cap is how far back that reaches. The Welcome screen shows the
+/// first five and folds the rest; the top row's panel shows them all.
+pub const MAX_RECENT: usize = 20;
 
 /// How many tabs a session keeps, from the first; a bound on the store, not
 /// a limit anyone is expected to reach.
@@ -361,37 +364,26 @@ mod tests {
     #[test]
     fn recent_files_are_newest_first_deduplicated_and_capped() {
         let mut store = BookmarkStore::default();
-        for i in 0..7 {
+        let total = MAX_RECENT as i64 + 2;
+        for i in 0..total {
             store.upsert_recent(recent(&format!("/f{i}.parquet"), i));
         }
-        let paths: Vec<&str> = store.recent.iter().map(|r| r.path.as_str()).collect();
-        assert_eq!(
-            paths,
-            [
-                "/f6.parquet",
-                "/f5.parquet",
-                "/f4.parquet",
-                "/f3.parquet",
-                "/f2.parquet"
-            ]
-        );
+        let paths: Vec<String> = store.recent.iter().map(|r| r.path.clone()).collect();
+        let expected: Vec<String> = (2..total).rev().map(|i| format!("/f{i}.parquet")).collect();
+        assert_eq!(paths, expected, "the two oldest fell off the end");
 
+        // Re-opening an entry moves it to the front and drops nothing.
         store.upsert_recent(recent("/f3.parquet", 99));
-        let paths: Vec<&str> = store.recent.iter().map(|r| r.path.as_str()).collect();
-        assert_eq!(
-            paths,
-            [
-                "/f3.parquet",
-                "/f6.parquet",
-                "/f5.parquet",
-                "/f4.parquet",
-                "/f2.parquet"
-            ]
-        );
+        let paths: Vec<String> = store.recent.iter().map(|r| r.path.clone()).collect();
+        let mut expected: Vec<String> = vec!["/f3.parquet".to_string()];
+        expected.extend((2..total).rev().filter(|&i| i != 3).map(|i| format!("/f{i}.parquet")));
+        assert_eq!(paths, expected);
         assert_eq!(store.recent[0].last_accessed, 99);
+        assert_eq!(store.recent.len(), MAX_RECENT);
 
-        assert!(store.remove_recent("/f6.parquet"));
-        assert!(!store.remove_recent("/f6.parquet"));
+        let last = format!("/f{}.parquet", total - 1);
+        assert!(store.remove_recent(&last));
+        assert!(!store.remove_recent(&last));
         store.clear_recent();
         assert!(store.recent.is_empty());
     }

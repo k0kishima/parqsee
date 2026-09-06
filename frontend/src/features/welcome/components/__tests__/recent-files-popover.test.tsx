@@ -92,6 +92,61 @@ describe('RecentFilesPopover', () => {
     expect(screen.queryByRole('button', { name: 'welcome.recentFiles.clear' })).not.toBeInTheDocument();
   });
 
+  it('filters by name or path as the search box is typed in, and says when nothing matches', async () => {
+    const user = userEvent.setup();
+    files = [file('sales.parquet'), file('invoices.parquet'), { ...file('notes.parquet'), path: '/archive/sales/notes.parquet' }];
+    renderPopover();
+    const search = screen.getByRole('searchbox', { name: 'welcome.recentFiles.search' });
+    expect(search).toHaveFocus();
+
+    await user.type(search, 'SALES');
+    expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual([
+      expect.stringContaining('sales.parquet'),
+      expect.stringContaining('notes.parquet'),
+    ]);
+
+    await user.type(search, 'zzz');
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.getByText('welcome.recentFiles.noMatches')).toBeInTheDocument();
+  });
+
+  it('opens the first match on Enter', async () => {
+    const user = userEvent.setup();
+    const { onFileSelect, onClose } = renderPopover();
+
+    await user.type(screen.getByRole('searchbox'), 'b{Enter}');
+
+    expect(onFileSelect).toHaveBeenCalledWith('/data/b.parquet');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does nothing on Enter when nothing matches', async () => {
+    const user = userEvent.setup();
+    const { onFileSelect } = renderPopover();
+
+    await user.type(screen.getByRole('searchbox'), 'zzz{Enter}');
+
+    expect(onFileSelect).not.toHaveBeenCalled();
+  });
+
+  it('adds the parent folder to entries that share a file name', () => {
+    files = [
+      { ...file('data.parquet'), path: '/exports/2024q1/data.parquet' },
+      { ...file('data.parquet'), path: '/exports/2024q2/data.parquet' },
+      file('other.parquet'),
+    ];
+    renderPopover();
+
+    const names = screen.getAllByRole('listitem').map(li => li.querySelector('span span')!.textContent);
+    expect(names).toEqual(['data.parquet · 2024q1', 'data.parquet · 2024q2', 'other.parquet']);
+  });
+
+  it('shows no search box while the list is empty', () => {
+    files = [];
+    renderPopover();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+  });
+
   it('closes on Escape and on a click outside its anchor, but not on its own button', async () => {
     const user = userEvent.setup();
     const { onClose } = renderPopover();
