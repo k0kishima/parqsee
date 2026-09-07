@@ -9,6 +9,7 @@ interface WelcomeContentProps {
     onBrowse: () => void;
     onOpenFolder: () => void;
     onOpenSample: () => void;
+    onShowShortcuts: () => void;
 }
 
 /**
@@ -17,12 +18,12 @@ interface WelcomeContentProps {
  * tab is — so an opened folder shows its tree next to the ways to open a
  * file, instead of an empty pane.
  */
-export const WelcomeContent: React.FC<WelcomeContentProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample }) => {
+export const WelcomeContent: React.FC<WelcomeContentProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample, onShowShortcuts }) => {
     return (
         <div className="max-w-4xl mx-auto">
             <DropZone onFileSelect={onFileSelect} onBrowse={onBrowse} onOpenFolder={onOpenFolder} onOpenSample={onOpenSample} />
             <RecentFilesList onFileSelect={onFileSelect} />
-            <FeatureHighlights />
+            <FeatureHighlights onShowShortcuts={onShowShortcuts} />
         </div>
     );
 };
@@ -31,7 +32,7 @@ interface WelcomeProps extends WelcomeContentProps {
     onOpenSettings: () => void;
 }
 
-export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample, onOpenSettings }) => {
+export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpenFolder, onOpenSample, onOpenSettings, onShowShortcuts }) => {
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-gray-900">
             {/* The workspace's top row, so opening the first folder or file
@@ -45,7 +46,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onFileSelect, onBrowse, onOpen
                 onOpenSettings={onOpenSettings}
             />
             <div className="flex-1 overflow-auto p-8">
-                <WelcomeContent onFileSelect={onFileSelect} onBrowse={onBrowse} onOpenFolder={onOpenFolder} onOpenSample={onOpenSample} />
+                <WelcomeContent onFileSelect={onFileSelect} onBrowse={onBrowse} onOpenFolder={onOpenFolder} onOpenSample={onOpenSample} onShowShortcuts={onShowShortcuts} />
             </div>
         </div>
     );

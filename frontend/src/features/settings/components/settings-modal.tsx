@@ -5,10 +5,13 @@ import { useSettings } from '../../../contexts/SettingsContext';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 import { PurchaseSettings } from '../../license';
 import type { Theme } from '../../../lib/settings-storage';
+import { shortcutKeys } from '../../../lib/shortcuts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Open the keyboard shortcut sheet (over this dialog). */
+  onShowShortcuts: () => void;
 }
 
 /** One row of the dialog: the label on the left, the control on the right. */
@@ -37,7 +40,7 @@ const THEMES: { value: Theme; Icon: typeof Sun }[] = [
  * lives in the pagination bar, row density and column types in the
  * viewer's view options.
  */
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModalProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
 
@@ -122,6 +125,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.restoreTabs ? 'translate-x-6' : 'translate-x-1'}`}
               />
+            </button>
+          </SettingRow>
+
+          <SettingRow label={t('settings.shortcuts')}>
+            <button
+              onClick={onShowShortcuts}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-primary rounded-md bg-primary text-primary hover:border-secondary transition-colors"
+            >
+              {t('settings.showShortcuts')}
+              <span className="text-xs text-tertiary">{shortcutKeys('shortcuts')}</span>
             </button>
           </SettingRow>
 

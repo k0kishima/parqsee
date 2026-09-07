@@ -4,12 +4,15 @@ import { Workspace, RestoreNotice } from '../features/workspace';
 import { Welcome } from '../features/welcome';
 import { SettingsModal } from '../features/settings';
 import { UpgradePrompt } from '../features/license';
+import { ShortcutSheet } from '../features/help';
 
 export const AppRouter = () => {
     const {
-        tabs, roots, isReady, isSettingsOpen, toggleSettings, openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
+        tabs, roots, isReady, isSettingsOpen, toggleSettings, isShortcutsOpen, toggleShortcuts,
+        openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
+    const showShortcuts = () => toggleShortcuts(true);
     const { upgradeOpen, showUpgrade } = useLicense();
 
     // The workspace roots and the last session's tabs each arrive from their
@@ -34,13 +37,18 @@ export const AppRouter = () => {
                     onOpenFolder={openFolderDialog}
                     onOpenSample={openSampleFile}
                     onOpenSettings={() => toggleSettings(true)}
+                    onShowShortcuts={showShortcuts}
                 />
             )}
 
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => toggleSettings(false)}
+                onShowShortcuts={showShortcuts}
             />
+
+            {/* Over either screen and over Settings: ⌘/, Help › Keyboard Shortcuts. */}
+            <ShortcutSheet isOpen={isShortcutsOpen} onClose={() => toggleShortcuts(false)} />
 
             {/* Over either screen: the free tier's limit was hit, or Upgrade was clicked. */}
             {upgradeOpen && <UpgradePrompt />}

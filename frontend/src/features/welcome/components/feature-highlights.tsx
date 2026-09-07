@@ -1,7 +1,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { shortcutKeys } from '../../../lib/shortcuts';
 
-export const FeatureHighlights: React.FC = () => {
+interface FeatureHighlightsProps {
+    /** The "Easy to Use" card promises shortcuts; this is where it shows them. */
+    onShowShortcuts: () => void;
+}
+
+export const FeatureHighlights: React.FC<FeatureHighlightsProps> = ({ onShowShortcuts }) => {
     const { t } = useTranslation();
 
     return (
@@ -36,6 +42,14 @@ export const FeatureHighlights: React.FC = () => {
                     </div>
                     <h4 className="font-medium mb-1 text-slate-900 dark:text-gray-200">{t('welcome.features.usability.title')}</h4>
                     <p className="text-sm text-slate-500 dark:text-gray-400">{t('welcome.features.usability.desc')}</p>
+                    <button
+                        type="button"
+                        onClick={onShowShortcuts}
+                        className="mt-1 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                        {t('welcome.features.usability.link')}
+                        <span className="ml-1.5 text-xs opacity-60">{shortcutKeys('shortcuts')}</span>
+                    </button>
                 </div>
                 <div>
                     <div className="inline-flex items-center justify-center w-12 h-12 bg-purple-100 text-purple-600 rounded-lg mb-3">

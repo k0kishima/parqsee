@@ -24,12 +24,14 @@ export const Workspace = () => {
         selectTab,
         toggleSidebar,
         toggleSettings,
+        toggleShortcuts,
         setTabState,
         openFileDialog,
         openFolderDialog,
         removeWorkspaceRoot,
     } = useWorkspace();
     const openSettings = useCallback(() => toggleSettings(true), [toggleSettings]);
+    const showShortcuts = useCallback(() => toggleShortcuts(true), [toggleShortcuts]);
 
     return (
         <div className="h-screen flex">
@@ -66,6 +68,7 @@ export const Workspace = () => {
                             onBrowse={openFileDialog}
                             onOpenFolder={openFolderDialog}
                             onOpenSample={openSampleFile}
+                            onShowShortcuts={showShortcuts}
                         />
                     </div>
                     </>
