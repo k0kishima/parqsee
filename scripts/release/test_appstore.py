@@ -1,9 +1,9 @@
-"""Tests for scripts/release/appstore.sh.
+"""Tests for scripts/release/appstore.sh and scripts/release/upload_pkg.sh.
 
-The script is a sequence of tool invocations (pnpm, codesign, productbuild,
-altool), so it is run against a fake checkout with stubs of those tools on
+The scripts are a sequence of tool invocations (pnpm, codesign, productbuild,
+altool), so they are run against a fake checkout with stubs of those tools on
 PATH that record how they were called. What the stubs check is the
-script's own logic: argument handling, where the artifacts go, that the
+scripts' own logic: argument handling, where the artifacts go, that the
 build never sees the signing environment, that nothing is signed or
 uploaded unless asked. One test runs the real productbuild on a minimal
 bundle to make sure the package it produces installs to /Applications.
@@ -84,7 +84,7 @@ EOF
 def make_checkout(root: Path) -> None:
     """A fake repository with only what the scripts touch."""
     (root / "scripts" / "release").mkdir(parents=True)
-    for name in ("appstore.sh", "sign_app.sh"):
+    for name in ("appstore.sh", "sign_app.sh", "upload_pkg.sh"):
         shutil.copy(HERE / name, root / "scripts" / "release" / name)
     (root / "frontend").mkdir()
     (root / "backend").mkdir()
@@ -132,7 +132,7 @@ class AppstoreScriptTests(unittest.TestCase):
         self.profile = self.tmp / "store.provisionprofile"
         self.profile.write_text("not a real profile; `security` is stubbed")
 
-    def run_script(self, *args, env=None, real_tools=()):
+    def run_script(self, *args, env=None, real_tools=(), script="appstore.sh"):
         path = os.pathsep.join([str(self.bin), os.environ["PATH"]])
         if real_tools:
             # Keep the stubs for everything but these.
@@ -144,7 +144,7 @@ class AppstoreScriptTests(unittest.TestCase):
         full_env.update({"PATH": path, "STUB_LOG": str(self.log)})
         full_env.update(env or {})
         result = subprocess.run(
-            [str(self.root / "scripts" / "release" / "appstore.sh"), *args],
+            [str(self.root / "scripts" / "release" / script), *args],
             capture_output=True,
             text=True,
             env=full_env,
@@ -453,6 +453,96 @@ class AppstoreScriptTests(unittest.TestCase):
         self.assertEqual(run.returncode, 1)
         self.assertIn("no API key file at", run.stderr)
         self.assertEqual(run.calls, [])
+
+    # -- upload_pkg.sh on its own --------------------------------------------
+
+    def api_env(self, **extra):
+        return dict({"APPLE_API_KEY": "KEY1", "APPLE_API_ISSUER": "issuer-1"}, **extra)
+
+    def make_pkg(self, name="Parqsee-0.1.0.pkg"):
+        pkg = self.tmp / name
+        pkg.write_text("pkg")
+        return pkg
+
+    def run_upload(self, *args, env=None):
+        return self.run_script(*args, env=env, script="upload_pkg.sh")
+
+    def test_upload_pkg_help_prints_the_header(self):
+        run = self.run_upload("--help")
+
+        self.assertEqual(run.returncode, 0)
+        self.assertIn("Usage:", run.stdout)
+        self.assertIn("--validate-only", run.stdout)
+        self.assertNotIn("set -eu", run.stdout)
+
+    def test_upload_pkg_needs_a_package_and_the_api_key_before_touching_anything(self):
+        pkg = self.make_pkg()
+        cases = {
+            "no package": ((), self.api_env(), "which package"),
+            "two packages": ((str(pkg), str(pkg)), self.api_env(), "one package at a time"),
+            "unknown option": (("--upload", str(pkg)), self.api_env(), "unknown option"),
+            "missing package": ((str(self.tmp / "nowhere.pkg"),), self.api_env(), "no package at"),
+            "no key": ((str(pkg),), {}, "APPLE_API_KEY"),
+            "no issuer": ((str(pkg),), {"APPLE_API_KEY": "KEY1"}, "APPLE_API_ISSUER"),
+            "missing key file": (
+                (str(pkg),),
+                self.api_env(APPLE_API_KEY_PATH=str(self.tmp / "nowhere.p8")),
+                "no API key file at",
+            ),
+        }
+        for case, (args, env, message) in cases.items():
+            with self.subTest(case=case):
+                run = self.run_upload(*args, env=env)
+
+                self.assertEqual(run.returncode, 1)
+                self.assertIn(message, run.stderr)
+                self.assertEqual(run.calls, [])
+
+    def test_upload_pkg_refuses_an_unsigned_package(self):
+        pkg = self.make_pkg()
+        # What pkgutil says about a package productbuild made without --sign.
+        (self.bin / "pkgutil").write_text(STUB_PRELUDE + 'echo "Package \\"$2\\":"; echo "   Status: no signature"; exit 1\n')
+
+        run = self.run_upload(str(pkg), env=self.api_env())
+
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("Status: no signature", run.stderr)
+        self.assertIn("signed packages only", run.stderr)
+        self.assertEqual(run.called("pkgutil"), [["pkgutil", "--check-signature", str(pkg)]])
+        self.assertEqual(run.called("xcrun"), [])
+
+    def test_upload_pkg_validate_only_stops_after_altool_validate(self):
+        pkg = self.make_pkg()
+
+        run = self.run_upload("--validate-only", str(pkg), env=self.api_env())
+
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(
+            run.called("xcrun"),
+            [["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"]],
+        )
+        self.assertEqual(run.key_files, [])
+        self.assertIn("validated", run.stdout)
+        self.assertNotIn("uploaded", run.stdout)
+
+    def test_upload_pkg_validates_then_uploads_with_the_key_file(self):
+        pkg = self.make_pkg()
+        key = self.tmp / "AuthKey.p8"
+        key.write_text("-----BEGIN PRIVATE KEY-----\nnot really\n-----END PRIVATE KEY-----\n")
+
+        run = self.run_upload(str(pkg), env=self.api_env(APPLE_API_KEY_PATH=str(key)))
+
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(
+            run.called("xcrun"),
+            [
+                ["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
+                ["xcrun", "altool", "--upload-app", "-f", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
+            ],
+        )
+        # altool finds the key only as AuthKey_<id>.p8 in $API_PRIVATE_KEYS_DIR.
+        self.assertEqual(run.key_files, ["AuthKey_KEY1.p8", "AuthKey_KEY1.p8"])
+        self.assertIn("uploaded", run.stdout)
 
     # -- the real productbuild ----------------------------------------------
 
