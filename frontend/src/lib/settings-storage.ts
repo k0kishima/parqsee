@@ -20,11 +20,29 @@ export interface Settings {
   rowDensity: RowDensity;
 }
 
+/**
+ * The language to start in when nothing is saved yet: the one the system
+ * is set to, when the app has it. A Mac set to Japanese would otherwise
+ * open in English until its owner found the setting — and the native menu
+ * follows this too (`set_menu_language`), so a wrong guess is visible in
+ * the menu bar as well.
+ *
+ * `navigator.language` is the webview's own view of the preferred
+ * languages, which on macOS is the system's list narrowed to the
+ * localizations the bundle declares (`CFBundleLocalizations` in
+ * `backend/Info.plist`). Only the primary subtag is read: `ja`, `ja-JP`
+ * and `ja-Jpan-JP` are the same language to us.
+ */
+export function systemLanguage(): Language {
+  const preferred = typeof navigator === 'undefined' ? '' : navigator.language ?? '';
+  return preferred.toLowerCase().split('-')[0] === 'ja' ? 'ja' : 'en';
+}
+
 export const defaultSettings: Settings = {
   theme: 'system',
   rowsPerPage: 50,  // Reduced default for better performance
   typeDisplay: 'logical',
-  language: 'en',
+  language: systemLanguage(),
   restoreTabs: true,
   rowDensity: 'comfortable',
 };
