@@ -202,8 +202,15 @@ The frontend also listens for a `file-drop` event emitted from
 handler, which is how a file opened from Finder, the Dock or `open -a`
 arrives — for a `menu` event carrying the id
 of the native menu item that was chosen (`open-file`, `open-folder`,
-`close-tab`, `reopen-tab`, `settings`) — `build_menu` in `lib.rs` owns
-⌘O / ⌘⇧O / ⌘W / ⇧⌘T / ⌘, — for `recent-files-cleared`, sent when
+`close-tab`, `reopen-tab`, `settings`, `find`, `find-next`,
+`find-previous`, `toggle-sidebar`, `switch-view`, `run-query`,
+`previous-tab`, `next-tab`, `shortcuts`, `help`) — `build_menu` in
+`lib.rs` owns their key equivalents, and
+`frontend/src/lib/shortcuts.ts` lists the same ids with the same keys
+(its test reads `lib.rs` and checks); `WorkspaceContext.runCommand`
+answers a `menu` event and a keydown alike by that id, handing what a
+view owns (`find*`, `run-query`, `switch-view`) to the active view over
+`lib/app-commands.ts` — for `recent-files-cleared`, sent when
 File › Open Recent › Clear Menu emptied the store (the `RecentFilesContext`
 mirror follows; the submenu itself is `menu.rs`: rebuilt from the store
 after every change to Recent Files, a pick arrives as `file-drop`, so

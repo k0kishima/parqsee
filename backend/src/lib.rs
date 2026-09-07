@@ -65,6 +65,17 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
         ],
     )?;
 
+    // Every item below with a key equivalent is listed in the webview's
+    // `lib/shortcuts.ts` under the same id and with the same keys (a test
+    // there reads this function and checks). The menu is where a macOS
+    // user looks a shortcut up, so a key that is not here is a key nobody
+    // finds. Items are always enabled: whether there is a search to step
+    // through or a query to run is the webview's to know, and a native
+    // item's enabled state cannot follow it without a command round trip.
+    let find = MenuItem::with_id(app, "find", "Find…", true, Some("CmdOrCtrl+F"))?;
+    let find_next = MenuItem::with_id(app, "find-next", "Find Next", true, Some("CmdOrCtrl+G"))?;
+    let find_previous =
+        MenuItem::with_id(app, "find-previous", "Find Previous", true, Some("CmdOrCtrl+Shift+G"))?;
     let edit = Submenu::with_items(
         app,
         "Edit",
@@ -77,11 +88,35 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
             &PredefinedMenuItem::copy(app, None)?,
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &find,
+            &find_next,
+            &find_previous,
         ],
     )?;
 
-    let view = Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?;
+    let toggle_sidebar =
+        MenuItem::with_id(app, "toggle-sidebar", "Toggle Sidebar", true, Some("CmdOrCtrl+B"))?;
+    let switch_view =
+        MenuItem::with_id(app, "switch-view", "Switch Content / Query", true, Some("CmdOrCtrl+E"))?;
+    let view = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &toggle_sidebar,
+            &switch_view,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
+    )?;
 
+    let run_query = MenuItem::with_id(app, "run-query", "Run Query", true, Some("CmdOrCtrl+Enter"))?;
+    let query = Submenu::with_items(app, "Query", true, &[&run_query])?;
+
+    let previous_tab =
+        MenuItem::with_id(app, "previous-tab", "Show Previous Tab", true, Some("CmdOrCtrl+Shift+["))?;
+    let next_tab = MenuItem::with_id(app, "next-tab", "Show Next Tab", true, Some("CmdOrCtrl+Shift+]"))?;
     let window = Submenu::with_items(
         app,
         "Window",
@@ -89,10 +124,22 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
         &[
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &previous_tab,
+            &next_tab,
         ],
     )?;
 
-    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])
+    // Help: the shortcut sheet in the webview, and the support page of the
+    // product site in the UI's language (the webview knows which). Marked
+    // as the Help menu so macOS adds its search field to it.
+    let shortcuts =
+        MenuItem::with_id(app, "shortcuts", "Keyboard Shortcuts", true, Some("CmdOrCtrl+/"))?;
+    let help_page = MenuItem::with_id(app, "help", "Parqsee Help", true, None::<&str>)?;
+    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &PredefinedMenuItem::separator(app)?, &help_page])?;
+    help.set_as_help_menu_for_nsapp()?;
+
+    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &query, &window, &help])
 }
 
 /// Hand the files macOS was asked to open with the app (a double-click in
