@@ -78,7 +78,7 @@ export const RecentFilesPopover: React.FC<RecentFilesPopoverProps> = ({ onFileSe
             {recentFiles.length > 0 && (
                 <div className="px-3 pb-1.5">
                     <label className="flex items-center gap-2 px-2 py-1 rounded border border-primary bg-secondary">
-                        <Search className="w-3.5 h-3.5 flex-shrink-0 text-tertiary" />
+                        <Search className="w-3.5 h-3.5 shrink-0 text-tertiary" />
                         <input
                             type="search"
                             autoFocus
@@ -112,7 +112,7 @@ export const RecentFilesPopover: React.FC<RecentFilesPopoverProps> = ({ onFileSe
                                     className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 text-left"
                                     title={file.path}
                                 >
-                                    <FileText className="w-4 h-4 flex-shrink-0 text-tertiary" />
+                                    <FileText className="w-4 h-4 shrink-0 text-tertiary" />
                                     <span className="flex-1 min-w-0">
                                         <span className="block text-xs text-primary truncate">
                                             {file.name}
@@ -122,7 +122,7 @@ export const RecentFilesPopover: React.FC<RecentFilesPopoverProps> = ({ onFileSe
                                             {file.available ? file.path : t('welcome.recentFiles.unavailable')}
                                         </span>
                                     </span>
-                                    <span className="flex-shrink-0 text-right">
+                                    <span className="shrink-0 text-right">
                                         <span className="block text-[11px] text-secondary">{formatFileSize(file.size)}</span>
                                         <span className="block text-[11px] text-tertiary">{new Date(file.last_accessed).toLocaleDateString()}</span>
                                     </span>
