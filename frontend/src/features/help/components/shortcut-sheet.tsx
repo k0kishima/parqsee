@@ -22,7 +22,8 @@ function Keycap({ keys }: { keys: string }) {
  * Every keyboard shortcut on one sheet (⌘/, Help › Keyboard Shortcuts,
  * Settings, the Welcome screen's "Easy to Use" card), by section, from
  * the one table in `lib/shortcuts.ts`. Escape, ✕ and the backdrop close
- * it. Over the settings dialog, so the row there can open it in place.
+ * it. Settings closes itself when its row opens this, so one Escape
+ * closes one thing.
  */
 export function ShortcutSheet({ isOpen, onClose }: ShortcutSheetProps) {
   const { t } = useTranslation();

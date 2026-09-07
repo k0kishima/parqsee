@@ -12,7 +12,12 @@ export const AppRouter = () => {
         openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
         restoreNotice, dismissRestoreNotice,
     } = useWorkspace();
-    const showShortcuts = () => toggleShortcuts(true);
+    // From Settings the sheet takes the dialog's place, so one Escape
+    // closes one thing.
+    const showShortcuts = () => {
+        toggleSettings(false);
+        toggleShortcuts(true);
+    };
     const { upgradeOpen, showUpgrade } = useLicense();
 
     // The workspace roots and the last session's tabs each arrive from their
