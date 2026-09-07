@@ -172,8 +172,9 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
     const { t } = useTranslation();
 
-    // Initialize with one row
-    const [filters, setFilters] = useState<FilterRow[]>([
+    // Initialize with one row. A lazy initializer: Date.now() is impure and
+    // must not run on every render (react.dev/reference/rules).
+    const [filters, setFilters] = useState<FilterRow[]>(() => [
         { id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }
     ]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
