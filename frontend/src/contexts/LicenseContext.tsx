@@ -36,8 +36,9 @@ interface LicenseContextType {
     showUpgrade: () => void;
     dismissUpgrade: () => void;
     loadProducts: () => void;
-    buy: () => void;
-    restore: () => void;
+    /** Resolves once the purchase flow has finished (the state is then updated). */
+    buy: () => Promise<void>;
+    restore: () => Promise<void>;
     /** Ask the backend for the status again. */
     refresh: () => void;
 }
@@ -111,7 +112,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
 
     /** Buy the full version; the products are fetched first when they are not there yet. */
     const buy = useCallback(() => {
-        run('buy', async () => {
+        return run('buy', async () => {
             let products = productsRef.current;
             if (!products) {
                 products = await listIapProducts();
@@ -127,7 +128,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     }, [run]);
 
     const restore = useCallback(() => {
-        run('restore', async () => ({ status: await restorePurchases() }));
+        return run('restore', async () => ({ status: await restorePurchases() }));
     }, [run]);
 
     const showUpgrade = useCallback(() => dispatch({ type: 'open-upgrade' }), []);
