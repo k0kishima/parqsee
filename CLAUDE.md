@@ -88,7 +88,8 @@ parqsee/
 │   ├── release/
 │   │   ├── appstore.sh           # Build → sign → .pkg → App Store Connect (universal; --unsigned is the dry run)
 │   │   ├── sign_app.sh           # Embed a provisioning profile and sign with Entitlements.plist + the identifiers
-│   │   └── test_appstore.py      # unittest over appstore.sh with stubbed tools (python3 scripts/release/test_appstore.py)
+│   │   ├── upload_pkg.sh         # Validate a signed .pkg with App Store Connect and upload it (appstore.sh's last step, callable alone)
+│   │   └── test_appstore.py      # unittest over appstore.sh and upload_pkg.sh with stubbed tools (python3 scripts/release/test_appstore.py)
 │   └── qa/
 │       ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
 │       ├── gen_huge.py
@@ -155,10 +156,14 @@ The submission itself is `scripts/release/appstore.sh`: the store variant
 as a universal binary (`--target universal-apple-darwin`; needs
 `rustup target add x86_64-apple-darwin` once), signed with the Mac App
 Store profile and the Apple Distribution identity, wrapped into a `.pkg`
-with `productbuild`, validated and uploaded with `xcrun altool` on
-`--upload`. `--unsigned` is the dry run without certificates. It lands in
-`backend/target/universal-apple-darwin/release/bundle/macos/`; see the
-script's header for the flags and the `APPLE_*` variables it reads.
+with `productbuild`, validated and uploaded on `--upload` through
+`scripts/release/upload_pkg.sh` (`xcrun altool`; it refuses an unsigned
+package first). `--unsigned` is the dry run without certificates. It
+lands in `backend/target/universal-apple-darwin/release/bundle/macos/`;
+see the script's header for the flags and the `APPLE_*` variables it
+reads. `appstore.sh` re-signs and re-packages on every run, so a package
+validated earlier is uploaded as the same bytes by calling
+`upload_pkg.sh` on it directly.
 
 ### Testing
 ```bash
@@ -495,10 +500,11 @@ is read down to its primary subtag), and the free / unlocked state in
 through the Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `python3 scripts/release/test_appstore.py` runs `scripts/release/appstore.sh`
-against a fake checkout with stubs of pnpm / codesign / productbuild /
-altool on PATH (argument handling, artifact paths, the build's scrubbed
-environment, the signed and unsigned sequences) plus one run through the
-real `productbuild`.
+and `scripts/release/upload_pkg.sh` against a fake checkout with stubs of
+pnpm / codesign / productbuild / pkgutil / altool on PATH (argument
+handling, artifact paths, the build's scrubbed environment, the signed and
+unsigned sequences, the upload script's refusal of an unsigned package)
+plus one run through the real `productbuild`.
 `scripts/qa/e2e/shots.mjs` (`pnpm shots`) is not a test: it drives the same
 harness to photograph the app for `site/` and the App Store listing (#16), in
 en/ja × light/dark at the sizes App Store Connect accepts. Regenerate the
