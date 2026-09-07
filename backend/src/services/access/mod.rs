@@ -732,10 +732,10 @@ mod tests {
         assert_eq!(recent.name, "a.parquet");
         assert_eq!(recent.size, 7);
         assert!(recent.available);
-        assert_eq!(fake.created(), [file.clone()]);
+        assert_eq!(fake.created(), std::slice::from_ref(&file));
         assert_eq!(
             fake.active(),
-            [file.clone()],
+            std::slice::from_ref(&file),
             "the grant is held from the new bookmark"
         );
 
@@ -760,7 +760,7 @@ mod tests {
         let first = FakeBookmarks::default();
         let launch = FileAccess::load(Box::new(first.clone()), Some(&dir));
         launch.remember_file(&file).unwrap();
-        assert_eq!(first.active(), [file.clone()]);
+        assert_eq!(first.active(), std::slice::from_ref(&file));
         // The first launch's grants end with the process.
         drop(launch);
         assert!(first.active().is_empty());
@@ -779,7 +779,7 @@ mod tests {
             2,
             "one probe from the listing, one held grant"
         );
-        assert_eq!(second.active(), [file.clone()]);
+        assert_eq!(second.active(), std::slice::from_ref(&file));
         assert!(access.file_exists(&file));
         assert_eq!(
             second.starts(),
@@ -819,7 +819,7 @@ mod tests {
             [file.clone(), file.clone()],
             "re-created from the resolved URL"
         );
-        assert_eq!(fake.active(), [file.clone()]);
+        assert_eq!(fake.active(), std::slice::from_ref(&file));
 
         let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
         assert_eq!(saved.recent.len(), 1);
@@ -961,8 +961,8 @@ mod tests {
                 name: "data".into()
             }
         );
-        assert_eq!(access.roots(), [root.clone()]);
-        assert_eq!(fake.active(), [data.clone()]);
+        assert_eq!(access.roots(), std::slice::from_ref(&root));
+        assert_eq!(fake.active(), std::slice::from_ref(&data));
         assert!(access.add_root(&s(&dir.join("nope"))).is_err());
 
         let relaunch = FakeBookmarks::default();
@@ -970,7 +970,7 @@ mod tests {
         assert_eq!(access.roots(), [root]);
         assert_eq!(
             relaunch.active(),
-            [data.clone()],
+            std::slice::from_ref(&data),
             "restored roots hold their grant from launch"
         );
 
@@ -1040,7 +1040,7 @@ mod tests {
         );
         assert_eq!(
             fake.active(),
-            [data.clone()],
+            std::slice::from_ref(&data),
             "only the root's grant is held"
         );
     }
@@ -1176,7 +1176,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fake.created(),
-            [file.clone()],
+            std::slice::from_ref(&file),
             "the tab shares the recent entry's bookmark"
         );
         let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
@@ -1196,7 +1196,7 @@ mod tests {
 
         // Reopened through the cache's normal path: the grant is held.
         access.acquire(&file).unwrap();
-        assert_eq!(relaunch.active(), [file.clone()]);
+        assert_eq!(relaunch.active(), std::slice::from_ref(&file));
     }
 
     #[test]
