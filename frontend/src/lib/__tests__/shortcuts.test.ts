@@ -43,10 +43,11 @@ describe('the shortcut table', () => {
 });
 
 describe('the native menu', () => {
-  // `MenuItem::with_id(app, "<id>", "<label>", true, Some("<accelerator>"))`,
-  // possibly across lines.
-  const items = [...readFileSync(resolve(__dirname, '../../../../backend/src/lib.rs'), 'utf8')
-    .matchAll(/with_id\(\s*app,\s*"([^"]+)",\s*"[^"]*",\s*true,\s*Some\("([^"]+)"\)/g)]
+  const rust = (path: string) => readFileSync(resolve(__dirname, '../../../../backend/src', path), 'utf8');
+  const buildMenu = rust('lib.rs');
+  // `b.item("<id>", Some("<accelerator>"))`; the label is looked up from
+  // the id in `services::menu_labels`, which is why it is not here.
+  const items = [...buildMenu.matchAll(/b\.item\("([^"]+)", Some\("([^"]+)"\)\)/g)]
     .map(([, id, accelerator]) => ({ id, accelerator }));
 
   /** muda's accelerator syntax as the glyphs the menu bar shows for it. */
@@ -70,6 +71,22 @@ describe('the native menu', () => {
       expect(shortcut, `menu item ${id} is not in SHORTCUTS`).toBeDefined();
       expect(glyphs(accelerator), id).toBe(shortcut!.keys[0]);
     }
+  });
+
+  // The menu's labels are in Rust, not in `locales/` — the menu bar is the
+  // one surface the webview cannot draw, and it has to be right before the
+  // webview exists (see `services::menu_labels`). A key with no entry
+  // there falls back to the key itself, which would put `toggle-sidebar`
+  // in the menu bar rather than failing, so it is checked here.
+  it('labels every item from a key the Rust tables have', () => {
+    const keys = [...rust('services/menu_labels.rs')
+      .slice(0, rust('services/menu_labels.rs').indexOf('const EN'))
+      .matchAll(/^ {4}"([^"]+)",$/gm)].map(([, key]) => key);
+    expect(keys).toContain('open-file');
+
+    const used = [...buildMenu.matchAll(/b\.(?:item|predefined|submenu)\(\s*"([^"]+)"/g)].map(([, key]) => key);
+    expect(used.length).toBeGreaterThan(items.length);
+    for (const key of used) expect(keys, `${key} has no label`).toContain(key);
   });
 });
 

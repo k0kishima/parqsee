@@ -10,7 +10,8 @@ do not re-check those by hand.
 ## When to run
 
 - Before tagging a release.
-- After touching `build_menu` in `backend/src/lib.rs`, `backend/capabilities/`,
+- After touching `build_menu` in `backend/src/lib.rs`,
+  `backend/src/services/menu_labels.rs`, `backend/capabilities/`,
   `backend/Entitlements.plist`, `backend/src/services/access/`,
   `backend/storekit/`, `backend/src/services/store/`,
   `bundle.fileAssociations` or `bundle.resources` in `backend/tauri.conf.json`,
@@ -214,6 +215,15 @@ around ten items or nobody will run it.
 | Expected | The app launches straight to the Welcome screen; the header carries a small *Free · Upgrade* badge. Three files open and everything in them works (rows, paging, filters, SQL, export). The fourth open and the drop each bring up the upgrade prompt — the limit (3 tabs), *Everything else works*, the price in the tester's storefront currency, a Buy button with the same price, Restore, *Not now* — and open no tab; Escape and ✕ only close the prompt, the three tabs stay. Clicking an open tab at the limit switches to it without the prompt. After closing a tab the fourth file opens. Settings › Purchase says *Free version · up to 3 tabs at a time* with Buy / Restore. After the relaunch the three tabs are back. Restore with nothing owned leaves things as they are (no error). Buy shows the sandbox payment sheet; on confirmation the prompt closes, the badge is gone, the fourth and fifth files open, and after the relaunch all five tabs are back; Settings › Purchase says *Full version — unlocked* without Buy / Restore. After the reinstall the app is on the free tier again (the app knows nothing yet); the prompt appears at the fourth file, and Restore purchases signs in and unlocks it at once — the prompt closes and the badge goes. The build without the feature opens four files, shows no badge and never shows any of this. |
 | Why manual | The App Store (sandbox) is on the other end: the product, the payment sheet and the account's purchase history live there. The unit tests cover the state with a fake store and the tab limit with a mocked license; only this checks the bridge against the real one. |
 
+### MQ-13 · The menu bar's language
+
+| | |
+|---|---|
+| Fixture | none; a Mac whose system language is Japanese for the last step (System Settings › General › Language & Region) |
+| Steps | With the app's language on English, read the menu bar: **Parqsee** (About / Settings… / Services / Hide / Quit), **File**, **Edit**, **View**, **Query**, **Window**, **Help**. Open Settings and switch Language to **日本語**. Read the menu bar again, every submenu opened, **File › 最近使った項目を開く ▸** included (open a file first so it has entries). Quit and relaunch; look at the menu bar before touching anything. Switch back to English, quit, relaunch. Finally, on a Mac set to Japanese, remove the container (`~/Library/Containers/llc.fuji.parqsee`) and launch. |
+| Expected | Switching the setting retitles the whole menu bar at once, with no relaunch: 開く… / フォルダを開く… / 最近使った項目を開く / メニューを消去 / タブを閉じる / 閉じたタブを開く, 検索… / 次を検索, サイドバーの表示 / 非表示, クエリを実行, しまう, キーボードショートカット, Parqsee を終了. The keys beside the items do not move. After a relaunch the menu bar is in the chosen language **in its first frame** — no flash of English. On the Japanese Mac with no settings saved, the UI *and* the menu come up in Japanese without opening Settings. What stays in the system's language whatever the setting is not a bug: the **サービス / Services** submenu's contents, the Help menu's search field, Emoji & Symbols, the About panel and the open / save dialogs — AppKit supplies those. |
+| Why manual | There is no menu bar without a running `NSApplication`, and the language the menu starts in comes from `NSLocale.preferredLanguages`, which no harness can set. |
+
 ## Results template
 
 ```markdown
@@ -230,5 +240,6 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-10 Gatekeeper on another Mac
 - [ ] MQ-11 Sandbox entitlements and file access
 - [ ] MQ-12 StoreKit sandbox: the free tier and the purchase
+- [ ] MQ-13 The menu bar's language
 Notes: <anything that differed from Expected, with what happened>
 ```

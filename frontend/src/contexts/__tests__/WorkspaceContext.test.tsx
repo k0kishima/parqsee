@@ -776,11 +776,12 @@ describe('WorkspaceProvider shortcuts', () => {
 
   const press = (init: KeyboardEventInit) =>
     act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, ...init })); });
-  // The provider re-registers its `menu` listener as its handlers change;
-  // the latest one is the live one.
-  const lastMenuListener = () => {
+  // The provider registers its `menu` listener once and keeps it (it
+  // reads the current handler through a ref), so there is only ever one.
+  const menuListener = () => {
     const calls = vi.mocked(listen).mock.calls.filter(([name]) => name === 'menu');
-    return calls[calls.length - 1]?.[1] as (e: { payload: string }) => void;
+    expect(calls.length).toBe(1);
+    return calls[0][1] as (e: { payload: string }) => void;
   };
   // Tab selection is deferred to the next frame (see handleTabSelect).
   const frame = () => act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
@@ -812,7 +813,7 @@ describe('WorkspaceProvider shortcuts', () => {
     await frame();
     expect(result.current.activeTab?.path).toBe('/data/b.parquet');
 
-    const onMenu = lastMenuListener();
+    const onMenu = menuListener();
     expect(onMenu).toBeDefined();
     act(() => onMenu({ payload: 'previous-tab' }));
     await frame();
@@ -827,7 +828,7 @@ describe('WorkspaceProvider shortcuts', () => {
   it('opens the support page in the UI language on Help', async () => {
     vi.mocked(openUrl).mockResolvedValueOnce(undefined);
     renderWorkspace();
-    const onMenu = lastMenuListener();
+    const onMenu = menuListener();
     act(() => onMenu({ payload: 'help' }));
     expect(openUrl).toHaveBeenCalledWith('https://parqsee.fuji.llc/support.html');
   });

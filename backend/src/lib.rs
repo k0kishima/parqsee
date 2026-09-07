@@ -18,47 +18,61 @@ use tauri::{DragDropEvent, Emitter, Manager};
 /// forwards them to the frontend as a `menu` event carrying the item id.
 /// File › Open Recent is the exception: its items are handled in Rust
 /// (see `menu.rs`) and reach the webview as `file-drop`.
+///
+/// Every label comes from `menu::MenuBuilder`, which reads it from
+/// `services::menu_labels` and keeps the item so `set_menu_language` can
+/// retitle it when the UI's language changes. The menu starts in the
+/// system's language, which is also what the webview picks on a first
+/// launch, so the two agree without waiting for each other. An item's
+/// label key is its menu id.
 #[cfg(target_os = "macos")]
 fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+    use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let mut b = menu::MenuBuilder::new(app, menu::system_language());
+
+    let settings = b.item("settings", Some("CmdOrCtrl+,"))?;
+    let about = b.predefined("about", |app, text| PredefinedMenuItem::about(app, text, None))?;
+    let services = b.predefined("services", PredefinedMenuItem::services)?;
+    let hide = b.predefined("hide", PredefinedMenuItem::hide)?;
+    let hide_others = b.predefined("hide-others", PredefinedMenuItem::hide_others)?;
+    let show_all = b.predefined("show-all", PredefinedMenuItem::show_all)?;
+    let quit = b.predefined("quit", PredefinedMenuItem::quit)?;
+    // The app menu's own title is not labelled: macOS replaces it with the
+    // bundle name whatever it is set to.
     let app_menu = Submenu::with_items(
         app,
         "Parqsee",
         true,
         &[
-            &PredefinedMenuItem::about(app, None, None)?,
+            &about,
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
+            &services,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
+            &hide,
+            &hide_others,
+            &show_all,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
+            &quit,
         ],
     )?;
 
-    let open = MenuItem::with_id(app, "open-file", "Open…", true, Some("CmdOrCtrl+O"))?;
-    let open_folder =
-        MenuItem::with_id(app, "open-folder", "Open Folder…", true, Some("CmdOrCtrl+Shift+O"))?;
-    let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    let open = b.item("open-file", Some("CmdOrCtrl+O"))?;
+    let open_folder = b.item("open-folder", Some("CmdOrCtrl+Shift+O"))?;
+    let recent = menu::build_recent_submenu(app, &mut b)?;
+    let close_tab = b.item("close-tab", Some("CmdOrCtrl+W"))?;
     // Always enabled: whether there is a tab to bring back is the webview's
     // to know (it owns the history), and a native item's enabled state
     // cannot follow it without a command round trip per close.
-    let reopen_tab =
-        MenuItem::with_id(app, "reopen-tab", "Reopen Closed Tab", true, Some("CmdOrCtrl+Shift+T"))?;
-    let file = Submenu::with_items(
-        app,
-        "File",
-        true,
+    let reopen_tab = b.item("reopen-tab", Some("CmdOrCtrl+Shift+T"))?;
+    let file = b.submenu(
+        "title.file",
         &[
             &open,
             &open_folder,
-            &menu::build_recent_submenu(app)?,
+            &recent,
             &PredefinedMenuItem::separator(app)?,
             &close_tab,
             &reopen_tab,
@@ -72,22 +86,25 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     // finds. Items are always enabled: whether there is a search to step
     // through or a query to run is the webview's to know, and a native
     // item's enabled state cannot follow it without a command round trip.
-    let find = MenuItem::with_id(app, "find", "Find…", true, Some("CmdOrCtrl+F"))?;
-    let find_next = MenuItem::with_id(app, "find-next", "Find Next", true, Some("CmdOrCtrl+G"))?;
-    let find_previous =
-        MenuItem::with_id(app, "find-previous", "Find Previous", true, Some("CmdOrCtrl+Shift+G"))?;
-    let edit = Submenu::with_items(
-        app,
-        "Edit",
-        true,
+    let find = b.item("find", Some("CmdOrCtrl+F"))?;
+    let find_next = b.item("find-next", Some("CmdOrCtrl+G"))?;
+    let find_previous = b.item("find-previous", Some("CmdOrCtrl+Shift+G"))?;
+    let undo = b.predefined("undo", PredefinedMenuItem::undo)?;
+    let redo = b.predefined("redo", PredefinedMenuItem::redo)?;
+    let cut = b.predefined("cut", PredefinedMenuItem::cut)?;
+    let copy = b.predefined("copy", PredefinedMenuItem::copy)?;
+    let paste = b.predefined("paste", PredefinedMenuItem::paste)?;
+    let select_all = b.predefined("select-all", PredefinedMenuItem::select_all)?;
+    let edit = b.submenu(
+        "title.edit",
         &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
+            &undo,
+            &redo,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
+            &cut,
+            &copy,
+            &paste,
+            &select_all,
             &PredefinedMenuItem::separator(app)?,
             &find,
             &find_next,
@@ -95,35 +112,31 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
         ],
     )?;
 
-    let toggle_sidebar =
-        MenuItem::with_id(app, "toggle-sidebar", "Toggle Sidebar", true, Some("CmdOrCtrl+B"))?;
-    let switch_view =
-        MenuItem::with_id(app, "switch-view", "Switch Content / Query", true, Some("CmdOrCtrl+E"))?;
-    let view = Submenu::with_items(
-        app,
-        "View",
-        true,
+    let toggle_sidebar = b.item("toggle-sidebar", Some("CmdOrCtrl+B"))?;
+    let switch_view = b.item("switch-view", Some("CmdOrCtrl+E"))?;
+    let fullscreen = b.predefined("fullscreen", PredefinedMenuItem::fullscreen)?;
+    let view = b.submenu(
+        "title.view",
         &[
             &toggle_sidebar,
             &switch_view,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::fullscreen(app, None)?,
+            &fullscreen,
         ],
     )?;
 
-    let run_query = MenuItem::with_id(app, "run-query", "Run Query", true, Some("CmdOrCtrl+Enter"))?;
-    let query = Submenu::with_items(app, "Query", true, &[&run_query])?;
+    let run_query = b.item("run-query", Some("CmdOrCtrl+Enter"))?;
+    let query = b.submenu("title.query", &[&run_query])?;
 
-    let previous_tab =
-        MenuItem::with_id(app, "previous-tab", "Show Previous Tab", true, Some("CmdOrCtrl+Shift+["))?;
-    let next_tab = MenuItem::with_id(app, "next-tab", "Show Next Tab", true, Some("CmdOrCtrl+Shift+]"))?;
-    let window = Submenu::with_items(
-        app,
-        "Window",
-        true,
+    let previous_tab = b.item("previous-tab", Some("CmdOrCtrl+Shift+["))?;
+    let next_tab = b.item("next-tab", Some("CmdOrCtrl+Shift+]"))?;
+    let minimize = b.predefined("minimize", PredefinedMenuItem::minimize)?;
+    let zoom = b.predefined("zoom", PredefinedMenuItem::maximize)?;
+    let window = b.submenu(
+        "title.window",
         &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
+            &minimize,
+            &zoom,
             &PredefinedMenuItem::separator(app)?,
             &previous_tab,
             &next_tab,
@@ -133,13 +146,14 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     // Help: the shortcut sheet in the webview, and the support page of the
     // product site in the UI's language (the webview knows which). Marked
     // as the Help menu so macOS adds its search field to it.
-    let shortcuts =
-        MenuItem::with_id(app, "shortcuts", "Keyboard Shortcuts", true, Some("CmdOrCtrl+/"))?;
-    let help_page = MenuItem::with_id(app, "help", "Parqsee Help", true, None::<&str>)?;
-    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &PredefinedMenuItem::separator(app)?, &help_page])?;
+    let shortcuts = b.item("shortcuts", Some("CmdOrCtrl+/"))?;
+    let help_page = b.item("help", None::<&str>)?;
+    let help = b.submenu("title.help", &[&shortcuts, &PredefinedMenuItem::separator(app)?, &help_page])?;
     help.set_as_help_menu_for_nsapp()?;
 
-    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &query, &window, &help])
+    let menu = Menu::with_items(app, &[&app_menu, &file, &edit, &view, &query, &window, &help])?;
+    b.finish();
+    Ok(menu)
 }
 
 /// Hand the files macOS was asked to open with the app (a double-click in
@@ -280,7 +294,8 @@ pub fn run() {
             commands::iap::iap_status,
             commands::iap::iap_products,
             commands::iap::iap_purchase,
-            commands::iap::iap_restore
+            commands::iap::iap_restore,
+            commands::menu::set_menu_language
         ])
         .on_window_event(|window, event| {
             // Forward the drop to the frontend. This callback runs outside

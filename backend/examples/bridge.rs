@@ -143,6 +143,9 @@ async fn dispatch(
         }
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
         "execute_sql" => json!(run_query(cache, &s(&args, "filePath")?, &s(&args, "query")?).await?),
+        // There is no menu bar here, and the webview calls this on every
+        // launch; answering keeps the harness's console clean.
+        "set_menu_language" => Value::Null,
         other => return Err(format!("unknown command {other}")),
     };
     Ok(v)

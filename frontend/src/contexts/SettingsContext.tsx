@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import i18n from '../lib/i18n';
 import { Settings, loadSettings, saveSettings } from '../lib/settings-storage';
+import { setMenuLanguage } from '../features/settings/api';
 
 export type { Settings };
 
@@ -17,12 +18,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
 
-  // Sync language with i18n
-  // Sync language with i18n
+  // Sync the language into i18n, which draws the webview, and into the
+  // native menu, which Rust draws (`set_menu_language`). The menu is
+  // already in the system's language by the time this first runs, so the
+  // usual call changes nothing and the backend does nothing.
   useEffect(() => {
     if (i18n.language !== settings.language) {
       i18n.changeLanguage(settings.language);
     }
+    setMenuLanguage(settings.language).catch(error =>
+      console.error('Failed to set the menu language:', error)
+    );
   }, [settings.language]);
 
   useEffect(() => {
