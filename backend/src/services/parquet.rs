@@ -28,6 +28,12 @@ pub struct ParquetCache {
     access: Arc<FileAccess>,
 }
 
+impl Default for ParquetCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParquetCache {
     /// A cache with no bookmarks and nothing persisted (the bridge, tests).
     pub fn new() -> Self {
