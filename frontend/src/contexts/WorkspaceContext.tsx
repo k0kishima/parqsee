@@ -497,14 +497,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, [workspaceTabs, handleTabSelect, runCommand]));
 
-    // Native menu items (see build_menu in lib.rs)
+    // Native menu items (see build_menu in lib.rs).
+    //
+    // Registered once and kept: `runCommand` is new whenever the tabs are,
+    // and re-registering on every change left the old and the new listener
+    // overlapping — `listen` resolves before the previous `unlisten` does —
+    // so a menu item picked in that window would have run twice.
+    const command = useRef(runCommand);
+    useEffect(() => {
+        command.current = runCommand;
+    }, [runCommand]);
+
     useEffect(() => {
         if (!isTauri()) return;
-        const unlisten = listen<string>('menu', (event) => runCommand(event.payload));
+        const unlisten = listen<string>('menu', (event) => command.current(event.payload));
         return () => {
             unlisten.then(fn => fn());
         };
-    }, [runCommand]);
+    }, []);
 
     /**
      * Files the app is handed from outside the window: dropped on it, and
