@@ -60,8 +60,11 @@ base64 = "0.22"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSArray",
     "NSData",
     "NSError",
+    # The language the menu starts in (`menu::system_language`).
+    "NSLocale",
     "NSString",
     "NSURL",
 ] }

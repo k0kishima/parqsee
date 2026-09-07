@@ -1,6 +1,7 @@
 pub mod data;
 pub mod file;
 pub mod iap;
+pub mod menu;
 pub mod query;
 pub mod workspace;
 

@@ -1,5 +1,6 @@
 pub mod access;
 pub mod export;
+pub mod menu_labels;
 pub mod opened;
 pub mod parquet;
 pub mod recent_menu;
