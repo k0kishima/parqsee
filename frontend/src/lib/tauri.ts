@@ -1,14 +1,7 @@
-// The original call sites also checked `typeof open === 'function'` or
-// `typeof listen === 'function'`, but each referenced a different Tauri API
-// import, making it unsuitable for a shared helper. Checking for __TAURI__ or
-// __TAURI_INTERNALS__ on the window object is sufficient to detect the Tauri
-// runtime environment.
-export function isTauri(): boolean {
-  return !!(
-    (window as any).__TAURI__ ||
-    (window as any).__TAURI_INTERNALS__
-  );
-}
+// Whether the webview runs inside Tauri. The API's own check
+// (`@tauri-apps/api/core`), re-exported so call sites and tests keep one
+// import for it.
+export { isTauri } from '@tauri-apps/api/core';
 
 /**
  * The message to show for a rejected Tauri call. Commands wrap their body in

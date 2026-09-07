@@ -34,6 +34,9 @@ vi.mock('react-i18next', () => ({
 // Mock @tauri-apps/api/core
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  // The default is what a plain browser answers; tests that need the Tauri
+  // path mock `lib/tauri` themselves.
+  isTauri: () => false,
 }));
 
 // Mock @tauri-apps/plugin-opener

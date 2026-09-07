@@ -43,6 +43,9 @@ pub async fn evict_cache(
 
 /// Writes the export and, once it has succeeded, records its folder as
 /// where the next save panel starts (`export_default_dir`).
+// The parameters are the IPC surface the webview calls with; folding them
+// into a struct would change every call site for no gain.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn export_data(
     cache: tauri::State<'_, ParquetCache>,

@@ -139,11 +139,14 @@ pub fn derive_status(entitlements: &[Entitlement], store_error: Option<String>, 
     IapStatus { state, store_error, has_store }
 }
 
+/// Called with the new state after every change (see `set_on_change`).
+type OnChange = Box<dyn Fn(IapStatus) + Send + Sync>;
+
 /// Tauri managed state (as `Arc<License>`). See the module docs.
 pub struct License {
     provider: Box<dyn StoreProvider>,
     snapshot: watch::Sender<Option<Snapshot>>,
-    on_change: Mutex<Option<Box<dyn Fn(IapStatus) + Send + Sync>>>,
+    on_change: Mutex<Option<OnChange>>,
 }
 
 impl License {
@@ -155,7 +158,7 @@ impl License {
     /// Called with the new status after every transaction update the
     /// store pushes (a purchase finished elsewhere, a refund); `lib.rs`
     /// forwards it to the webview as the `iap-status` event.
-    pub fn set_on_change(&self, f: Box<dyn Fn(IapStatus) + Send + Sync>) {
+    pub fn set_on_change(&self, f: OnChange) {
         *self.on_change.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
     }
 

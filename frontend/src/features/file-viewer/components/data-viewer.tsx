@@ -62,7 +62,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
   // Initialize state from props
   const [currentPage, setCurrentPage] = useState(initialState?.currentPage || 1);
-  const [selectedRow, setSelectedRow] = useState<number | null>(initialState?.selectedRow || null);
+  // Never restored from initialState: the reset below always ran on mount.
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(initialState?.isSearchOpen || false);
   const [searchTerm, setSearchTerm] = useState(initialState?.searchTerm || "");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
@@ -76,10 +77,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   // Local state for page input (Enter key / blur to confirm)
   const [pageInput, setPageInput] = useState(String(currentPage));
 
-  // Sync pageInput when currentPage changes externally (e.g., Previous/Next buttons)
-  useEffect(() => {
+  // Sync pageInput when currentPage changes externally (e.g., Previous/Next
+  // buttons). Adjusted during render from the previous page rather than in
+  // an effect (react.dev/learn/you-might-not-need-an-effect).
+  const [inputPage, setInputPage] = useState(currentPage);
+  if (inputPage !== currentPage) {
+    setInputPage(currentPage);
     setPageInput(String(currentPage));
-  }, [currentPage]);
+  }
 
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -111,48 +116,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
 
-  useEffect(() => {
-    loadFile();
-  }, [filePath]);
-
-  useEffect(() => {
-    if (metadata) {
-      if (skipReload.current) {
-        skipReload.current = false;
-        return;
-      }
-      loadData();
-      // Scroll to top of table when page changes
-      if (tableContainerRef.current) {
-        tableContainerRef.current.scrollTop = 0;
-      }
-    }
-  }, [currentPage, metadata, rowsPerPage, activeFilter]);
-
-  // A new page size from the settings starts over from the first page; the
-  // footer select resets the page itself, in the same event. Skipped on mount
-  // so a restored page survives.
-  const loadedRowsPerPage = useRef(rowsPerPage);
-  useEffect(() => {
-    if (loadedRowsPerPage.current !== rowsPerPage) {
-      loadedRowsPerPage.current = rowsPerPage;
-      setCurrentPage(1);
-    }
-  }, [rowsPerPage]);
-
-  // Keyboard shortcut for search
-  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-    if (isActiveRef && !isActiveRef.current) return;
-    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
-    if (isModifierPressed(e) && e.key === 'f') {
-      e.preventDefault();
-      setIsSearchOpen(true);
-      // Trigger focus even if search bar is already open
-      setSearchFocusTrigger(prev => prev + 1);
-    }
-  }, [isActiveRef]));
-
-  const loadFile = async () => {
+  const loadFile = useCallback(async () => {
     // Page loads still in flight belong to the previous metadata.
     const seq = ++loadSeq.current;
     try {
@@ -173,9 +137,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setError(toErrorMessage(err));
       setLoading(false);
     }
-  };
+  }, [filePath]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!metadata) return;
     const seq = ++loadSeq.current;
 
@@ -227,7 +191,51 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       }
       setLoading(false);
     }
-  };
+  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage]);
+
+  // filePath is fixed for a mounted viewer (TabContent is keyed by tab), so
+  // loadFile only ever changes with it and loadData with the page state the
+  // effect below used to list itself.
+  useEffect(() => {
+    loadFile();
+  }, [loadFile]);
+
+  useEffect(() => {
+    if (metadata) {
+      if (skipReload.current) {
+        skipReload.current = false;
+        return;
+      }
+      loadData();
+      // Scroll to top of table when page changes
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [metadata, loadData]);
+
+  // A new page size from the settings starts over from the first page; the
+  // footer select resets the page itself, in the same event. Skipped on mount
+  // so a restored page survives.
+  // Adjusted during render, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const [loadedRowsPerPage, setLoadedRowsPerPage] = useState(rowsPerPage);
+  if (loadedRowsPerPage !== rowsPerPage) {
+    setLoadedRowsPerPage(rowsPerPage);
+    setCurrentPage(1);
+  }
+
+  // Keyboard shortcut for search
+  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+    if (isActiveRef && !isActiveRef.current) return;
+    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
+    if (isModifierPressed(e) && e.key === 'f') {
+      e.preventDefault();
+      setIsSearchOpen(true);
+      // Trigger focus even if search bar is already open
+      setSearchFocusTrigger(prev => prev + 1);
+    }
+  }, [isActiveRef]));
 
   const handleRefresh = async () => {
     setCurrentPage(1);
@@ -239,10 +247,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   };
 
   // A selected row is a row of the page on screen; keeping its index across
-  // a page or filter change highlighted an unrelated row.
-  useEffect(() => {
+  // a page or filter change highlighted an unrelated row. Cleared during
+  // render when the page identity changes, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const pageIdentity = `${currentPage} ${rowsPerPage} ${activeFilter}`;
+  const [selectedPageIdentity, setSelectedPageIdentity] = useState(pageIdentity);
+  if (selectedPageIdentity !== pageIdentity) {
+    setSelectedPageIdentity(pageIdentity);
     setSelectedRow(null);
-  }, [currentPage, activeFilter, rowsPerPage]);
+  }
 
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);
@@ -450,7 +463,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                       // Reset the page in the same event as the size change,
                       // so the grid loads once instead of the old page at the
                       // new size followed by the first page.
-                      loadedRowsPerPage.current = Number(e.target.value);
+                      setLoadedRowsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                       updateSettings({ rowsPerPage: Number(e.target.value) });
                     }}

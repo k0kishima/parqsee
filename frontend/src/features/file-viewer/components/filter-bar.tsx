@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
@@ -172,14 +172,19 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
     const { t } = useTranslation();
 
-    // Initialize with one row
-    const [filters, setFilters] = useState<FilterRow[]>([
+    // Initialize with one row. A lazy initializer: Date.now() is impure and
+    // must not run on every render (react.dev/reference/rules).
+    const [filters, setFilters] = useState<FilterRow[]>(() => [
         { id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }
     ]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
 
-    // Update selected column of the first row if columns change and it's invalid
-    useEffect(() => {
+    // Point rows at the first column when the columns change and theirs is
+    // gone. Adjusted during render from the previous columns, not in an
+    // effect (react.dev/learn/you-might-not-need-an-effect).
+    const [prevColumns, setPrevColumns] = useState(columns);
+    if (prevColumns !== columns) {
+        setPrevColumns(columns);
         if (columns.length > 0) {
             setFilters(prevFilters => prevFilters.map(f => {
                 if (!columns.find(c => c.name === f.column)) {
@@ -188,7 +193,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                 return f;
             }));
         }
-    }, [columns]);
+    }
 
     const handleAddRow = () => {
         setFilters([

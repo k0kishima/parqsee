@@ -35,7 +35,9 @@ impl ExportFormat {
 
 /// A CSV or JSON destination that batches are streamed into.
 enum RowWriter {
-    Csv(CsvWriter<BufWriter<File>>),
+    // Boxed: the CSV writer is several times the size of the JSON one
+    // (clippy::large_enum_variant).
+    Csv(Box<CsvWriter<BufWriter<File>>>),
     Json(JsonArrayWriter<BufWriter<File>>),
 }
 
@@ -51,12 +53,12 @@ impl RowWriter {
             ExportFormat::Csv => {
                 // UTF-8 BOM for Excel compatibility.
                 out.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
-                Ok(RowWriter::Csv(
+                Ok(RowWriter::Csv(Box::new(
                     CsvWriterBuilder::new()
                         .with_header(true)
                         .with_timestamp_format("%Y-%m-%d %H:%M:%S%.6f".to_string())
                         .build(out),
-                ))
+                )))
             }
             ExportFormat::Json => Ok(RowWriter::Json(JsonArrayWriter::new(out))),
         }

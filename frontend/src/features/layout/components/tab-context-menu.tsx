@@ -113,7 +113,7 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
       className={`w-full flex items-center px-3 py-1.5 text-xs text-primary whitespace-nowrap
         ${enabled ? 'hover:bg-tertiary' : 'opacity-50 cursor-not-allowed'}`}
     >
-      <Icon className="w-3.5 h-3.5 mr-2 flex-shrink-0" />
+      <Icon className="w-3.5 h-3.5 mr-2 shrink-0" />
       {label}
       {shortcut && <span className="ml-auto pl-4 text-tertiary">{shortcut}</span>}
     </button>

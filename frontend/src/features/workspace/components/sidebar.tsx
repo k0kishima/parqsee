@@ -54,7 +54,7 @@ export const Sidebar = ({ isOpen, children }: SidebarProps) => {
 
     return (
         <div
-            className={`relative overflow-hidden flex-shrink-0 ${dragging ? '' : 'transition-[width] duration-300'}`}
+            className={`relative overflow-hidden shrink-0 ${dragging ? '' : 'transition-[width] duration-300'}`}
             style={{ width: isOpen ? width : 0 }}
         >
             {children}

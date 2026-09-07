@@ -28,6 +28,12 @@ pub struct ParquetCache {
     access: Arc<FileAccess>,
 }
 
+impl Default for ParquetCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParquetCache {
     /// A cache with no bookmarks and nothing persisted (the bridge, tests).
     pub fn new() -> Self {
@@ -1105,7 +1111,7 @@ mod tests {
     };
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use crate::services::test_support::{self, write_parquet};
     use std::sync::{mpsc, Arc};
     use std::time::Duration;
@@ -1315,7 +1321,7 @@ mod tests {
         assert_eq!(rows[0]["line"]["net"], "0.5000");
     }
 
-    fn write_small(path: &PathBuf) {
+    fn write_small(path: &Path) {
         let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -1585,7 +1591,7 @@ mod tests {
 
         let cache = ParquetCache::with_access(access);
         cache.get_or_create_metadata(&path).await.unwrap();
-        assert_eq!(fake.active(), [path.clone()], "filling the metadata entry resolves the bookmark");
+        assert_eq!(fake.active(), std::slice::from_ref(&path), "filling the metadata entry resolves the bookmark");
         cache.get_or_create_session(&path).await.unwrap();
         cache.get_or_create_metadata(&path).await.unwrap();
         assert_eq!(fake.starts(), 2, "the session fill reuses the held grant; hits do not touch it");

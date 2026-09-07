@@ -76,7 +76,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
                 ${isActive ? 'relative top-[1px]' : ''}
               `}
             >
-              <FileText className={`w-4 h-4 flex-shrink-0 ${isActive
+              <FileText className={`w-4 h-4 shrink-0 ${isActive
                 ? 'text-green-500'
                 : 'text-gray-500 dark:text-gray-400'
                 }`} />
