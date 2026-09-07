@@ -217,13 +217,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   // A new page size from the settings starts over from the first page; the
   // footer select resets the page itself, in the same event. Skipped on mount
   // so a restored page survives.
-  const loadedRowsPerPage = useRef(rowsPerPage);
-  useEffect(() => {
-    if (loadedRowsPerPage.current !== rowsPerPage) {
-      loadedRowsPerPage.current = rowsPerPage;
-      setCurrentPage(1);
-    }
-  }, [rowsPerPage]);
+  // Adjusted during render, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const [loadedRowsPerPage, setLoadedRowsPerPage] = useState(rowsPerPage);
+  if (loadedRowsPerPage !== rowsPerPage) {
+    setLoadedRowsPerPage(rowsPerPage);
+    setCurrentPage(1);
+  }
 
   // Keyboard shortcut for search
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
@@ -463,7 +463,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                       // Reset the page in the same event as the size change,
                       // so the grid loads once instead of the old page at the
                       // new size followed by the first page.
-                      loadedRowsPerPage.current = Number(e.target.value);
+                      setLoadedRowsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                       updateSettings({ rowsPerPage: Number(e.target.value) });
                     }}
