@@ -16,7 +16,8 @@
     "apply": "適用",
     "clear": "クリア",
     "addCondition": "条件を追加",
-    "dismiss": "閉じる"
+    "dismiss": "閉じる",
+    "removeCondition": "条件を削除"
   },
   "tabs": {
     "contextMenu": {
@@ -52,7 +53,8 @@
       },
       "usability": {
         "title": "かんたん操作",
-        "desc": "ドラッグ＆ドロップとショートカットに対応"
+        "desc": "ドラッグ＆ドロップとショートカットに対応",
+        "link": "ショートカット一覧を見る"
       },
       "largeFiles": {
         "title": "大容量ファイル対応",
@@ -69,7 +71,9 @@
       "dark": "ダーク",
       "system": "システム"
     },
-    "restoreTabs": "前回のタブを復元する"
+    "restoreTabs": "前回のタブを復元する",
+    "shortcuts": "キーボードショートカット",
+    "showShortcuts": "表示"
   },
   "viewer": {
     "search": "検索",
@@ -103,7 +107,9 @@
       "truncated": "先頭 {{max}} 件のみ表示しています（LIMIT 句で絞り込んでください）",
       "noResults": "表示する結果がありません",
       "executing": "クエリ実行中...",
-      "error": "エラー"
+      "error": "エラー",
+      "tableName": "テーブル名: t",
+      "placeholder": "SQL クエリを入力...（例: SELECT * FROM t）"
     },
     "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",
     "filterNeedsBoolean": "列「{{column}}」は真偽値型です。true か false を入力してください。",
@@ -120,7 +126,12 @@
         "physical": "物理型 (INT32など)",
         "both": "両方"
       }
-    }
+    },
+    "searching": "検索中...",
+    "noMatches": "このページに一致はありません",
+    "clearSearch": "検索をクリア",
+    "nextMatch": "次の一致",
+    "previousMatch": "前の一致"
   },
   "fileExplorer": {
     "searchPlaceholder": "ファイルを検索...",
@@ -193,5 +204,31 @@
       "free": "無料版 · 同時に開けるタブは {{count}} 枚まで",
       "history": "apple.com で購入履歴を見る"
     }
+  },
+  "shortcuts": {
+    "title": "キーボードショートカット",
+    "sections": {
+      "files": "ファイル",
+      "tabs": "タブ",
+      "view": "表示",
+      "search": "検索",
+      "query": "クエリ"
+    },
+    "open-file": "ファイルを開く",
+    "open-folder": "フォルダをエクスプローラーで開く",
+    "settings": "設定",
+    "close-tab": "現在のタブを閉じる",
+    "reopen-tab": "最後に閉じたタブを開き直す",
+    "next-tab": "次のタブを表示",
+    "previous-tab": "前のタブを表示",
+    "go-to-tab": "1〜9 番目のタブへ移動",
+    "toggle-sidebar": "サイドバーの表示 / 非表示",
+    "switch-view": "コンテンツとクエリを切り替え",
+    "shortcuts": "この一覧を表示",
+    "find": "ページ内を検索",
+    "find-next": "次の一致へ",
+    "find-previous": "前の一致へ",
+    "close-search": "検索バーやダイアログを閉じる",
+    "run-query": "クエリを実行"
   }
 }

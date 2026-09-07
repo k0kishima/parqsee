@@ -16,7 +16,8 @@
         "apply": "Apply",
         "clear": "Clear",
         "addCondition": "Add Condition",
-        "dismiss": "Dismiss"
+        "dismiss": "Dismiss",
+        "removeCondition": "Remove condition"
     },
     "tabs": {
         "contextMenu": {
@@ -52,7 +53,8 @@
             },
             "usability": {
                 "title": "Easy to Use",
-                "desc": "Drag and drop, plus keyboard shortcuts"
+                "desc": "Drag and drop, plus keyboard shortcuts",
+                "link": "See the shortcuts"
             },
             "largeFiles": {
                 "title": "Large Files",
@@ -69,7 +71,9 @@
             "dark": "Dark",
             "system": "System"
         },
-        "restoreTabs": "Restore tabs from the last session"
+        "restoreTabs": "Restore tabs from the last session",
+        "shortcuts": "Keyboard shortcuts",
+        "showShortcuts": "Show"
     },
     "viewer": {
         "search": "Search",
@@ -103,7 +107,9 @@
             "truncated": "Showing the first {{max}} rows — add a LIMIT clause to narrow the result",
             "noResults": "No results to display",
             "executing": "Executing query...",
-            "error": "Error"
+            "error": "Error",
+            "tableName": "Table name: t",
+            "placeholder": "Write your SQL query here... (e.g., SELECT * FROM t)"
         },
         "filterNeedsNumber": "Column \"{{column}}\" is numeric; \"{{value}}\" is not a number.",
         "filterNeedsBoolean": "Column \"{{column}}\" is boolean; enter true or false.",
@@ -120,7 +126,12 @@
                 "physical": "Physical",
                 "both": "Both"
             }
-        }
+        },
+        "searching": "Searching...",
+        "noMatches": "No matches on this page",
+        "clearSearch": "Clear search",
+        "nextMatch": "Next match",
+        "previousMatch": "Previous match"
     },
     "fileExplorer": {
         "searchPlaceholder": "Filter files...",
@@ -193,5 +204,31 @@
             "free": "Free version · up to {{count}} tabs at a time",
             "history": "Purchase history on apple.com"
         }
+    },
+    "shortcuts": {
+        "title": "Keyboard Shortcuts",
+        "sections": {
+            "files": "Files",
+            "tabs": "Tabs",
+            "view": "View",
+            "search": "Search",
+            "query": "Query"
+        },
+        "open-file": "Open a file",
+        "open-folder": "Open a folder in the explorer",
+        "settings": "Settings",
+        "close-tab": "Close the current tab",
+        "reopen-tab": "Reopen the last closed tab",
+        "next-tab": "Show the next tab",
+        "previous-tab": "Show the previous tab",
+        "go-to-tab": "Go to tab 1 to 9",
+        "toggle-sidebar": "Show or hide the sidebar",
+        "switch-view": "Switch between Content and Query",
+        "shortcuts": "Show this list",
+        "find": "Search within the page",
+        "find-next": "Next match",
+        "find-previous": "Previous match",
+        "close-search": "Close the search bar or a dialog",
+        "run-query": "Run the query"
     }
 }
