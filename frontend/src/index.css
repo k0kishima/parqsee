@@ -10,45 +10,45 @@
 /* Manual dark mode implementation for Tailwind v4 */
 @layer base {
   :root {
-    --bg-primary: theme(colors.white);
-    --bg-secondary: theme(colors.slate.50);
-    --bg-tertiary: theme(colors.slate.100);
-    --text-primary: theme(colors.slate.900);
-    --text-secondary: theme(colors.slate.700);
-    --text-tertiary: theme(colors.slate.600);
-    --border-primary: theme(colors.slate.200);
-    --border-secondary: theme(colors.slate.300);
-    --bg-selected: theme(colors.blue.50);
+    --bg-primary: var(--color-white);
+    --bg-secondary: var(--color-slate-50);
+    --bg-tertiary: var(--color-slate-100);
+    --text-primary: var(--color-slate-900);
+    --text-secondary: var(--color-slate-700);
+    --text-tertiary: var(--color-slate-600);
+    --border-primary: var(--color-slate-200);
+    --border-secondary: var(--color-slate-300);
+    --bg-selected: var(--color-blue-50);
 
     /* Button Tokens */
-    --btn-primary-bg: theme(colors.blue.100);
-    --btn-primary-text: theme(colors.blue.700);
-    --btn-primary-hover: theme(colors.blue.200);
+    --btn-primary-bg: var(--color-blue-100);
+    --btn-primary-text: var(--color-blue-700);
+    --btn-primary-hover: var(--color-blue-200);
 
     --btn-secondary-bg: transparent;
-    --btn-secondary-text: theme(colors.slate.600);
-    --btn-secondary-hover: theme(colors.slate.100);
+    --btn-secondary-text: var(--color-slate-600);
+    --btn-secondary-hover: var(--color-slate-100);
   }
   
   .dark {
-    --bg-primary: theme(colors.slate.800);
-    --bg-secondary: theme(colors.slate.900);
-    --bg-tertiary: theme(colors.slate.950);
-    --text-primary: theme(colors.slate.100);
-    --text-secondary: theme(colors.slate.300);
-    --text-tertiary: theme(colors.slate.400);
-    --border-primary: theme(colors.slate.700);
-    --border-secondary: theme(colors.slate.600);
-    --bg-selected: theme(colors.blue.900/30);
+    --bg-primary: var(--color-slate-800);
+    --bg-secondary: var(--color-slate-900);
+    --bg-tertiary: var(--color-slate-950);
+    --text-primary: var(--color-slate-100);
+    --text-secondary: var(--color-slate-300);
+    --text-tertiary: var(--color-slate-400);
+    --border-primary: var(--color-slate-700);
+    --border-secondary: var(--color-slate-600);
+    --bg-selected: color-mix(in oklab, var(--color-blue-900) 30%, transparent);
 
     /* Button Tokens (Dark) */
-    --btn-primary-bg: theme(colors.blue.900);
-    --btn-primary-text: theme(colors.blue.100);
-    --btn-primary-hover: theme(colors.blue.800);
+    --btn-primary-bg: var(--color-blue-900);
+    --btn-primary-text: var(--color-blue-100);
+    --btn-primary-hover: var(--color-blue-800);
 
     --btn-secondary-bg: transparent;
-    --btn-secondary-text: theme(colors.slate.400);
-    --btn-secondary-hover: theme(colors.slate.700);
+    --btn-secondary-text: var(--color-slate-400);
+    --btn-secondary-hover: var(--color-slate-700);
   }
 }
 
