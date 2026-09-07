@@ -116,48 +116,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
 
-  useEffect(() => {
-    loadFile();
-  }, [filePath]);
-
-  useEffect(() => {
-    if (metadata) {
-      if (skipReload.current) {
-        skipReload.current = false;
-        return;
-      }
-      loadData();
-      // Scroll to top of table when page changes
-      if (tableContainerRef.current) {
-        tableContainerRef.current.scrollTop = 0;
-      }
-    }
-  }, [currentPage, metadata, rowsPerPage, activeFilter]);
-
-  // A new page size from the settings starts over from the first page; the
-  // footer select resets the page itself, in the same event. Skipped on mount
-  // so a restored page survives.
-  const loadedRowsPerPage = useRef(rowsPerPage);
-  useEffect(() => {
-    if (loadedRowsPerPage.current !== rowsPerPage) {
-      loadedRowsPerPage.current = rowsPerPage;
-      setCurrentPage(1);
-    }
-  }, [rowsPerPage]);
-
-  // Keyboard shortcut for search
-  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-    if (isActiveRef && !isActiveRef.current) return;
-    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
-    if (isModifierPressed(e) && e.key === 'f') {
-      e.preventDefault();
-      setIsSearchOpen(true);
-      // Trigger focus even if search bar is already open
-      setSearchFocusTrigger(prev => prev + 1);
-    }
-  }, [isActiveRef]));
-
-  const loadFile = async () => {
+  const loadFile = useCallback(async () => {
     // Page loads still in flight belong to the previous metadata.
     const seq = ++loadSeq.current;
     try {
@@ -178,9 +137,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setError(toErrorMessage(err));
       setLoading(false);
     }
-  };
+  }, [filePath]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!metadata) return;
     const seq = ++loadSeq.current;
 
@@ -232,7 +191,51 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       }
       setLoading(false);
     }
-  };
+  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage]);
+
+  // filePath is fixed for a mounted viewer (TabContent is keyed by tab), so
+  // loadFile only ever changes with it and loadData with the page state the
+  // effect below used to list itself.
+  useEffect(() => {
+    loadFile();
+  }, [loadFile]);
+
+  useEffect(() => {
+    if (metadata) {
+      if (skipReload.current) {
+        skipReload.current = false;
+        return;
+      }
+      loadData();
+      // Scroll to top of table when page changes
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [metadata, loadData]);
+
+  // A new page size from the settings starts over from the first page; the
+  // footer select resets the page itself, in the same event. Skipped on mount
+  // so a restored page survives.
+  const loadedRowsPerPage = useRef(rowsPerPage);
+  useEffect(() => {
+    if (loadedRowsPerPage.current !== rowsPerPage) {
+      loadedRowsPerPage.current = rowsPerPage;
+      setCurrentPage(1);
+    }
+  }, [rowsPerPage]);
+
+  // Keyboard shortcut for search
+  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+    if (isActiveRef && !isActiveRef.current) return;
+    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
+    if (isModifierPressed(e) && e.key === 'f') {
+      e.preventDefault();
+      setIsSearchOpen(true);
+      // Trigger focus even if search bar is already open
+      setSearchFocusTrigger(prev => prev + 1);
+    }
+  }, [isActiveRef]));
 
   const handleRefresh = async () => {
     setCurrentPage(1);
