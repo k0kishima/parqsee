@@ -8,7 +8,7 @@ Parqsee is a desktop application for viewing and exploring Apache Parquet files.
 It features:
 
 - Drag-and-drop file loading and a built-in file explorer over folders the
-  user opens (⌘⇧O), remembered across launches
+  user opens (⇧⌘O), remembered across launches
 - Fast Rust backend (Arrow / Parquet / DataFusion) for file processing
 - Tabbed browsing with pagination, filtering and in-page search
 - SQL query view (DataFusion) over the open file

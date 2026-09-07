@@ -46,7 +46,7 @@ no subscription and no license key.
 ### Opening files
 
 - Drag a `.parquet` file onto the window, or double-click one in Finder.
-- ⌘O opens the file dialog, ⌘⇧O opens a folder in the explorer sidebar.
+- ⌘O opens the file dialog, ⇧⌘O opens a folder in the explorer sidebar.
 - Recent files are on the start screen; so is a bundled sample file, for when
   you have no Parquet file at hand.
 
@@ -60,14 +60,25 @@ no subscription and no license key.
 
 ### Keyboard shortcuts
 
+Every shortcut is in the menu bar, and ⌘/ (Help › Keyboard Shortcuts)
+shows them all on one sheet.
+
 | | |
 |---|---|
 | ⌘O | Open a file |
-| ⌘⇧O | Open a folder in the explorer |
-| ⌘F | Search within the page |
-| ⌘W | Close the current tab |
+| ⇧⌘O | Open a folder in the explorer |
 | ⌘, | Settings |
-| Esc | Close the search bar or a modal |
+| ⌘W | Close the current tab |
+| ⇧⌘T | Reopen the last closed tab |
+| ⇧⌘] / ⇧⌘[ | Next / previous tab (also ⌥⌘→ / ⌥⌘←) |
+| ⌘1 … ⌘9 | Go to tab 1 to 9 |
+| ⌘B | Show or hide the sidebar |
+| ⌘E | Switch between Content and Query |
+| ⌘F | Search within the page |
+| ⌘G / ⇧⌘G | Next / previous match (Enter / ⇧Enter in the search box) |
+| ⌘↩ | Run the query |
+| ⌘/ | Keyboard shortcuts |
+| Esc | Close the search bar or a dialog |
 
 ## Development
 

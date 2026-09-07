@@ -17,7 +17,7 @@ const footer = (page) => act(page).locator('text=/Showing .* entries/').first().
 const summary = (page) => act(page).locator('text=/^[\\d,]+ rows × \\d+ columns$/').first().textContent().catch(() => null);
 const dataError = (page) => act(page).locator('text=The condition could not be run').isVisible().catch(() => false);
 const activeTabName = (page) => act(page).locator('h1').first().textContent().catch(() => null);
-const tabNames = (page) => page.evaluate(() => [...document.querySelectorAll('[title="Close tab"]')].map(b => b.parentElement?.querySelector('span')?.textContent));
+const tabNames = (page) => page.evaluate(() => [...document.querySelectorAll('[title^="Close tab"]')].map(b => b.parentElement?.querySelector('span')?.textContent));
 const visibleGrid = async (page) => page.evaluate(() => {
   const tables = [...document.querySelectorAll('table')].filter(t => t.offsetParent !== null);
   const tb = tables[0]?.querySelector('tbody');
@@ -100,9 +100,9 @@ await scenario('S1-fidelity', async ({ page }) => {
   report('S1.longtext', 'OBSERVE', `200KB cell rendered length=${lt[0][1]?.length} title attr set=${await page.evaluate(() => !!document.querySelector('table:not([hidden]) tbody td[title]'))}`);
 
   for (const f of ['corrupt.parquet', 'notparquet.parquet', 'empty_file.parquet', 'truncated.parquet']) {
-    const before = await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length);
+    const before = await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length);
     await openFile(page, `${FIX}/${f}`, { expectTab: false });
-    const after = await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length);
+    const after = await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length);
     const alerts = await page.evaluate(() => window.__alerts.splice(0));
     check(`S1.broken.${f}`, after === before && alerts.length === 1, `alerts=${JSON.stringify(alerts).slice(0, 200)}`);
   }
@@ -491,7 +491,7 @@ await scenario('S6-restore', async ({ bridge }) => {
 await scenario('S7-tabs', async ({ page, bridge }) => {
   const A = `${FIX}/one_row.parquet`, B = `${FIX}/nan.parquet`, C = `${FIX}/dict.parquet`;
   await openFile(page, A); await openFile(page, B); await openFile(page, C);
-  const tabs = () => page.evaluate(() => [...document.querySelectorAll('[title="Close tab"]')].map(b => b.parentElement.querySelector('span').textContent));
+  const tabs = () => page.evaluate(() => [...document.querySelectorAll('[title^="Close tab"]')].map(b => b.parentElement.querySelector('span').textContent));
   check('S7.three', (await tabs()).join(',') === 'one_row.parquet,nan.parquet,dict.parquet' && (await activeTabName(page)) === 'dict.parquet', `${await tabs()} active=${await activeTabName(page)}`);
   await page.click(`span[title="${A}"]`); await page.waitForTimeout(300);
   check('S7.select', (await page.evaluate(() => [...document.querySelectorAll('h1')].find(h => h.offsetParent)?.textContent)) === 'one_row.parquet');
@@ -534,7 +534,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await recentPanel.locator('li', { hasText: 'inner.parquet' }).locator('button').first().click(); await page.waitForTimeout(400);
   check('S7.recentPanelPick', (await recentPanel.count()) === 0 && (await tabs()).length === 4 && (await activeTabName(page)) === 'inner.parquet', `tabs=${await tabs()} active=${await activeTabName(page)}`);
   // Close all -> welcome, recent files
-  for (let i = 0; i < 4; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
+  for (let i = 0; i < 4; i++) { await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S7.welcome', await page.locator('text=Drop your Parquet file here').isVisible(), 'welcome after closing all tabs');
   // Recent files live in the bridge's store (bookmarks.json), not localStorage.
   const recent = (await bridge.call('list_recent_files')).map(f => f.name);
@@ -545,12 +545,12 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   // click a recent file
   await page.click('text=inner.parquet'); await page.waitForTimeout(500); await waitGrid(page);
   check('S7.recentClick', (await visibleGrid(page)).length === 3);
-  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
+  await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
   // A recent file that has since been deleted: greyed out on reload, an alert and gone on click.
   const goneDir = `${OUT}/gone`; fs.rmSync(goneDir, { recursive: true, force: true }); fs.mkdirSync(goneDir);
   fs.copyFileSync(`${FIX}/one_row.parquet`, `${goneDir}/missing.parquet`);
   await openFile(page, `${goneDir}/missing.parquet`);
-  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
+  await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
   fs.rmSync(`${goneDir}/missing.parquet`);
   await page.reload(); await page.waitForSelector('text=missing.parquet');
   check('S7.unavailableRecent', await page.locator('text=No longer available').isVisible(), 'deleted file marked unavailable after reload');
@@ -563,9 +563,9 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   check('S7.dropOther', (await page.evaluate(() => window.__alerts.splice(0)))[0]?.includes('.parquet'), 'alert for non-parquet drop');
   // drop two parquet files at once
   await page.evaluate((p) => window.__emit('file-drop', p), [A, B]); await page.waitForTimeout(800);
-  report('S7.dropTwo', 'OBSERVE', `dropping 2 files opened tabs: ${await page.evaluate(() => [...document.querySelectorAll('[title="Close tab"]')].map(b => b.parentElement.querySelector('span').textContent))}`);
+  report('S7.dropTwo', 'OBSERVE', `dropping 2 files opened tabs: ${await page.evaluate(() => [...document.querySelectorAll('[title^="Close tab"]')].map(b => b.parentElement.querySelector('span').textContent))}`);
   // Browse button via dialog
-  for (let i = 0; i < 2; i++) { await page.locator('[title="Close tab"]').first().click().catch(() => {}); await page.waitForTimeout(150); }
+  for (let i = 0; i < 2; i++) { await page.locator('[title^="Close tab"]').first().click().catch(() => {}); await page.waitForTimeout(150); }
   await page.evaluate((p) => { window.__dialog.open = p; }, C);
   // Scoped to the drop zone: its button and the header's now carry the same
   // "Open File" label, so an unscoped has-text matches both.
@@ -574,7 +574,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   // Cmd+O in workspace?
   await page.evaluate((p) => { window.__dialog.open = p; }, A);
   await page.keyboard.press('Meta+o'); await page.waitForTimeout(500);
-  report('S7.cmdOInWorkspace', 'OBSERVE', `Cmd+O with a tab open -> tabs=${await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length)}`);
+  report('S7.cmdOInWorkspace', 'OBSERVE', `Cmd+O with a tab open -> tabs=${await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length)}`);
   // settings reachable?
   report('S7.settingsInWorkspace', 'OBSERVE', `settings button in workspace: ${await page.locator('[title^="Settings"]').count()}`);
   // per-tab state isolation: filter in one tab doesn't leak
@@ -643,7 +643,7 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   await page.waitForTimeout(500);
   report('S8.rppInQueryView', 'OBSERVE', `query view visible before=${qVisibleBefore} after rows/page change=${await page.locator('textarea').isVisible()}`);
   // clear recent files from the Welcome screen: one click, no confirmation
-  for (let i = 0; i < 1; i++) { await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(150); }
+  for (let i = 0; i < 1; i++) { await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(150); }
   check('S8.recentBefore', (await bridge.call('list_recent_files')).length > 0, 'a recent entry to clear');
   await page.evaluate(() => { window.__confirms = []; });
   await page.click('button:has-text("Clear all")'); await page.waitForTimeout(200);
@@ -685,7 +685,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   await openFile(page, `${FIX}/one_row.parquet`);
   check('S9.emptyState', await page.locator('text=Open a folder to browse Parquet files').isVisible(), 'sidebar empty state with a file open but no folder');
   check('S9.noListingOutsideRoots', !bridge.log.some(l => l.cmd === 'list_directory'), `list_directory calls: ${bridge.log.filter(l => l.cmd === 'list_directory').length}`);
-  await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(200);
+  await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
   check('S9.welcomeOpenFolder', await page.locator('button:has-text("Open Folder")').isVisible(), 'welcome screen has Open Folder');
   // Open the fixtures folder from the welcome screen.
   await openFolder(page, FIX);
@@ -734,7 +734,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   check('S9.openNewTab', (await activeTabName(page)) === 'dict.parquet');
   await page.click('.py-1 >> text=dict.parquet', { button: 'right' }); await page.waitForTimeout(200);
   await page.click('text="Open"'); await page.waitForTimeout(300);
-  report('S9.openNewTabDup', 'OBSERVE', `"Open" on an already-open file: tabs=${await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length)}`);
+  report('S9.openNewTabDup', 'OBSERVE', `"Open" on an already-open file: tabs=${await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length)}`);
   // selecting a tab highlights the file in the explorer
   await page.click(`span[title="${FIX}/paths/UPPER.PARQUET"]`); await page.waitForTimeout(300);
   check('S9.highlight', (await page.evaluate(() => [...document.querySelectorAll('.py-1 .group.bg-selected')].map(d => d.textContent?.trim()))).some(n => n?.startsWith('UPPER.PARQUET')), `selected rows: ${await page.evaluate(() => [...document.querySelectorAll('.py-1 .group.bg-selected')].map(d => d.textContent?.trim().slice(0, 30)))}`);
@@ -767,7 +767,7 @@ await scenario('S9-restore', async ({ page, bridge }) => {
   check('S9r.rootRestored', roots.length === 1 && roots[0].path === FIX, JSON.stringify(roots));
   const rootRow = page.locator(`.py-1 .group[title="${FIX}"]`);
   await rootRow.waitFor({ timeout: 5000 }).catch(() => {});
-  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
   check('S9r.workspaceOnLaunch', await rootRow.isVisible() && (await tabNames(page)).join(',') === 'UPPER.PARQUET,dict.parquet', `the tree is back, and so are the tabs: ${await tabNames(page)}`);
   await page.waitForTimeout(400);
   check('S9r.treeLoaded', (await page.evaluate(() => [...document.querySelectorAll('.overflow-y-auto .py-1 .group')].length)) > 10, 'root expanded and listed');
@@ -779,8 +779,8 @@ await scenario('S9-restore', async ({ page, bridge }) => {
   // Removing the last root with a tab open keeps the workspace, with the empty sidebar.
   await removeRoot(page, FIX);
   check('S9r.removeLastRoot', await page.locator('text=Open a folder to browse Parquet files').isVisible() && (await activeTabName(page)) === 'dict.parquet', 'empty sidebar, tab stays');
-  while (await page.locator('[title="Close tab"]').count()) {
-    await page.locator('[title="Close tab"]').first().click(); await page.waitForTimeout(300);
+  while (await page.locator('[title^="Close tab"]').count()) {
+    await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(300);
   }
   check('S9r.welcomeAgain', await page.locator('text=Drop your Parquet file here').isVisible() && !(await page.locator('[title^="Hide sidebar"]').isVisible()), 'no roots, no tabs: the welcome screen');
 }, { dataDir: S9_DATA });
@@ -807,7 +807,7 @@ await scenario('S10-external-change', async ({ page }) => {
   const message = shown ? await act(page).locator('text=Error Loading File').locator('xpath=following-sibling::p').first().textContent() : null;
   check('S10.deleted', shown && message?.includes('changing.parquet'), `errorScreen=${shown} message=${message}`);
   await act(page).locator('button:has-text("Close")').first().click(); await page.waitForTimeout(300);
-  check('S10.closeAfterError', await page.evaluate(() => document.querySelectorAll('[title="Close tab"]').length) === 0, 'tab gone after Close');
+  check('S10.closeAfterError', await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length) === 0, 'tab gone after Close');
 });
 
 // ---------------------------------------------------------------- S11 session restore
@@ -845,7 +845,7 @@ fs.rmSync(S11_GONE);
 // "Relaunch": the two surviving tabs come back as they were; the deleted
 // file's tab does not, and the notice says so.
 await scenario('S11-session-restore', async ({ page, bridge }) => {
-  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
   await waitGrid(page);
   check('S11r.tabs', (await tabNames(page)).join(',') === 'multi_rowgroup.parquet,one_row.parquet', `tabs=${await tabNames(page)}`);
   check('S11r.activeFallsBackToFirst', (await activeTabName(page)) === 'multi_rowgroup.parquet', `active=${await activeTabName(page)} (the active tab's file is gone)`);
@@ -888,7 +888,7 @@ await scenario('S12-finder-seed', async ({ page }) => {
 }, { dataDir: S12_DATA });
 
 await scenario('S12-finder', async ({ page, bridge }) => {
-  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
   await waitGrid(page);
   check('S12.coldTabs', (await tabNames(page)).join(',') === 'multi_rowgroup.parquet,日本語ファイル.parquet', `tabs=${await tabNames(page)}`);
   check('S12.coldActive', (await activeTabName(page)) === '日本語ファイル.parquet', `active=${await activeTabName(page)} (the file must not be pushed behind the restored tabs)`);
@@ -903,7 +903,7 @@ await scenario('S12-finder', async ({ page, bridge }) => {
 
   // Warm start: the window is already up.
   await finderOpen(page, [S12_HASH]);
-  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 3, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 3, null, { timeout: 15000 }).catch(() => {});
   await waitGrid(page);
   check('S12.warm', (await activeTabName(page)) === 'hash#1.parquet' && (await footer(page))?.startsWith('Showing 1 to 3'), `active=${await activeTabName(page)} footer=${await footer(page)}`);
 
@@ -930,7 +930,7 @@ await scenario('S13-sample', async ({ page, bridge }) => {
   // From the workspace's welcome content (a folder is not needed: the
   // welcome content also shows when tabs are closed), and from the Welcome
   // screen proper — both carry the link.
-  await page.locator('[title="Close tab"]').first().click();
+  await page.locator('[title^="Close tab"]').first().click();
   await page.locator('button:has-text("Open the sample file")').first().click();
   await page.waitForFunction(() => [...document.querySelectorAll('h1')].some(h => h.textContent === 'sample.parquet' && h.offsetParent !== null), null, { timeout: 15000 });
   await waitGrid(page);
@@ -952,7 +952,7 @@ await scenario('S13-sample', async ({ page, bridge }) => {
 }, { dataDir: S13_DATA });
 
 await scenario('S13-sample-restore', async ({ page }) => {
-  await page.waitForFunction(() => document.querySelectorAll('[title="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 2, null, { timeout: 15000 }).catch(() => {});
   await waitGrid(page);
   check('S13r.tabs', (await tabNames(page)).join(',') === 'sample.parquet,one_row.parquet' && (await activeTabName(page)) === 'sample.parquet', `tabs=${await tabNames(page)} active=${await activeTabName(page)}`);
   check('S13r.grid', (await summary(page))?.startsWith('1,500 rows'), await summary(page));

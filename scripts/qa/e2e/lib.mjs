@@ -176,7 +176,7 @@ export async function finderOpen(page, paths) {
  */
 export async function openFolder(page, dir) {
   await page.evaluate((p) => { window.__dialog.open = p; }, dir);
-  const inWorkspace = page.locator('[title="Open Folder (⌘⇧O)"]').first();
+  const inWorkspace = page.locator('[title="Open Folder (⇧⌘O)"]').first();
   if (await inWorkspace.count()) await inWorkspace.click();
   else await page.locator('button:has-text("Open Folder")').first().click();
   await page.waitForFunction((d) => [...document.querySelectorAll('.py-1 [title]')].some(el => el.getAttribute('title') === d), dir, { timeout: 5000 });
