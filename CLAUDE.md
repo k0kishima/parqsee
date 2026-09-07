@@ -16,7 +16,8 @@ It features:
 - Recent files history and the open tabs, persisted with security-scoped
   bookmarks so the sandboxed App Store build can reopen them at the next
   launch (tabs come back in order, with their view mode, page and filter)
-- Dark/light mode and English/Japanese localization
+- Dark/light mode and English/Japanese localization, the native menu
+  included; the app starts in the system's language
 - A bundled sample file (`Contents/Resources/sample.parquet`), opened from
   the Welcome screen for anyone with no Parquet file at hand — App Store
   reviewers first of all
@@ -64,9 +65,10 @@ parqsee/
 │   └── vitest.config.ts
 ├── backend/                      # Tauri backend
 │   ├── src/
-│   │   ├── commands/             # Tauri command handlers (file, data, query, workspace, iap)
-│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (free tier / purchase)
+│   │   ├── commands/             # Tauri command handlers (file, data, query, workspace, iap, menu)
+│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (free tier / purchase), menu_labels (the menu's strings)
 │   │   ├── models/               # Serde types shared with the frontend
+│   │   ├── menu.rs               # Open Recent, and the menu's language
 │   │   ├── lib.rs                # Builder, plugins, command registration
 │   │   └── main.rs               # Entry point
 │   ├── resources/                # Bundled into Resources/: sample.parquet (from scripts/gen_sample.py)
@@ -74,7 +76,7 @@ parqsee/
 │   ├── build.rs                  # tauri-build, plus the Swift build and link under `app-store`
 │   ├── Cargo.toml
 │   ├── Entitlements.plist        # App Sandbox entitlements (applied to signed release builds)
-│   ├── Info.plist                # Merged into the bundle's Info.plist: App Store Connect keys Tauri has no config for
+│   ├── Info.plist                # Merged into the bundle's Info.plist: App Store Connect keys and CFBundleLocalizations
 │   ├── tauri.conf.json           # Tauri config (window, bundle, build hooks)
 │   └── tauri.appstore.conf.json  # Overlay for the store build: turns the `app-store` feature on
 ├── docs/
@@ -122,7 +124,7 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   the session, with each tab's view state) lives in `WorkspaceContext`
   and is not persisted
 - `settings` — the settings dialog (language, theme, restore tabs, purchase;
-  every control applies at once). The grid's own display settings are not
+  every control applies at once); `api/` for `set_menu_language`. The grid's own display settings are not
   here: rows per page is in the pagination bar, row density and column
   types in `file-viewer`'s view options
 - `license` — the upgrade prompt (`UpgradePrompt`), the Free badge, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds `FREE_TAB_LIMIT`, the tab-limit derivation and the reducer
@@ -196,6 +198,7 @@ Argument names are camelCase on the JS side.
 | `iap_products` | `()` → `IapProduct[]` | The full version (one product) with the storefront's name, description and `display_price`; empty in a build without a store |
 | `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy the product `iap_products` returned; `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
 | `iap_restore` | `()` → `IapStatus` | Restore Purchases, then the state |
+| `set_menu_language` | `(language)` → `void` | Put the native menu into the UI's language; a no-op when it is already in it, and on a platform without a menu |
 
 The frontend also listens for a `file-drop` event emitted from
 `lib.rs`'s window drag-drop handler — and from its `RunEvent::Opened`
@@ -437,6 +440,30 @@ store (a purchase approved elsewhere, a refund).
     which awaits the plugin under Tauri and the synchronous original in a
     plain browser (vitest, the e2e harness, which answers
     `plugin:dialog|confirm` from `window.__dialog.confirm`).
+16. The menu bar is localized in Rust, not in `locales/`
+    (`services/menu_labels.rs`, en + ja by key). It has to be: the menu is
+    built in `setup`, long before the webview could say which language the
+    UI is in, and a menu that starts in English and flips a moment later
+    is what that would look like. So it starts in the system's language
+    (`menu::system_language`, `NSLocale.preferredLanguages`) — the same
+    answer `systemLanguage` in `lib/settings-storage.ts` gives for a first
+    launch, so the two agree unless the user chose otherwise — and
+    `set_menu_language` corrects it from `SettingsContext` when they did.
+    `MenuBuilder` labels each item as `build_menu` creates it and keeps
+    the handle; `menu::set_language` retitles them in place rather than
+    rebuilding the menu, which would mean re-managing `RecentMenu`. An
+    item's label key is its menu id, which is what lets
+    `lib/__tests__/shortcuts.test.ts` keep reading `build_menu` — it also
+    checks every key has a label, since a key with none would be drawn as
+    itself rather than fail. Predefined items are labelled like the rest:
+    muda fills them from a hardcoded English table (`Paste`,
+    `Quit {app}`) that macOS never localizes, and every constructor takes
+    the text. What no setting reaches, because AppKit supplies it in the
+    *system's* language: the Services submenu, the Help menu's search
+    field, Emoji & Symbols, the About panel, and the dialog plugin's open
+    and save panels. `CFBundleLocalizations` in `Info.plist` is what tells
+    macOS the app has Japanese at all — without it those parts stay
+    English on a Japanese Mac and `navigator.language` reads `en`.
 
 ## Testing
 
@@ -449,7 +476,8 @@ context (tabs, roots, recent files, the sample file, the free tier's tab limit a
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
 cancelled / failed / pending purchases, the upgrade prompt),
-`lib/path`, `lib/column-widths` and
+`lib/path`, `lib/column-widths`, `lib/settings-storage`'s
+system-language guess and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
@@ -460,8 +488,10 @@ URL-to-path conversion and the launch handover in
 `services::opened`, the sample's lookup and the committed file's shape in
 `services::sample`, the session entries and the access-grant lifecycle in
 `services/access` (with a fake provider; the real `NSURL` round trip has one
-macOS-only test), and the free / unlocked state in `services/store` (with a
-fake store; `cargo test --lib --features app-store` adds two round trips
+macOS-only test), the menu's label tables in `services::menu_labels` (both
+languages carry every key, nothing is left untranslated, and a language tag
+is read down to its primary subtag), and the free / unlocked state in
+`services/store` (with a fake store; `cargo test --lib --features app-store` adds two round trips
 through the Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `python3 scripts/release/test_appstore.py` runs `scripts/release/appstore.sh`
@@ -491,8 +521,9 @@ Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
 window/appearance, the sandbox (entitlements, bookmarks surviving a
 relaunch), Gatekeeper — is listed in `docs/MANUAL_QA.md` with steps,
 expected results and a results template; run it on the release `.app`
-before tagging a release and after touching the menu (Open Recent
-included: it is rebuilt on the main thread and only the real app has one), entitlements,
+before tagging a release and after touching the menu (Open Recent and its
+labels included: they are rebuilt on the main thread and only the real app
+has a menu bar), entitlements,
 `services/access`, the file association or the `RunEvent::Opened` handler,
 capabilities, plugins or the Tauri version. The fixtures it refers to
 are generated by `uv run scripts/qa/gen_fixtures.py` and

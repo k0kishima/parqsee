@@ -57,6 +57,8 @@ no subscription and no license key.
 - **Tabs** — one file per tab; ⌘W closes the active one.
 - **Content / Query** — the grid and the SQL view over the same file.
 - **Search** — ⌘F searches the page in view and highlights the hits.
+- **English and Japanese** — the app starts in your system's language and
+  Settings switches it, the menu bar included.
 
 ### Keyboard shortcuts
 
