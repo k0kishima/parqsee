@@ -120,7 +120,8 @@ store variant (`pnpm tauri:store`, StoreKit linked) as a universal binary —
 run `rustup target add x86_64-apple-darwin` once — signs it with the Mac App
 Store profile and the Apple Distribution identity from the `APPLE_*` variables
 in its header, wraps it into a `.pkg` with `productbuild`, and with `--upload`
-validates and uploads it through `xcrun altool`.
+validates and uploads it through `scripts/release/upload_pkg.sh` (`xcrun
+altool`; call it directly to upload a package that was validated earlier).
 `scripts/release/appstore.sh --unsigned` makes the same package without any
 certificate, for a look at what the store gets.
 

@@ -92,7 +92,8 @@ locked screen makes every screenshot black.
 
 The submission itself is `scripts/release/appstore.sh` (build → sign with
 the Mac App Store profile and the Apple Distribution identity → `.pkg` →
-`xcrun altool` on `--upload`; the `APPLE_*` variables are in its header).
+`scripts/release/upload_pkg.sh` on `--upload`, which validates and uploads
+through `xcrun altool`; the `APPLE_*` variables are in their headers).
 Its dry run, `scripts/release/appstore.sh --unsigned`, is what MQ-11
 installs: the same universal `.pkg` around the ad-hoc signed `.app`. A
 package signed for the store cannot be checked here — an app signed with
