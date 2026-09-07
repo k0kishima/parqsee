@@ -70,6 +70,10 @@ window.__dialog = { save: null, open: null, confirm: true };
 window.__delays = {};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(event, id) { const l = window.__listeners[event] || []; window.__listeners[event] = l.filter(x => x.id !== id); } };
 let cbId = 0;
+// What Tauri's own init script sets, and what the API's isTauri() reads
+// (lib/tauri.ts re-exports it); without it the app takes itself for a
+// plain browser and registers no event listeners, so drops go nowhere.
+window.isTauri = true;
 window.__TAURI_INTERNALS__ = {
   transformCallback(cb, once) { const id = ++cbId; window.__cbs[id] = cb; return id; },
   unregisterCallback(id) { delete window.__cbs[id]; },
