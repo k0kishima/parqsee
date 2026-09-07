@@ -236,3 +236,16 @@ pub fn handle_recent_menu_event(app: &AppHandle, id: &str) -> bool {
     }
     false
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    /// The `NSLocale` call itself, which the pure tests in
+    /// `services::menu_labels` cannot reach. It runs off the main thread
+    /// here, as it does in `build_menu`'s process before the event loop
+    /// starts; what it answers depends on the machine, so only that it
+    /// answers one of the app's languages is checked.
+    #[test]
+    fn the_system_language_is_one_of_the_app_s() {
+        assert!(matches!(super::system_language(), "en" | "ja"));
+    }
+}
