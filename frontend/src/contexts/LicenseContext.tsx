@@ -92,9 +92,12 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             .catch(error => dispatch({ type: 'products-failed', error: toErrorMessage(error) }));
     }, []);
 
-    // The products as of the last render, for the actions below.
+    // The products as of the last render, for the actions below. Written
+    // in an effect, not during render (react.dev/reference/react/useRef).
     const productsRef = useRef(model.products);
-    productsRef.current = model.products;
+    useEffect(() => {
+        productsRef.current = model.products;
+    }, [model.products]);
 
     const run = useCallback(async (action: LicenseAction, work: () => Promise<Omit<Extract<Parameters<typeof dispatch>[0], { type: 'action-done' }>, 'type' | 'action'>>) => {
         dispatch({ type: 'action-start', action });

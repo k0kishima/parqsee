@@ -125,8 +125,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // undoing something the user cannot see any more.
     const [closedTabs, setClosedTabs] = useState<readonly ClosedTab[]>([]);
     // The last rendered tabs, for decisions made in stable callbacks.
+    // Written in an effect, not during render (react.dev/reference/react/useRef).
     const workspaceTabsRef = useRef(workspaceTabs);
-    workspaceTabsRef.current = workspaceTabs;
+    useEffect(() => {
+        workspaceTabsRef.current = workspaceTabs;
+    }, [workspaceTabs]);
     const [isPending, startTransition] = useTransition();
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
@@ -135,7 +138,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // the stable callbacks below and the launch-time restore see the latest.
     const { tabLimit, showUpgrade } = useLicense();
     const tabLimitRef = useRef(tabLimit);
-    tabLimitRef.current = tabLimit;
+    useEffect(() => {
+        tabLimitRef.current = tabLimit;
+    }, [tabLimit]);
     // Read once: the setting decides what happens at launch, not later.
     const restoreOnLaunch = useRef(settings.restoreTabs);
     const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
@@ -506,7 +511,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // it whenever the callback changes would reopen a window in which a file
     // handed over by Finder is lost.
     const openExternalFilesRef = useRef(openExternalFiles);
-    openExternalFilesRef.current = openExternalFiles;
+    useEffect(() => {
+        openExternalFilesRef.current = openExternalFiles;
+    }, [openExternalFiles]);
 
     // Drops and files opened from Finder while the app runs.
     const [dropListenerReady, setDropListenerReady] = useState(!isTauri());
