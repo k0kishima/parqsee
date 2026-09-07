@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import { dispatchAppCommand } from '../../../../lib/app-commands';
 import userEvent from '@testing-library/user-event';
 import { DataViewer } from '../data-viewer';
 
@@ -103,5 +104,28 @@ describe('DataViewer failed-load rollback', () => {
     await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument();
     expect(screen.queryByText('viewer.error')).not.toBeInTheDocument();
+  });
+});
+
+describe('DataViewer search commands', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenParquetFile.mockResolvedValue(metadata);
+    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
+    mockEvictCache.mockResolvedValue(undefined);
+  });
+
+  it('opens the search bar on the find command, only while it is the view on screen', async () => {
+    const isActiveRef = { current: false };
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} isActiveRef={isActiveRef} />);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(screen.queryByPlaceholderText('viewer.searchPlaceholder')).not.toBeInTheDocument();
+
+    act(() => dispatchAppCommand('find'));
+    expect(screen.queryByPlaceholderText('viewer.searchPlaceholder')).not.toBeInTheDocument();
+
+    isActiveRef.current = true;
+    act(() => dispatchAppCommand('find'));
+    expect(screen.getByPlaceholderText('viewer.searchPlaceholder')).toHaveFocus();
   });
 });

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { isModifierPressed } from "../../../hooks/useGlobalKeydown";
 
 interface SearchBarProps {
   isOpen: boolean;
@@ -71,14 +70,9 @@ export function SearchBar({
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       onNext();
-    } else if (isModifierPressed(e) && e.key === "g") {
-      e.preventDefault();
-      if (e.shiftKey) {
-        onPrevious();
-      } else {
-        onNext();
-      }
     }
+    // ⌘G / ⇧⌘G are the viewer's (see data-viewer.tsx): they work wherever
+    // the focus is while the search is open.
   };
 
   const handleClear = () => {

@@ -14,7 +14,7 @@ import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
 import { pageWindow } from "../lib/page-window";
 import type { RowData } from "../../../lib/row";
-import { useGlobalKeydown, isModifierPressed } from "../../../hooks/useGlobalKeydown";
+import { useAppCommand, type AppCommand } from "../../../lib/app-commands";
 import { toErrorMessage } from "../../../lib/tauri";
 
 interface DataViewerProps {
@@ -225,17 +225,43 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setCurrentPage(1);
   }
 
-  // Keyboard shortcut for search
-  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-    if (isActiveRef && !isActiveRef.current) return;
-    // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
-    if (isModifierPressed(e) && e.key === 'f') {
-      e.preventDefault();
-      setIsSearchOpen(true);
-      // Trigger focus even if search bar is already open
-      setSearchFocusTrigger(prev => prev + 1);
+  const searchMatches = useMemo(
+    () => (metadata ? findSearchMatches(searchTerm, metadata.columns, data) : []),
+    [searchTerm, data, metadata]
+  );
+
+  const handleNextMatch = useCallback(() => {
+    if (searchMatches.length > 0) {
+      setCurrentMatchIndex(i => (i + 1) % searchMatches.length);
     }
-  }, [isActiveRef]));
+  }, [searchMatches]);
+
+  const handlePreviousMatch = useCallback(() => {
+    if (searchMatches.length > 0) {
+      setCurrentMatchIndex(i => (i === 0 ? searchMatches.length - 1 : i - 1));
+    }
+  }, [searchMatches]);
+
+  // ⌘F / ⌘G / ⇧⌘G, from the native menu or the workspace's keydown
+  // fallback (see lib/app-commands.ts). Next / previous work wherever the
+  // focus is while the search is open, as in Safari; they used to need the
+  // search box focused.
+  useAppCommand(useCallback((command: AppCommand) => {
+    if (isActiveRef && !isActiveRef.current) return;
+    switch (command) {
+      case 'find':
+        setIsSearchOpen(true);
+        // Focus the box even when the bar is already open
+        setSearchFocusTrigger(prev => prev + 1);
+        break;
+      case 'find-next':
+        if (isSearchOpen) handleNextMatch();
+        break;
+      case 'find-previous':
+        if (isSearchOpen) handlePreviousMatch();
+        break;
+    }
+  }, [isActiveRef, isSearchOpen, handleNextMatch, handlePreviousMatch]));
 
   const handleRefresh = async () => {
     setCurrentPage(1);
@@ -278,11 +304,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [pageInput, totalPages, currentPage]);
 
-  const searchMatches = useMemo(
-    () => (metadata ? findSearchMatches(searchTerm, metadata.columns, data) : []),
-    [searchTerm, data, metadata]
-  );
-
   const handleSearchSubmit = useCallback((value: string) => {
     const trimmedValue = value.trim();
     if (trimmedValue) {
@@ -298,19 +319,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setIsSearching(false);
     }
   }, []);
-
-
-  const handleNextMatch = useCallback(() => {
-    if (searchMatches.length > 0) {
-      setCurrentMatchIndex(i => (i + 1) % searchMatches.length);
-    }
-  }, [searchMatches]);
-
-  const handlePreviousMatch = useCallback(() => {
-    if (searchMatches.length > 0) {
-      setCurrentMatchIndex(i => (i === 0 ? searchMatches.length - 1 : i - 1));
-    }
-  }, [searchMatches]);
 
   if (error) {
     return (

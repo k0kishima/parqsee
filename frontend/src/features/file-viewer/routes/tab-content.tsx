@@ -4,6 +4,7 @@ import { Table, Database } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
+import { useAppCommand, type AppCommand } from '../../../lib/app-commands';
 
 interface TabContentProps {
   tab: Tab;
@@ -67,10 +68,24 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   const browseIsActiveRef = useRef(false);
   browseIsActiveRef.current = isActive && viewMode === 'browse';
 
+  // The SQL editor's counterpart, for ⌘↩ (see query-editor.tsx).
+  const queryIsActiveRef = useRef(false);
+  queryIsActiveRef.current = isActive && viewMode === 'query';
+
   const handleViewModeChange = (mode: 'browse' | 'query') => {
     setLocalViewMode(mode);
     onStateChange?.({ viewMode: mode });
   };
+
+  // ⌘E, from the native menu or the workspace's keydown fallback: the
+  // active tab flips between the grid and the SQL view.
+  useAppCommand(useCallback((command: AppCommand) => {
+    if (command === 'switch-view' && isActive) {
+      const mode = viewMode === 'browse' ? 'query' : 'browse';
+      setLocalViewMode(mode);
+      onStateChange?.({ viewMode: mode });
+    }
+  }, [isActive, viewMode, onStateChange]));
 
   useEffect(() => {
     if (isActive && !hasBeenActive) {
@@ -161,7 +176,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
           className="absolute inset-0 z-10 bg-slate-50 dark:bg-gray-900"
           style={{ display: viewMode === 'query' ? 'block' : 'none' }}
         >
-          <QueryView filePath={tab.path} />
+          <QueryView filePath={tab.path} isActiveRef={queryIsActiveRef} />
         </div>
       </div>
     </div >

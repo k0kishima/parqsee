@@ -6,7 +6,11 @@ import { useSettings } from './SettingsContext';
 import { useLicense } from './LicenseContext';
 import { isTauri } from '../lib/tauri';
 import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
-import { useGlobalKeydown, isModifierPressed } from '../hooks/useGlobalKeydown';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import i18n from '../lib/i18n';
+import { useGlobalKeydown } from '../hooks/useGlobalKeydown';
+import { matchShortcut, matchGoToTab } from '../lib/shortcuts';
+import { isAppCommand, dispatchAppCommand } from '../lib/app-commands';
 
 import { openParquetFile as apiOpenParquetFile, checkFileExists, evictCacheQuietly } from '../features/file-viewer/api';
 import { rememberFile, sampleFilePath } from '../features/welcome/api';
@@ -61,6 +65,8 @@ interface WorkspaceContextType {
     activeTabId: string | null;
     isSidebarOpen: boolean;
     isSettingsOpen: boolean;
+    /** The keyboard shortcut sheet (⌘/, Help › Keyboard Shortcuts). */
+    isShortcutsOpen: boolean;
     isPending: boolean;
     tabStates: WorkspaceTabs['tabStates'];
     /** The folders open in the explorer, restored from the last session. */
@@ -87,6 +93,7 @@ interface WorkspaceContextType {
     selectTab: (tabId: string) => void;
     toggleSidebar: () => void;
     toggleSettings: (isOpen: boolean) => void;
+    toggleShortcuts: (isOpen: boolean) => void;
     /** Merge `patch` into the tab's state; send only the fields you own. */
     setTabState: (tabId: string, patch: Partial<TabState>) => void;
     activeTab: Tab | undefined;
@@ -107,12 +114,17 @@ const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefin
 /** How many closed tabs ⇧⌘T can walk back through. */
 const CLOSED_TAB_HISTORY = 10;
 
+/** Help › Parqsee Help: the support page of the product site, in the UI's language. */
+const SUPPORT_URL = 'https://parqsee.fuji.llc/support.html';
+const SUPPORT_URL_JA = 'https://parqsee.fuji.llc/ja/support.html';
+
 let nextTabSerial = 0;
 /** Unique per tab; Date.now() alone collided when two files opened in one tick. */
 const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     // Every transition goes through the reducer, so files opened back to back
     // in one tick (a multi-file drop) and a closeTab captured by a memoized
@@ -430,61 +442,69 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Keyboard shortcuts. On macOS the native menu owns ⌘W / ⌘O / ⌘⇧O / ⌘,
-    // and forwards them as `menu` events (below); these handlers cover the
-    // browser and any platform without that menu.
-    useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-        if (isModifierPressed(e) && e.key === 'w') {
-            e.preventDefault();
-            if (activeTabId) {
-                handleTabClose(activeTabId);
+    /**
+     * One entry for every shortcut and menu item, by its id in
+     * `lib/shortcuts.ts`. What the workspace owns is done here; a view's
+     * command (search, run the query, the Content / Query switch) goes out
+     * on the app-command bus for the active view to answer. Unknown ids —
+     * a menu item that is not a shortcut, like Help — are handled by name.
+     */
+    const runCommand = useCallback((id: string) => {
+        switch (id) {
+            case 'open-file': openFileDialog(); break;
+            case 'open-folder': openFolderDialog(); break;
+            case 'settings': setIsSettingsOpen(true); break;
+            case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
+            case 'reopen-tab': reopenClosedTab(); break;
+            case 'next-tab': {
+                const target = adjacentTabId(workspaceTabs, 1);
+                if (target) handleTabSelect(target);
+                break;
             }
-        } else if (isModifierPressed(e) && e.shiftKey && e.key.toLowerCase() === 't') {
-            e.preventDefault();
-            reopenClosedTab();
-        } else if (isModifierPressed(e) && e.shiftKey && e.key.toLowerCase() === 'o') {
-            e.preventDefault();
-            openFolderDialog();
-        } else if (isModifierPressed(e) && e.key === 'o') {
-            e.preventDefault();
-            openFileDialog();
-        } else if (isModifierPressed(e) && e.key === ',') {
-            e.preventDefault();
-            setIsSettingsOpen(true);
-        } else if (isModifierPressed(e) && e.key === 'b') {
-            e.preventDefault();
-            setIsSidebarOpen(prev => !prev);
-        } else if ((e.metaKey && e.shiftKey && e.key === '[') || (e.metaKey && e.altKey && e.key === 'ArrowLeft')) {
-            e.preventDefault();
-            const target = adjacentTabId(workspaceTabs, -1);
-            if (target) handleTabSelect(target);
-        } else if ((e.metaKey && e.shiftKey && e.key === ']') || (e.metaKey && e.altKey && e.key === 'ArrowRight')) {
-            e.preventDefault();
-            const target = adjacentTabId(workspaceTabs, 1);
-            if (target) handleTabSelect(target);
-        } else if (e.metaKey && e.key >= '1' && e.key <= '9') {
-            e.preventDefault();
-            const target = nthTabId(workspaceTabs, parseInt(e.key));
-            if (target) handleTabSelect(target);
+            case 'previous-tab': {
+                const target = adjacentTabId(workspaceTabs, -1);
+                if (target) handleTabSelect(target);
+                break;
+            }
+            case 'toggle-sidebar': setIsSidebarOpen(prev => !prev); break;
+            case 'shortcuts': setIsShortcutsOpen(prev => !prev); break;
+            case 'help':
+                openUrl(i18n.language === 'ja' ? SUPPORT_URL_JA : SUPPORT_URL)
+                    .catch(error => console.error('Failed to open the support page:', error));
+                break;
+            default:
+                if (isAppCommand(id)) dispatchAppCommand(id);
         }
-    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog, openFolderDialog, reopenClosedTab]));
+    }, [activeTabId, workspaceTabs, handleTabClose, handleTabSelect, openFileDialog, openFolderDialog, reopenClosedTab]);
+
+    // Keyboard shortcuts. On macOS the native menu owns every key it lists
+    // and forwards them as `menu` events (below) — a native key equivalent
+    // wins over the webview's keydown; this handler covers the rest (⌘1…9)
+    // and, in the browser and on any platform without that menu, all of
+    // them.
+    useGlobalKeydown(useCallback((e: KeyboardEvent) => {
+        const n = matchGoToTab(e);
+        if (n !== null) {
+            e.preventDefault();
+            const target = nthTabId(workspaceTabs, n);
+            if (target) handleTabSelect(target);
+            return;
+        }
+        const id = matchShortcut(e);
+        if (id) {
+            e.preventDefault();
+            runCommand(id);
+        }
+    }, [workspaceTabs, handleTabSelect, runCommand]));
 
     // Native menu items (see build_menu in lib.rs)
     useEffect(() => {
         if (!isTauri()) return;
-        const unlisten = listen<string>('menu', (event) => {
-            switch (event.payload) {
-                case 'open-file': openFileDialog(); break;
-                case 'open-folder': openFolderDialog(); break;
-                case 'close-tab': if (activeTabId) handleTabClose(activeTabId); break;
-                case 'reopen-tab': reopenClosedTab(); break;
-                case 'settings': setIsSettingsOpen(true); break;
-            }
-        });
+        const unlisten = listen<string>('menu', (event) => runCommand(event.payload));
         return () => {
             unlisten.then(fn => fn());
         };
-    }, [activeTabId, handleTabClose, openFileDialog, openFolderDialog, reopenClosedTab]);
+    }, [runCommand]);
 
     /**
      * Files the app is handed from outside the window: dropped on it, and
@@ -552,6 +572,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         activeTabId,
         isSidebarOpen,
         isSettingsOpen,
+        isShortcutsOpen,
         isPending,
         tabStates,
         roots,
@@ -567,6 +588,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         selectTab: handleTabSelect,
         toggleSidebar: () => setIsSidebarOpen(prev => !prev),
         toggleSettings: setIsSettingsOpen,
+        toggleShortcuts: setIsShortcutsOpen,
         setTabState: (tabId: string, patch: Partial<TabState>) => dispatch({ type: 'patchState', tabId, patch }),
         activeTab,
         isReady: rootsReady && sessionReady,

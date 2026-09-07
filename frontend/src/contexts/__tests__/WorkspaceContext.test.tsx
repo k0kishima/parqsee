@@ -12,6 +12,9 @@ import { rememberFile, removeRecentFile, sampleFilePath } from '../../features/w
 import { checkFileExists } from '../../features/file-viewer/api';
 import { useRecentFiles } from '../RecentFilesContext';
 import { saveSettings, defaultSettings } from '../../lib/settings-storage';
+import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { useAppCommand } from '../../lib/app-commands';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -762,5 +765,64 @@ describe('WorkspaceProvider sample file', () => {
     expect(alerted).toHaveBeenCalledWith(expect.stringContaining('This build has no sample file'));
     alerted.mockRestore();
     logged.mockRestore();
+  });
+});
+
+describe('WorkspaceProvider shortcuts', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(listen).mockClear();
+  });
+
+  const press = (init: KeyboardEventInit) =>
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, ...init })); });
+  // Tab selection is deferred to the next frame (see handleTabSelect).
+  const frame = () => act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+
+  it('opens and closes the shortcut sheet on ⌘/', async () => {
+    const { result } = renderWorkspace();
+    expect(result.current.isShortcutsOpen).toBe(false);
+    press({ metaKey: true, key: '/' });
+    expect(result.current.isShortcutsOpen).toBe(true);
+    press({ metaKey: true, key: '/' });
+    expect(result.current.isShortcutsOpen).toBe(false);
+  });
+
+  it('hands a view command to the app-command bus', async () => {
+    const heard = vi.fn();
+    renderHook(() => { useAppCommand(heard); return useWorkspace(); }, { wrapper });
+    press({ metaKey: true, key: 'f' });
+    press({ ctrlKey: true, key: 'Enter' });
+    press({ metaKey: true, key: 'e' });
+    expect(heard.mock.calls.map(c => c[0])).toEqual(['find', 'run-query', 'switch-view']);
+  });
+
+  it('walks the tabs on ⇧⌘] and ⌘1…9, and answers the native menu by the same ids', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    press({ metaKey: true, key: '1' });
+    await frame();
+    expect(result.current.activeTab?.path).toBe('/data/a.parquet');
+    press({ metaKey: true, shiftKey: true, key: '}', code: 'BracketRight' });
+    await frame();
+    expect(result.current.activeTab?.path).toBe('/data/b.parquet');
+
+    const onMenu = vi.mocked(listen).mock.calls.filter(([name]) => name === 'menu').at(-1)?.[1] as (e: { payload: string }) => void;
+    expect(onMenu).toBeDefined();
+    act(() => onMenu({ payload: 'previous-tab' }));
+    await frame();
+    expect(result.current.activeTab?.path).toBe('/data/a.parquet');
+    expect(result.current.isSidebarOpen).toBe(true);
+    act(() => onMenu({ payload: 'toggle-sidebar' }));
+    expect(result.current.isSidebarOpen).toBe(false);
+    act(() => onMenu({ payload: 'shortcuts' }));
+    expect(result.current.isShortcutsOpen).toBe(true);
+  });
+
+  it('opens the support page in the UI language on Help', async () => {
+    vi.mocked(openUrl).mockResolvedValueOnce(undefined);
+    renderWorkspace();
+    const onMenu = vi.mocked(listen).mock.calls.filter(([name]) => name === 'menu').at(-1)?.[1] as (e: { payload: string }) => void;
+    act(() => onMenu({ payload: 'help' }));
+    expect(openUrl).toHaveBeenCalledWith('https://parqsee.fuji.llc/support.html');
   });
 });
