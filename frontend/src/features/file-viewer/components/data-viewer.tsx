@@ -62,7 +62,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
   // Initialize state from props
   const [currentPage, setCurrentPage] = useState(initialState?.currentPage || 1);
-  const [selectedRow, setSelectedRow] = useState<number | null>(initialState?.selectedRow || null);
+  // Never restored from initialState: the reset below always ran on mount.
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(initialState?.isSearchOpen || false);
   const [searchTerm, setSearchTerm] = useState(initialState?.searchTerm || "");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
@@ -76,10 +77,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   // Local state for page input (Enter key / blur to confirm)
   const [pageInput, setPageInput] = useState(String(currentPage));
 
-  // Sync pageInput when currentPage changes externally (e.g., Previous/Next buttons)
-  useEffect(() => {
+  // Sync pageInput when currentPage changes externally (e.g., Previous/Next
+  // buttons). Adjusted during render from the previous page rather than in
+  // an effect (react.dev/learn/you-might-not-need-an-effect).
+  const [inputPage, setInputPage] = useState(currentPage);
+  if (inputPage !== currentPage) {
+    setInputPage(currentPage);
     setPageInput(String(currentPage));
-  }, [currentPage]);
+  }
 
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -239,10 +244,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   };
 
   // A selected row is a row of the page on screen; keeping its index across
-  // a page or filter change highlighted an unrelated row.
-  useEffect(() => {
+  // a page or filter change highlighted an unrelated row. Cleared during
+  // render when the page identity changes, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const pageIdentity = `${currentPage} ${rowsPerPage} ${activeFilter}`;
+  const [selectedPageIdentity, setSelectedPageIdentity] = useState(pageIdentity);
+  if (selectedPageIdentity !== pageIdentity) {
+    setSelectedPageIdentity(pageIdentity);
     setSelectedRow(null);
-  }, [currentPage, activeFilter, rowsPerPage]);
+  }
 
   const handleFilterChange = useCallback((filter: string) => {
     setActiveFilter(filter);

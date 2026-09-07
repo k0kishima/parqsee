@@ -50,7 +50,11 @@ export function ExportModal({
   // time the modal is opened rather than from the last export's bounds.
   // totalRows is deliberately not a dependency: a count landing while the
   // modal is open must not clobber a range the user is editing.
-  useEffect(() => {
+  // Adjusted during render from the previous value of isOpen, not in an
+  // effect (react.dev/learn/you-might-not-need-an-effect).
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
       setStartInput("1");
       setEndInput(String(totalRows));
@@ -58,8 +62,7 @@ export function ExportModal({
       setDone(null);
       setCopied(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }
 
   // Esc closes the modal, unless an export is running.
   useEffect(() => {

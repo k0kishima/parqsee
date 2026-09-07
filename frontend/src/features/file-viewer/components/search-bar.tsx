@@ -32,7 +32,7 @@ export function SearchBar({
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   // Manage input value internally to prevent parent re-renders
-  const [localInputValue, setLocalInputValue] = useState(initialValue);
+  const [localInputValue, setLocalInputValue] = useState(isOpen ? initialValue : "");
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -41,12 +41,14 @@ export function SearchBar({
     }
   }, [isOpen, focusTrigger]);
 
-  // Reset local input when search bar is closed
-  useEffect(() => {
-    if (!isOpen) {
-      setLocalInputValue("");
-    }
-  }, [isOpen]);
+  // Reset local input when search bar is closed. Adjusted during render
+  // from the previous value of isOpen, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) setLocalInputValue("");
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
