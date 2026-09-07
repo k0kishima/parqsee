@@ -13,5 +13,28 @@
     -->
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+
+    <!--
+      The languages the app is available in. There are no .lproj folders
+      to infer them from: the UI is localized in the webview (i18next over
+      frontend/src/locales) and the native menu in Rust
+      (services::menu_labels), so this key is the only place macOS can
+      learn about Japanese.
+
+      It decides more than the App Store listing. An app whose
+      localizations macOS does not know is treated as English-only, so on
+      a Japanese Mac the parts of the menu AppKit supplies itself — the
+      Services submenu, the Help menu's search field, Emoji & Symbols —
+      would stay in English next to our Japanese items, and
+      `navigator.language` in the webview would read `en`, which is what
+      picks the language on a first launch (`systemLanguage` in
+      lib/settings-storage.ts). Declaring both also puts Parqsee in
+      System Settings › General › Language & Region › Applications.
+    -->
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ja</string>
+    </array>
 </dict>
 </plist>
