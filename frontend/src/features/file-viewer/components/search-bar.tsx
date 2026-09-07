@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { withShortcut } from "../../../lib/shortcuts";
 
 interface SearchBarProps {
   isOpen: boolean;
@@ -114,8 +115,8 @@ export function SearchBar({
         {localInputValue && (
           <button
             onClick={handleClear}
-            className="absolute right-2 p-1 hover:bg-slate-100 rounded"
-            title="Clear search"
+            className="absolute right-2 p-1 hover:bg-slate-100 dark:hover:bg-gray-700 rounded"
+            title={t('viewer.clearSearch')}
           >
             <svg
               className="w-4 h-4 text-slate-400"
@@ -135,7 +136,7 @@ export function SearchBar({
       </div>
 
       {searchTerm && !isSearching && totalMatches > 0 && (
-        <div className="flex items-center space-x-2 text-sm text-slate-600">
+        <div className="flex items-center space-x-2 text-sm text-slate-600 dark:text-gray-300">
           <span className="whitespace-nowrap">
             {currentMatch} / {totalMatches}
           </span>
@@ -143,8 +144,8 @@ export function SearchBar({
             <button
               onClick={onPrevious}
               disabled={totalMatches === 0}
-              className="p-1 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Previous match (Shift+Enter)"
+              className="p-1 hover:bg-slate-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              title={withShortcut(t('viewer.previousMatch'), 'find-previous')}
             >
               <svg
                 className="w-4 h-4"
@@ -163,8 +164,8 @@ export function SearchBar({
             <button
               onClick={onNext}
               disabled={totalMatches === 0}
-              className="p-1 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Next match (Enter)"
+              className="p-1 hover:bg-slate-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              title={withShortcut(t('viewer.nextMatch'), 'find-next')}
             >
               <svg
                 className="w-4 h-4"
@@ -186,18 +187,18 @@ export function SearchBar({
 
       {isSearching && (
         <div className="flex items-center space-x-2">
-          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-600"></div>
-          <span className="text-sm text-slate-500">Searching...</span>
+          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-600 dark:border-gray-300"></div>
+          <span className="text-sm text-slate-500 dark:text-gray-400">{t('viewer.searching')}</span>
         </div>
       )}
 
       {searchTerm && !isSearching && totalMatches === 0 && (
-        <span className="text-sm text-slate-500">No results</span>
+        <span className="text-sm text-slate-500 dark:text-gray-400">{t('viewer.noMatches')}</span>
       )}
 
       <button
         onClick={onClose}
-        className="p-1.5 hover:bg-slate-100 rounded-md"
+        className="p-1.5 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-md"
         title={t('viewer.closeTooltip')}
       >
         <svg

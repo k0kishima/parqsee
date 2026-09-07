@@ -4,6 +4,7 @@ import { X, FileText } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
 import { SidebarToggle, HeaderActions, TOP_ROW_HEIGHT } from './header-controls';
 import { TabContextMenu } from './tab-context-menu';
+import { withShortcut } from '../../../lib/shortcuts';
 
 interface TabBarProps {
   tabs: readonly Tab[];
@@ -94,7 +95,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
               <button
                 onClick={(e) => handleCloseTab(e, tab.id)}
                 className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                title={t('common.closeTab')}
+                title={withShortcut(t('common.closeTab'), 'close-tab')}
               >
                 <X className="w-3 h-3 text-gray-500 dark:text-gray-400" />
               </button>

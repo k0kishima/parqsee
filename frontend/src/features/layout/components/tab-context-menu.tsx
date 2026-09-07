@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, XSquare, ChevronsRight, Copy, FolderOpen, RotateCcw } from 'lucide-react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
+import { shortcutKeys } from '../../../lib/shortcuts';
 
 export interface TabContextMenuProps {
   /** Viewport coordinates of the right-click. */
@@ -129,11 +130,11 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
       {item(t('tabs.contextMenu.copyPath'), Copy, true, copyPath)}
       {item(t('tabs.contextMenu.revealInFinder'), FolderOpen, true, revealInFinder)}
       <div role="separator" className="my-1 border-t border-primary" />
-      {item(t('tabs.contextMenu.close'), X, true, onCloseTab)}
+      {item(t('tabs.contextMenu.close'), X, true, onCloseTab, shortcutKeys('close-tab'))}
       {item(t('tabs.contextMenu.closeOthers'), XSquare, canCloseOthers, onCloseOthers)}
       {item(t('tabs.contextMenu.closeToRight'), ChevronsRight, canCloseToRight, onCloseToRight)}
       <div role="separator" className="my-1 border-t border-primary" />
-      {item(t('tabs.contextMenu.reopenClosed'), RotateCcw, canReopenClosed, onReopenClosed, '⇧⌘T')}
+      {item(t('tabs.contextMenu.reopenClosed'), RotateCcw, canReopenClosed, onReopenClosed, shortcutKeys('reopen-tab'))}
     </div>
   );
 };

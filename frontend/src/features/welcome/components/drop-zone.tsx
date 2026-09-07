@@ -2,6 +2,7 @@ import React, { useState, useCallback, DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isParquetPath } from '../../../lib/path';
+import { shortcutKeys } from '../../../lib/shortcuts';
 
 interface DropZoneProps {
     onFileSelect: (path: string) => void;
@@ -94,14 +95,14 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOp
                         className="btn-primary"
                     >
                         {t('common.openFile')}
-                        <span className="ml-2 text-xs opacity-60">⌘O</span>
+                        <span className="ml-2 text-xs opacity-60">{shortcutKeys('open-file')}</span>
                     </button>
                     <button
                         onClick={onOpenFolder}
                         className="btn-secondary"
                     >
                         {t('common.openFolder')}
-                        <span className="ml-2 text-xs opacity-60">⌘⇧O</span>
+                        <span className="ml-2 text-xs opacity-60">{shortcutKeys('open-folder')}</span>
                     </button>
                 </div>
 

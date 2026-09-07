@@ -58,7 +58,7 @@ describe('TabBar context menu', () => {
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       'Copy Path',
       'Reveal in Finder',
-      'Close Tab',
+      'Close Tab⌘W',
       'Close Other Tabs',
       'Close Tabs to the Right',
       'Reopen Closed Tab⇧⌘T',
@@ -71,7 +71,7 @@ describe('TabBar context menu', () => {
     renderBar();
 
     await openMenuOn(user, 'b.parquet');
-    await user.click(screen.getByRole('menuitem', { name: 'Close Tab' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Close Tab⌘W' }));
 
     expect(handlers.onTabClose).toHaveBeenCalledWith('b');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -115,7 +115,7 @@ describe('TabBar context menu', () => {
 
     expect(screen.getByRole('menuitem', { name: 'Close Other Tabs' })).toBeDisabled();
     expect(screen.getByRole('menuitem', { name: 'Close Tabs to the Right' })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: 'Close Tab' })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: 'Close Tab⌘W' })).toBeEnabled();
   });
 
   it('copies the right-clicked tab\'s path', async () => {

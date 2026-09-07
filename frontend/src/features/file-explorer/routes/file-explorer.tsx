@@ -9,6 +9,7 @@ import { ExplorerEntry } from '../components/explorer-entry';
 import { TOP_ROW_HEIGHT } from '../../layout';
 import { toErrorMessage } from '../../../lib/tauri';
 import { ancestorsWithin, dirname, isWithin } from '../../../lib/path';
+import { withShortcut } from '../../../lib/shortcuts';
 
 interface FileExplorerProps {
   /** The folders open in the workspace, each the top of its own tree. */
@@ -218,7 +219,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         <button
           onClick={onOpenFolder}
           className="p-1 rounded hover:bg-tertiary text-tertiary hover:text-primary"
-          title={`${t('common.openFolder')} (⌘⇧O)`}
+          title={withShortcut(t('common.openFolder'), 'open-folder')}
         >
           <FolderOpen className="w-4 h-4" />
         </button>

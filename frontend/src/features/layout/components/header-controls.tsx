@@ -5,6 +5,7 @@ import { FreeBadge } from '../../license';
 // The component file, not the feature's index: the index re-exports the
 // Welcome route, which renders `AppHeader` from here.
 import { RecentFilesPopover } from '../../welcome/components/recent-files-popover';
+import { withShortcut } from '../../../lib/shortcuts';
 
 const iconButtonBase = 'p-2 rounded-md transition-colors text-gray-600 dark:text-gray-300';
 const iconButton = `${iconButtonBase} hover:bg-gray-100 dark:hover:bg-gray-700`;
@@ -36,7 +37,7 @@ export const SidebarToggle = ({ isOpen, onToggle }: SidebarToggleProps) => {
             disabled={!onToggle}
             className={onToggle ? iconButton : `${iconButtonBase} opacity-40 cursor-default`}
             title={onToggle
-                ? `${isOpen ? t('common.hideSidebar') : t('common.showSidebar')} (⌘B)`
+                ? withShortcut(isOpen ? t('common.hideSidebar') : t('common.showSidebar'), 'toggle-sidebar')
                 : t('common.sidebarUnavailable')}
         >
             <Menu className="w-5 h-5" />
@@ -66,10 +67,10 @@ export const HeaderActions = ({ onOpenFile, onOpenFolder, onOpenRecentFile, onOp
     return (
         <div className="flex items-center gap-1">
             <FreeBadge />
-            <button onClick={onOpenFile} className={iconButton} title={`${t('common.openFile')} (⌘O)`}>
+            <button onClick={onOpenFile} className={iconButton} title={withShortcut(t('common.openFile'), 'open-file')}>
                 <File className="w-5 h-5" />
             </button>
-            <button onClick={onOpenFolder} className={iconButton} title={`${t('common.openFolder')} (⌘⇧O)`}>
+            <button onClick={onOpenFolder} className={iconButton} title={withShortcut(t('common.openFolder'), 'open-folder')}>
                 <FolderOpen className="w-5 h-5" />
             </button>
             {/* The wrapper anchors the panel; the panel treats a click on
@@ -85,7 +86,7 @@ export const HeaderActions = ({ onOpenFile, onOpenFolder, onOpenRecentFile, onOp
                 </button>
                 {isRecentOpen && <RecentFilesPopover onFileSelect={onOpenRecentFile} onClose={closeRecent} />}
             </div>
-            <button onClick={onOpenSettings} className={iconButton} title={`${t('settings.title')} (⌘,)`}>
+            <button onClick={onOpenSettings} className={iconButton} title={withShortcut(t('settings.title'), 'settings')}>
                 <Settings className="w-5 h-5" />
             </button>
         </div>

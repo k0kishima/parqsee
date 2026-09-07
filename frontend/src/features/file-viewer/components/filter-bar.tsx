@@ -306,7 +306,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
                                     type="button"
                                     onClick={() => handleRemoveRow(filter.id)}
                                     className={iconButtonClass}
-                                    title="Remove condition"
+                                    title={t('common.removeCondition')}
                                 >
                                     <Minus size={16} />
                                 </button>
