@@ -27,7 +27,7 @@
 #   --upload            Validate, then upload to App Store Connect.
 #   -h, --help
 #
-# Environment (all read here, none by the build):
+# Environment (checked here before the build, none seen by it):
 #   APPLE_SIGNING_IDENTITY     "Apple Distribution: <name> (<TEAM>)"
 #   APPLE_INSTALLER_IDENTITY   "3rd Party Mac Developer Installer: <name> (<TEAM>)"
 #   APPLE_PROVISIONING_PROFILE path to the Mac App Store provisioning profile
@@ -53,9 +53,10 @@
 #      scripts/qa/sign_for_storekit.sh uses with a development profile.
 #   3. productbuild wraps the .app into a component package that installs
 #      to /Applications, signed with the installer certificate.
-#   4. `xcrun altool` validates and uploads with the API key. Transporter
-#      (Mac App Store) does the same by dragging the .pkg onto it, if
-#      altool is ever retired.
+#   4. upload_pkg.sh validates and uploads the package with the API key
+#      through `xcrun altool`. It is its own script because this one
+#      re-signs and re-packages on every run: a package validated today is
+#      uploaded tomorrow, as the same bytes, by calling it directly.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -182,24 +183,10 @@ else
 fi
 
 # 4. Validate / upload.
-if [ "$VALIDATE" = 1 ]; then
-  KEY_DIR=
-  if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
-    # altool only finds the key under this name in one of its directories.
-    KEY_DIR=$(mktemp -d -t parqsee-api-key)
-    trap 'rm -rf "$KEY_DIR"' EXIT
-    cp "$APPLE_API_KEY_PATH" "$KEY_DIR/AuthKey_$APPLE_API_KEY.p8"
-    chmod 600 "$KEY_DIR/AuthKey_$APPLE_API_KEY.p8"
-    export API_PRIVATE_KEYS_DIR="$KEY_DIR"
-  fi
-  echo "==> validating $OUT with App Store Connect"
-  xcrun altool --validate-app "$OUT" -t macos \
-    --api-key "$APPLE_API_KEY" --api-issuer "$APPLE_API_ISSUER"
-  if [ "$UPLOAD" = 1 ]; then
-    echo "==> uploading $OUT"
-    xcrun altool --upload-app -f "$OUT" -t macos \
-      --api-key "$APPLE_API_KEY" --api-issuer "$APPLE_API_ISSUER"
-  fi
+if [ "$UPLOAD" = 1 ]; then
+  "$HERE/upload_pkg.sh" "$OUT"
+elif [ "$VALIDATE" = 1 ]; then
+  "$HERE/upload_pkg.sh" --validate-only "$OUT"
 fi
 
 echo
@@ -212,5 +199,5 @@ if [ "$UPLOAD" = 1 ]; then
 elif [ "$UNSIGNED" = 1 ]; then
   echo "install for a look with: sudo installer -pkg \"$OUT\" -target /"
 else
-  echo "upload with --upload, or drop the package on Transporter"
+  echo "upload with scripts/release/upload_pkg.sh \"$OUT\", or drop the package on Transporter"
 fi
