@@ -112,6 +112,15 @@ other build shows them with a price until the product exists in App Store
 Connect. `LANGS` / `THEMES` / `SIZE` / `SCALE` as for `pnpm shots` (the
 default here is @1x).
 
+### Clicking around the free tier (`pnpm free-tier`)
+
+`free-tier.mjs` opens the same thing in a headed WebKit window and leaves
+it there until Enter: the badge, the prompt with the price, Buy (unlocks),
+Restore (`OWNED=1` to make it unlock), Settings › Purchase. Open Folder is
+answered with the demo folder; paths given as arguments open at launch.
+`UI_LANG=ja THEME=dark` pick the language and theme, `NO_PRICE=1` the
+store without a product.
+
 ### Checking the Content Security Policy
 
 The release app serves the webview under the CSP in `backend/tauri.conf.json`
