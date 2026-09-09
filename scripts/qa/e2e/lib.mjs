@@ -7,7 +7,7 @@
 // for one, the App Store (`iap_*`, see `launch({ iap })`). See README.md.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { webkit, chromium } from 'playwright-core';
@@ -21,6 +21,8 @@ export const OUT = process.env.E2E_OUT ?? path.join(HERE, 'out');
 /** `cargo build --example bridge`; BRIDGE_BIN selects another build, e.g. release. */
 export const BRIDGE_BIN = process.env.BRIDGE_BIN ?? path.join(ROOT, 'backend', 'target', 'debug', 'examples', 'bridge');
 export const DEV_URL = process.env.DEV_URL ?? 'http://localhost:1420/';
+/** What `getVersion()` answers in the harness: the version the bundle would carry. */
+export const APP_VERSION = JSON.parse(readFileSync(path.join(ROOT, 'backend', 'tauri.conf.json'), 'utf8')).version;
 
 for (const dir of [OUT, path.join(OUT, 'shots')]) mkdirSync(dir, { recursive: true });
 
@@ -146,6 +148,7 @@ window.__TAURI_INTERNALS__ = {
         case 'plugin:notification|notify': window.__notifications.push(args.options); return null;
         case 'plugin:notification|is_permission_granted': return true;
         case 'plugin:notification|request_permission': return 'granted';
+        case 'plugin:app|version': return window.__appVersion;
         default: throw 'unmocked ' + cmd;
       }
     }
@@ -210,6 +213,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
     catch (e) { return { __err: e }; }
   });
   await page.addInitScript(INIT);
+  await page.addInitScript(v => { window.__appVersion = v; }, APP_VERSION);
   await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
   if (iap) await page.addInitScript((store) => { window.__iap = store; }, iap);
   await page.goto(DEV_URL);

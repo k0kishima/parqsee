@@ -73,7 +73,8 @@
         },
         "restoreTabs": "Restore tabs from the last session",
         "shortcuts": "Keyboard shortcuts",
-        "showShortcuts": "Show"
+        "showShortcuts": "Show",
+        "version": "Version"
     },
     "viewer": {
         "search": "Search",

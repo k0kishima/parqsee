@@ -23,7 +23,8 @@ commands (`read_parquet_data`, `execute_sql`, …) are forwarded to the bridge
 process; the plugin commands the UI uses are answered in-process (`event`
 listeners are kept so `window.__emit('file-drop', [path])` delivers drops,
 `dialog` returns whatever `window.__dialog.save/open` holds, `notification`
-and `alert()` are recorded). `window.__delays[cmd] = ms` holds one command's
+and `alert()` are recorded, `app|version` answers with `tauri.conf.json`'s
+version so Settings shows the one a build would carry). `window.__delays[cmd] = ms` holds one command's
 responses back, which is how the suite provokes out-of-order responses.
 
 The bridge has no App Store: `iap_status` answers `unlocked` (the same

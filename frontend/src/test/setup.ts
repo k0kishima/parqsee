@@ -39,6 +39,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => false,
 }));
 
+// Mock @tauri-apps/api/app. Tests that need the failure path reject it
+// themselves; the value is what a build of this repository reports.
+vi.mock('@tauri-apps/api/app', () => ({
+  getVersion: vi.fn().mockResolvedValue('1.0.0'),
+}));
+
 // Mock @tauri-apps/plugin-opener
 vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: vi.fn(),

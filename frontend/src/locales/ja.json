@@ -73,7 +73,8 @@
     },
     "restoreTabs": "前回のタブを復元する",
     "shortcuts": "キーボードショートカット",
-    "showShortcuts": "表示"
+    "showShortcuts": "表示",
+    "version": "バージョン"
   },
   "viewer": {
     "search": "検索",

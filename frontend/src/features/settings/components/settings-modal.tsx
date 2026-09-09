@@ -1,6 +1,7 @@
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Sun, Moon, Monitor, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { getVersion } from '@tauri-apps/api/app';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 import { PurchaseSettings } from '../../license';
@@ -43,6 +44,20 @@ const THEMES: { value: Theme; Icon: typeof Sun }[] = [
 export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModalProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
+  // `tauri.conf.json`'s version, which is the bundle's
+  // CFBundleShortVersionString — not the build number appstore.sh sets.
+  // A plain browser (vitest, the e2e harness without the shim) has no
+  // command to answer it, so the row is left out rather than shown empty.
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let live = true;
+    getVersion()
+      .then(v => { if (live) setVersion(v); })
+      .catch(() => { if (live) setVersion(null); });
+    return () => { live = false; };
+  }, [isOpen]);
 
   useGlobalKeydown(useCallback((e: KeyboardEvent) => {
     if (isOpen && e.key === 'Escape') {
@@ -140,6 +155,12 @@ export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModa
 
           {/* Nothing in a build without a store. */}
           <PurchaseSettings />
+
+          {version && (
+            <SettingRow label={t('settings.version')}>
+              <span className="text-sm text-tertiary tabular-nums">{version}</span>
+            </SettingRow>
+          )}
         </div>
       </div>
     </div>
