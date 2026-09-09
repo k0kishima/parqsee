@@ -128,7 +128,7 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   every control applies at once); `api/` for `set_menu_language`. The grid's own display settings are not
   here: rows per page is in the pagination bar, row density and column
   types in `file-viewer`'s view options
-- `license` — the upgrade prompt (`UpgradePrompt`), the Free badge, Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds `FREE_TAB_LIMIT`, the tab-limit derivation and the reducer
+- `license` — the upgrade prompt (`UpgradePrompt`), the Free ⓘ pill (`FreeBadge`: one button in the top row that opens the prompt, the limit in its tooltip), Settings › Purchase; `api/` for the `iap_*` commands; `lib/` holds `FREE_TAB_LIMIT`, the tab-limit derivation and the reducer
 
 ## Key Commands
 
@@ -413,7 +413,13 @@ store (a purchase approved elsewhere, a refund).
     there, and Settings › Purchase renders nothing. The state is unit-tested with
     a fake provider; the real store is checked by hand
     (`docs/MANUAL_QA.md`, MQ-12, which also says how to sign the store
-    build so StoreKit uses the sandbox).
+    build so StoreKit uses the sandbox). To *see* the free tier's screens
+    while working on them — no build outside the signed store one shows
+    them, and that one shows no price until the product exists in App
+    Store Connect — the e2e harness scripts the store in the page
+    (`launch({ iap })` in `scripts/qa/e2e/lib.mjs`): S14 in the suite,
+    and `pnpm shots:license` photographs every state in en/ja ×
+    light/dark.
 13. The webview runs under the Content Security Policy in `tauri.conf.json`
     (`app.security.csp`): `default-src 'self'` plus
     `connect-src ipc: http://ipc.localhost`. Tauri does not add the IPC
@@ -483,7 +489,8 @@ store (a purchase approved elsewhere, a refund).
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
-screen's sample link, Recent Files' Clear all and its fold past five, the
+screen's sample link, the Free ⓘ pill, the restore notice, the upgrade
+prompt's states, Recent Files' Clear all and its fold past five, the
 Recent Files panel (search, same-name folders) and its button in the top
 row, the viewer's view
 options, the tab bar's right-click menu, the workspace
@@ -530,7 +537,10 @@ the top row's panel included), the
 session (S11: tabs back across a relaunch, a deleted file's tab skipped and
 named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
 warm start through the `file-drop` event), the bundled sample (S13: opened
-from the Welcome screen, not in Recent Files, back after a relaunch) or the SQL view — see its README for setup (`cargo build --example bridge`,
+from the Welcome screen, not in Recent Files, back after a relaunch), the
+free tier (S14, over the harness's scripted store: the prompt at the
+fourth tab, cancelled and completed purchases, a refund, the capped
+restore and Restore Purchases) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

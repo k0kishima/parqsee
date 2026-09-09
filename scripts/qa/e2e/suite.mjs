@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, FIX, OUT, ROOT } from './lib.mjs';
+import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
 
 const base = (p) => p.split('/').pop();
 
@@ -957,6 +957,88 @@ await scenario('S13-sample-restore', async ({ page }) => {
   check('S13r.tabs', (await tabNames(page)).join(',') === 'sample.parquet,one_row.parquet' && (await activeTabName(page)) === 'sample.parquet', `tabs=${await tabNames(page)} active=${await activeTabName(page)}`);
   check('S13r.grid', (await summary(page))?.startsWith('1,500 rows'), await summary(page));
 }, { dataDir: S13_DATA });
+
+// ---------------------------------------------------------------- S14 the free tier
+// The App Store is the scripted one in lib.mjs (`launch({ iap })`): the
+// bridge owns the full version and would never show any of this. The limit
+// itself is the webview's (FREE_TAB_LIMIT, CLAUDE.md note 12): the fourth
+// file brings the prompt and no tab, an open tab is still reachable, a
+// purchase lifts it at once, a refund puts it back.
+const S14_DATA = path.join(OUT, 'data', 's14');
+fs.rmSync(S14_DATA, { recursive: true, force: true });
+const S14_FILES = ['one_row', 'dict', 'numeric', 'nan', 'big_ints'].map(n => `${FIX}/${n}.parquet`);
+const promptOpen = (page) => page.locator('[data-testid="upgrade-prompt"]').isVisible().catch(() => false);
+const badge = (page) => page.locator('[data-testid="free-badge"]');
+
+await scenario('S14-free-tier', async ({ page, bridge }) => {
+  check('S14.badge', await badge(page).isVisible() && (await badge(page).getAttribute('title'))?.includes('3'), `badge title="${await badge(page).getAttribute('title')}"`);
+  for (const f of S14_FILES.slice(0, 3)) await openFile(page, f);
+  check('S14.three', (await tabNames(page)).length === 3 && !(await promptOpen(page)), `tabs=${await tabNames(page)}`);
+
+  // The fourth: the prompt, no tab, no cache entry; Escape leaves the three.
+  await openFile(page, S14_FILES[3], { expectTab: false });
+  await page.locator('[data-testid="upgrade-prompt"]').waitFor({ timeout: 5000 });
+  check('S14.fourth', (await tabNames(page)).length === 3 && !bridge.log.some(l => l.cmd === 'open_parquet_file' && l.args.path === S14_FILES[3]), `tabs=${await tabNames(page)} opened=${bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => base(l.args.path))}`);
+  check('S14.price', (await text(page, '[data-testid="license-price"]'))?.includes('¥1,500'), await text(page, '[data-testid="license-price"]'));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('S14.escape', !(await promptOpen(page)) && (await tabNames(page)).length === 3, `prompt=${await promptOpen(page)} tabs=${await tabNames(page)}`);
+
+  // An open file at the limit is activated, not refused; the badge asks.
+  await openFile(page, S14_FILES[0]);
+  check('S14.activate', (await activeTabName(page)) === 'one_row.parquet' && !(await promptOpen(page)), `active=${await activeTabName(page)} prompt=${await promptOpen(page)}`);
+  await badge(page).click();
+  await page.waitForTimeout(200);
+  check('S14.badgeOpens', await promptOpen(page), `prompt=${await promptOpen(page)}`);
+
+  // Cancelled at the payment sheet: still free, the prompt stays.
+  await setStore(page, { purchaseOutcome: 'cancelled' });
+  await page.locator('[data-testid="upgrade-prompt"] button.btn-primary').click();
+  await page.waitForTimeout(300);
+  check('S14.cancelled', (await promptOpen(page)) && (await badge(page).isVisible()) && (await page.evaluate(() => window.__purchases)).join() === 'parqsee.full', `prompt=${await promptOpen(page)} purchases=${await page.evaluate(() => window.__purchases)}`);
+
+  // Bought: the prompt closes, the badge goes, the fourth and fifth open.
+  await setStore(page, { purchaseOutcome: 'purchased' });
+  await page.locator('[data-testid="upgrade-prompt"] button.btn-primary').click();
+  await page.locator('[data-testid="upgrade-prompt"]').waitFor({ state: 'detached', timeout: 5000 });
+  check('S14.bought', !(await badge(page).count()), `badge count=${await badge(page).count()}`);
+  for (const f of S14_FILES.slice(3)) await openFile(page, f);
+  check('S14.unlimited', (await tabNames(page)).length === 5, `tabs=${await tabNames(page)}`);
+
+  // A refund arrives from the store: back on the free tier, the five tabs
+  // stay open (nothing is ever closed), a sixth is refused.
+  await pushIapStatus(page, { state: 'free', store_error: null, has_store: true });
+  await page.waitForTimeout(200);
+  check('S14.refund', (await badge(page).isVisible()) && (await tabNames(page)).length === 5, `badge=${await badge(page).isVisible()} tabs=${(await tabNames(page)).length}`);
+  await openFile(page, `${FIX}/temporal.parquet`, { expectTab: false });
+  check('S14.sixth', (await promptOpen(page)) && (await tabNames(page)).length === 5, `prompt=${await promptOpen(page)} tabs=${(await tabNames(page)).length}`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+  check('S14.session', sessionPaths(await bridge.call('list_session_tabs')).length === 5, `saved=${sessionPaths(await bridge.call('list_session_tabs'))}`);
+  await page.screenshot({ path: `${OUT}/shots/S14.png` });
+}, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
+
+// The relaunch on the free tier with five tabs saved: the first three come
+// back, the other two are named in the notice, whose Upgrade opens the
+// prompt. Restore Purchases, with the product owned, unlocks and clears it.
+await scenario('S14-free-restore', async ({ page, bridge }) => {
+  await page.locator('[data-testid="restore-notice-capped"]').waitFor({ timeout: 15000 });
+  await waitGrid(page);
+  const capped = await text(page, '[data-testid="restore-notice-capped"]');
+  check('S14r.tabs', (await tabNames(page)).join(',') === 'one_row.parquet,dict.parquet,numeric.parquet', `tabs=${await tabNames(page)}`);
+  check('S14r.notice', capped?.includes('2 tabs') && capped?.includes('nan.parquet, big_ints.parquet'), capped);
+  check('S14r.notOpened', !bridge.log.some(l => l.cmd === 'open_parquet_file' && base(l.args.path) === 'nan.parquet'), `opened=${bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => base(l.args.path))}`);
+  await page.locator('[data-testid="restore-notice-capped"] button').click();
+  await page.waitForTimeout(200);
+  check('S14r.upgradeLink', await promptOpen(page), `prompt=${await promptOpen(page)}`);
+  await setStore(page, { owned: true });
+  await page.locator('[data-testid="upgrade-prompt"] button.btn-secondary').click();
+  await page.locator('[data-testid="upgrade-prompt"]').waitFor({ state: 'detached', timeout: 5000 });
+  check('S14r.restored', !(await badge(page).count()), `badge count=${await badge(page).count()}`);
+  // The next save drops the two tabs that did not come back.
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${OUT}/shots/S14r.png` });
+}, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
 
 console.log('\n\n===== SUMMARY =====');
 for (const r of results) console.log(`${r.status.padEnd(7)} ${r.id}  ${r.note ?? ''}`);
