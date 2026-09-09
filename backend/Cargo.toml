@@ -1,6 +1,6 @@
 [package]
 name = "parqsee"
-version = "0.1.0"
+version = "1.0.0"
 description = "A fast and simple Parquet file viewer for macOS"
 authors = ["you"]
 edition = "2021"
