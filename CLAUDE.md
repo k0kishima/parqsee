@@ -152,6 +152,16 @@ pnpm tauri:store  # The Mac App Store variant: `app-store` feature, StoreKit bri
 
 Installers land in `backend/target/release/bundle/`.
 
+`pnpm tauri:store` has to run with the `APPLE_*` variables out of the
+environment. Tauri notarizes what it bundles as soon as it finds
+`APPLE_API_KEY` + `APPLE_API_ISSUER` + `APPLE_API_KEY_PATH` (or
+`APPLE_ID` + `APPLE_PASSWORD` + `APPLE_TEAM_ID`) there, and a store build
+must not be notarized — `Warn skipping app notarization, no ...
+environment variables found` in the build log is the line that says it
+did not. `scripts/release/appstore.sh` unsets them itself, so this only
+bites a manual `pnpm tauri:store` run in a shell where the upload
+credentials were exported.
+
 The submission itself is `scripts/release/appstore.sh`: the store variant
 as a universal binary (`--target universal-apple-darwin`; needs
 `rustup target add x86_64-apple-darwin` once), signed with the Mac App
