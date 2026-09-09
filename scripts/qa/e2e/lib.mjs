@@ -185,8 +185,12 @@ let launches = 0;
  * `iap` puts a scripted App Store in front of the `iap_*` commands (start
  * from `FREE_STORE`); without it the bridge answers them and the app owns
  * the full version.
+ * `locale` is the browser's, which is what the app starts in when no
+ * language is saved (`systemLanguage` reads `navigator.language`): pinned
+ * to English so the suite's selectors hold on a Japanese Mac. A saved
+ * language in `localStorage` wins over it, as in the app.
  */
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1, iap = null } = {}) {
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1, iap = null, locale = 'en-US' } = {}) {
   await assertDevServer();
   if (!dataDir) {
     dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
@@ -196,7 +200,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   const bridge = new Bridge(dataDir, pendingFiles);
   const engine = browser === 'chromium' ? chromium : webkit;
   const b = await engine.launch({ headless });
-  const ctx = await b.newContext({ viewport, deviceScaleFactor });
+  const ctx = await b.newContext({ viewport, deviceScaleFactor, locale });
   const page = await ctx.newPage();
   page.__errors = [];
   page.on('pageerror', (e) => page.__errors.push(String(e)));
