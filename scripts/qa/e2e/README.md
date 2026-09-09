@@ -28,9 +28,17 @@ responses back, which is how the suite provokes out-of-order responses.
 
 The bridge has no App Store: `iap_status` answers `unlocked` (the same
 `AlwaysUnlocked` provider every build without the `app-store` feature uses),
-so the free tier's tab limit and the upgrade prompt never appear here. The
-free tier and the purchase are checked by hand on the store build
-(`docs/MANUAL_QA.md`, MQ-12).
+so by default the free tier's tab limit and the upgrade prompt never appear
+here. `launch({ iap: { ...FREE_STORE } })` puts a scripted store in front of
+the `iap_*` commands instead — answered in the page, nothing reaches the
+bridge — with the product and its price, what is owned, and whether a
+purchase goes through, is cancelled, stays pending or is rejected
+(`setStore(page, patch)` changes it mid-run; `pushIapStatus(page, status)`
+is the `iap-status` event a refund or a purchase approved elsewhere
+raises). S14 drives the limit, the prompt, the purchase, a refund and the
+capped restore with it; the real store is still checked by hand on the
+signed store build (`docs/MANUAL_QA.md`, MQ-12), which is the only place
+the payment sheet exists.
 
 `launch({ pendingFiles })` acts out a cold start from Finder: the harness has
 no Tauri event loop to raise `RunEvent::Opened`, so the paths are seeded into
@@ -93,6 +101,25 @@ LANGS=en THEMES=light pnpm shots    # one combination
 
 The four sizes are what App Store Connect accepts; 2560x1600 and 2880x1800 are
 the other two at `deviceScaleFactor` 2. Output: `out/shots/demo/`.
+
+### The free tier's screens (`pnpm shots:license`)
+
+Not a test either: `license-shots.mjs` photographs every state of the Free
+badge, the upgrade prompt, Settings › Purchase and the restore notice over
+the scripted store, in en/ja × light/dark, into `out/shots/license/`. This
+is how those screens are looked at while they are being worked on — no
+other build shows them with a price until the product exists in App Store
+Connect. `LANGS` / `THEMES` / `SIZE` / `SCALE` as for `pnpm shots` (the
+default here is @1x).
+
+### Clicking around the free tier (`pnpm free-tier`)
+
+`free-tier.mjs` opens the same thing in a headed WebKit window and leaves
+it there until Enter: the badge, the prompt with the price, Buy (unlocks),
+Restore (`OWNED=1` to make it unlock), Settings › Purchase. Open Folder is
+answered with the demo folder; paths given as arguments open at launch.
+`UI_LANG=ja THEME=dark` pick the language and theme, `NO_PRICE=1` the
+store without a product.
 
 ### Checking the Content Security Policy
 

@@ -3,10 +3,11 @@
 //
 // The page gets a fake `__TAURI_INTERNALS__` whose `invoke` forwards every
 // app command to the bridge process and answers the plugin commands the UI
-// uses (event, dialog, notification) in-process. See README.md.
+// uses (event, dialog, notification) in-process — and, when a launch asks
+// for one, the App Store (`iap_*`, see `launch({ iap })`). See README.md.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { webkit, chromium } from 'playwright-core';
@@ -22,6 +23,29 @@ export const BRIDGE_BIN = process.env.BRIDGE_BIN ?? path.join(ROOT, 'backend', '
 export const DEV_URL = process.env.DEV_URL ?? 'http://localhost:1420/';
 
 for (const dir of [OUT, path.join(OUT, 'shots')]) mkdirSync(dir, { recursive: true });
+
+/** The bundled sample: 1,500 orders of a fictional web shop, the only realistic Parquet in the repository. */
+export const SAMPLE = path.join(ROOT, 'backend', 'resources', 'sample.parquet');
+/** The demo workspace `writeDemoData` lays out, for screenshots. */
+export const DEMO = path.join(OUT, 'demo', 'shop-data');
+/** The files in it, in the order the screenshots open them. */
+export const DEMO_FILES = [
+  path.join(DEMO, 'orders.parquet'),
+  ...['2024-09', '2024-10', '2024-11', '2024-12'].map(m => path.join(DEMO, 'orders', `${m}.parquet`)),
+];
+
+/**
+ * A folder of files for the screenshots: the sample under names that say
+ * what its rows are — orders, by month, over the year the sample covers
+ * (2024), so nothing in the tree contradicts the dates in the grid. The
+ * fixtures from `gen_fixtures.py` are test shapes (`corrupt.parquet`,
+ * `all_null.parquet`) that would look broken in a store screenshot.
+ */
+export function writeDemoData() {
+  rmSync(DEMO, { recursive: true, force: true });
+  mkdirSync(path.join(DEMO, 'orders'), { recursive: true });
+  for (const file of DEMO_FILES) copyFileSync(SAMPLE, file);
+}
 
 export class Bridge {
   /**
@@ -68,6 +92,31 @@ window.__alerts = [];
 // destructive action (lib/dialog.ts); the real plugin shows a sheet.
 window.__dialog = { save: null, open: null, confirm: true };
 window.__delays = {};
+// The App Store, scripted. \`null\` hands the \`iap_*\` commands to the bridge,
+// whose store is \`AlwaysUnlocked\`: no limit, no prompt, no badge. A launch
+// with \`iap\` set answers them here instead — see \`FREE_STORE\` and
+// \`setStore\` — which is the only way the free tier is reachable outside a
+// signed store build. \`__purchases\` records every product id bought.
+window.__iap = null;
+window.__purchases = [];
+window.__iapInvoke = async (cmd, args) => {
+  const s = window.__iap;
+  const delay = window.__delays[cmd] || 0;
+  if (delay) await new Promise(r => setTimeout(r, delay));
+  const unlock = () => { s.status = Object.assign({}, s.status, { state: 'unlocked' }); };
+  switch (cmd) {
+    case 'iap_status': return s.status;
+    case 'iap_products': if (s.productsError) throw s.productsError; return s.products;
+    case 'iap_purchase': {
+      window.__purchases.push(args.productId);
+      if (s.purchaseError) throw s.purchaseError;
+      if (s.purchaseOutcome === 'purchased') unlock();
+      return { outcome: s.purchaseOutcome, status: s.status };
+    }
+    case 'iap_restore': if (s.restoreError) throw s.restoreError; if (s.owned) unlock(); return s.status;
+    default: throw 'unmocked ' + cmd;
+  }
+};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(event, id) { const l = window.__listeners[event] || []; window.__listeners[event] = l.filter(x => x.id !== id); } };
 let cbId = 0;
 // What Tauri's own init script sets, and what the API's isTauri() reads
@@ -100,6 +149,7 @@ window.__TAURI_INTERNALS__ = {
         default: throw 'unmocked ' + cmd;
       }
     }
+    if (window.__iap && cmd.startsWith('iap_')) return window.__iapInvoke(cmd, args ?? {});
     const r = await window.__bridgeInvoke(cmd, args ?? {}, window.__delays[cmd] || 0);
     if (r && r.__err !== undefined) throw r.__err;
     return r.__ok;
@@ -132,8 +182,15 @@ let launches = 0;
  * `viewport` / `deviceScaleFactor` are the window size and the pixel ratio —
  * the defaults are what the suite asserts against; `shots.mjs` raises them to
  * capture the App Store's @2x sizes.
+ * `iap` puts a scripted App Store in front of the `iap_*` commands (start
+ * from `FREE_STORE`); without it the bridge answers them and the app owns
+ * the full version.
+ * `locale` is the browser's, which is what the app starts in when no
+ * language is saved (`systemLanguage` reads `navigator.language`): pinned
+ * to English so the suite's selectors hold on a Japanese Mac. A saved
+ * language in `localStorage` wins over it, as in the app.
  */
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1 } = {}) {
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1, iap = null, locale = 'en-US' } = {}) {
   await assertDevServer();
   if (!dataDir) {
     dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
@@ -143,7 +200,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   const bridge = new Bridge(dataDir, pendingFiles);
   const engine = browser === 'chromium' ? chromium : webkit;
   const b = await engine.launch({ headless });
-  const ctx = await b.newContext({ viewport, deviceScaleFactor });
+  const ctx = await b.newContext({ viewport, deviceScaleFactor, locale });
   const page = await ctx.newPage();
   page.__errors = [];
   page.on('pageerror', (e) => page.__errors.push(String(e)));
@@ -154,6 +211,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   });
   await page.addInitScript(INIT);
   await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
+  if (iap) await page.addInitScript((store) => { window.__iap = store; }, iap);
   await page.goto(DEV_URL);
   await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
   const close = async () => { await b.close(); bridge.close(); };
@@ -172,6 +230,39 @@ export async function dropFile(page, path) {
  */
 export async function finderOpen(page, paths) {
   await page.evaluate((p) => window.__emit('file-drop', p), paths);
+}
+
+/**
+ * The App Store as a free-tier launch sees it: the product with a price,
+ * nothing owned, and a purchase that goes through. Spread and override —
+ * `products: []` is the store that has no product (what an unsigned build
+ * gets today), `productsError` / `purchaseError` / `restoreError` are the
+ * rejections, `purchaseOutcome` is `purchased` / `cancelled` / `pending`,
+ * `owned: true` makes Restore Purchases unlock. `status` is what
+ * `iap_status` answers; `has_store: false` is a build without a store.
+ */
+export const FREE_STORE = Object.freeze({
+  status: { state: 'free', store_error: null, has_store: true },
+  products: [{ id: 'parqsee.full', display_name: 'Parqsee Full Version', description: 'Open as many tabs as you like.', display_price: '¥1,500' }],
+  productsError: null,
+  purchaseOutcome: 'purchased',
+  purchaseError: null,
+  restoreError: null,
+  owned: false,
+});
+
+/** Change the scripted store mid-run (the next `iap_*` call sees it). */
+export async function setStore(page, patch) {
+  await page.evaluate((p) => { Object.assign(window.__iap, p); }, patch);
+}
+
+/**
+ * Push a status the way the backend does after a transaction update from
+ * the store — a purchase approved elsewhere, a refund — as the `iap-status`
+ * event; the scripted store answers `iap_status` with it from then on.
+ */
+export async function pushIapStatus(page, status) {
+  await page.evaluate((s) => { if (window.__iap) window.__iap.status = s; window.__emit('iap-status', s); }, status);
 }
 
 /**

@@ -196,8 +196,9 @@
     "storeError": "App Store で購入状況を確認できませんでした: {{reason}}",
     "badge": {
       "free": "無料版",
-      "upgrade": "アップグレード"
+      "tooltip": "無料版 · 同時に開けるタブは {{count}} 枚まで — クリックでフル版の案内"
     },
+    "upgradeLink": "アップグレード",
     "settings": {
       "title": "購入",
       "unlocked": "フル版 — 購入済み",

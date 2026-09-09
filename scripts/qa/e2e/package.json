@@ -8,7 +8,9 @@
     "suite": "node suite.mjs",
     "large-file": "node large-file.mjs",
     "csp-server": "node csp-server.mjs",
-    "shots": "node shots.mjs"
+    "shots": "node shots.mjs",
+    "shots:license": "node license-shots.mjs",
+    "free-tier": "node free-tier.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.50.0"

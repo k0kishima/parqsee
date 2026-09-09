@@ -40,7 +40,7 @@ export function PurchaseSettings() {
             <div className="flex items-center justify-between gap-6">
                 <div className="min-w-0">
                     <p className="text-sm text-primary" data-testid="purchase-status">{line}</p>
-                    <button onClick={openHistory} className="inline-flex items-center gap-1 text-xs text-tertiary hover:text-blue-500 transition-colors">
+                    <button onClick={openHistory} className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-tertiary hover:text-blue-500 transition-colors">
                         {t('license.settings.history')}
                         <ExternalLink size={12} />
                     </button>

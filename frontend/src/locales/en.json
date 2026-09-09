@@ -196,8 +196,9 @@
         "storeError": "Parqsee could not check its purchase with the App Store: {{reason}}",
         "badge": {
             "free": "Free",
-            "upgrade": "Upgrade"
+            "tooltip": "Free version · up to {{count}} tabs at a time — click for the full version"
         },
+        "upgradeLink": "Upgrade",
         "settings": {
             "title": "Purchase",
             "unlocked": "Full version — unlocked",

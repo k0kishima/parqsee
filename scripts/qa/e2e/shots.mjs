@@ -4,13 +4,9 @@
 // so what it captures is the app and not a mockup.
 //
 // The data is the bundled sample (`backend/resources/sample.parquet`, 1,500
-// orders of a fictional web shop) — the file reviewers are pointed at, and the
-// only realistic Parquet in the repository: `scripts/qa/gen_fixtures.py`
-// writes test shapes (`corrupt.parquet`, `all_null.parquet`) that would look
-// broken in a store screenshot. The explorer needs a folder of files, so the
-// sample is copied into `out/demo/shop-data/` under names that describe what
-// the rows actually are — orders, by month, over the year the sample covers
-// (2024), so nothing in the tree contradicts the dates in the grid.
+// orders of a fictional web shop) — the file reviewers are pointed at — laid
+// out as a folder of orders files by `writeDemoData` in lib.mjs, because the
+// explorer needs a folder. The free tier's screens are `license-shots.mjs`.
 //
 // The App Store wants 1280×800, 1440×900, 2560×1600 and 2880×1800: the last
 // two are the first two at @2x, which is what SCALE=2 (the default) captures.
@@ -21,15 +17,13 @@
 //   LANGS=en THEMES=light pnpm shots    # one combination
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, waitGrid, OUT, ROOT } from './lib.mjs';
+import { launch, waitGrid, writeDemoData, DEMO, OUT } from './lib.mjs';
 
 const [W, H] = (process.env.SIZE ?? '1280x800').split('x').map(Number);
 const SCALE = Number(process.env.SCALE ?? 2);
 const LANGS = (process.env.LANGS ?? 'en,ja').split(',');
 const THEMES = (process.env.THEMES ?? 'light,dark').split(',');
 
-const SAMPLE = path.join(ROOT, 'backend', 'resources', 'sample.parquet');
-const DEMO = path.join(OUT, 'demo', 'shop-data');
 const SHOTS = path.join(OUT, 'shots', 'demo');
 
 // The strings the harness clicks. The UI is localized, so a selector built
@@ -43,16 +37,6 @@ const SQL = `SELECT country, category, COUNT(*) AS orders, ROUND(SUM(total), 2) 
 FROM t
 GROUP BY country, category
 ORDER BY revenue DESC`;
-
-/** The demo workspace: the sample under names that say what its rows are. */
-function writeDemoData() {
-  fs.rmSync(DEMO, { recursive: true, force: true });
-  fs.mkdirSync(path.join(DEMO, 'orders'), { recursive: true });
-  fs.copyFileSync(SAMPLE, path.join(DEMO, 'orders.parquet'));
-  for (const m of ['2024-10', '2024-11', '2024-12']) {
-    fs.copyFileSync(SAMPLE, path.join(DEMO, 'orders', `${m}.parquet`));
-  }
-}
 
 /** An explorer row by its file name: only roots carry a `title`. */
 const entry = (page, name) =>
