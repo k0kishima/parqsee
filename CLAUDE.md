@@ -418,8 +418,9 @@ store (a purchase approved elsewhere, a refund).
     them, and that one shows no price until the product exists in App
     Store Connect — the e2e harness scripts the store in the page
     (`launch({ iap })` in `scripts/qa/e2e/lib.mjs`): S14 in the suite,
-    and `pnpm shots:license` photographs every state in en/ja ×
-    light/dark.
+    `pnpm shots:license` photographs every state in en/ja × light/dark,
+    and `pnpm free-tier` opens it in a window to click around (all three
+    under `scripts/qa/e2e/`, with `pnpm dev` running).
 13. The webview runs under the Content Security Policy in `tauri.conf.json`
     (`app.security.csp`): `default-src 'self'` plus
     `connect-src ipc: http://ipc.localhost`. Tauri does not add the IPC
