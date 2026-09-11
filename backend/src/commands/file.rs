@@ -28,20 +28,23 @@ pub async fn open_parquet_file(
 
 #[tauri::command]
 pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
-    let file_path = Path::new(&path);
-    let file_metadata = metadata(&path).map_err(|e| e.to_string())?;
+    guarded("Reading the file's details", async {
+        let file_path = Path::new(&path);
+        let file_metadata = metadata(&path).map_err(|e| e.to_string())?;
 
-    let file_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unknown")
-        .to_string();
+        let file_name = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
 
-    Ok(FileInfo {
-        path,
-        name: file_name,
-        size: file_metadata.len(),
+        Ok(FileInfo {
+            path,
+            name: file_name,
+            size: file_metadata.len(),
+        })
     })
+    .await
 }
 
 /// Whether the file can be reached. Goes through `FileAccess` because under
@@ -51,7 +54,7 @@ pub async fn check_file_exists(
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<bool, String> {
-    Ok(access.file_exists(&path))
+    guarded("Checking the file", async { Ok(access.file_exists(&path)) }).await
 }
 
 /// Record a file that was just opened so Recent Files can reopen it after a
@@ -63,16 +66,19 @@ pub async fn remember_file(
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<RecentFile, String> {
-    let recent = access.remember_file(&path)?;
-    crate::menu::refresh_recent_menu(&app);
-    Ok(recent)
+    guarded("Recording the file", async {
+        let recent = access.remember_file(&path)?;
+        crate::menu::refresh_recent_menu(&app);
+        Ok(recent)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn list_recent_files(
     access: tauri::State<'_, Arc<FileAccess>>,
 ) -> Result<Vec<RecentFile>, String> {
-    Ok(access.recent_files())
+    guarded("Listing Recent Files", async { Ok(access.recent_files()) }).await
 }
 
 #[tauri::command]
@@ -81,9 +87,12 @@ pub async fn remove_recent_file(
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<(), String> {
-    access.forget_file(&path);
-    crate::menu::refresh_recent_menu(&app);
-    Ok(())
+    guarded("Removing the recent file", async {
+        access.forget_file(&path);
+        crate::menu::refresh_recent_menu(&app);
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -91,9 +100,12 @@ pub async fn clear_recent_files(
     app: tauri::AppHandle,
     access: tauri::State<'_, Arc<FileAccess>>,
 ) -> Result<(), String> {
-    access.clear_recent();
-    crate::menu::refresh_recent_menu(&app);
-    Ok(())
+    guarded("Clearing Recent Files", async {
+        access.clear_recent();
+        crate::menu::refresh_recent_menu(&app);
+        Ok(())
+    })
+    .await
 }
 
 /// The files Finder, the Dock or `open -a` handed the app before the webview
@@ -147,7 +159,11 @@ fn explorer_order(a: &FileEntry, b: &FileEntry) -> Ordering {
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    let dir_path = Path::new(&path);
+    guarded("Listing the folder", async { list_dir(&path) }).await
+}
+
+fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
+    let dir_path = Path::new(path);
 
     if !dir_path.exists() {
         return Err("Directory does not exist".to_string());

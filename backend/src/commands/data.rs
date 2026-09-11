@@ -38,7 +38,7 @@ pub async fn evict_cache(
     cache: tauri::State<'_, ParquetCache>,
     path: String,
 ) -> Result<(), String> {
-    cache.evict(&path).await
+    guarded("Closing the file", cache.evict(&path)).await
 }
 
 /// Writes the export and, once it has succeeded, records its folder as
@@ -82,5 +82,5 @@ pub async fn export_default_dir(
     access: tauri::State<'_, Arc<FileAccess>>,
     source_path: String,
 ) -> Result<Option<String>, String> {
-    Ok(access.export_default_dir(&source_path))
+    guarded("Choosing the export folder", async { Ok(access.export_default_dir(&source_path)) }).await
 }

@@ -3,6 +3,7 @@
 //! because its bookmark was resolved at launch; `FileAccess` holds the grant
 //! until the root is removed.
 
+use crate::commands::guarded;
 use crate::models::{SessionTabInput, SessionTabs, WorkspaceRoot};
 use crate::services::access::FileAccess;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 pub async fn list_workspace_roots(
     access: tauri::State<'_, Arc<FileAccess>>,
 ) -> Result<Vec<WorkspaceRoot>, String> {
-    Ok(access.roots())
+    guarded("Listing the workspace folders", async { Ok(access.roots()) }).await
 }
 
 #[tauri::command]
@@ -19,7 +20,7 @@ pub async fn add_workspace_root(
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<WorkspaceRoot, String> {
-    access.add_root(&path)
+    guarded("Opening the folder", async { access.add_root(&path) }).await
 }
 
 #[tauri::command]
@@ -27,8 +28,11 @@ pub async fn remove_workspace_root(
     access: tauri::State<'_, Arc<FileAccess>>,
     path: String,
 ) -> Result<(), String> {
-    access.remove_root(&path);
-    Ok(())
+    guarded("Closing the folder", async {
+        access.remove_root(&path);
+        Ok(())
+    })
+    .await
 }
 
 /// The tabs of the last session, each marked available or not. The webview
@@ -38,7 +42,7 @@ pub async fn remove_workspace_root(
 pub async fn list_session_tabs(
     access: tauri::State<'_, Arc<FileAccess>>,
 ) -> Result<SessionTabs, String> {
-    Ok(access.session_tabs())
+    guarded("Reading the last session", async { Ok(access.session_tabs()) }).await
 }
 
 /// Replace the saved session with the tabs open now, in order, and the
@@ -50,8 +54,11 @@ pub async fn save_session(
     tabs: Vec<SessionTabInput>,
     active: Option<String>,
 ) -> Result<(), String> {
-    access.save_session(
-        tabs.into_iter().map(|t| (t.path, t.state)).collect(),
-        active,
-    )
+    guarded("Saving the session", async {
+        access.save_session(
+            tabs.into_iter().map(|t| (t.path, t.state)).collect(),
+            active,
+        )
+    })
+    .await
 }
