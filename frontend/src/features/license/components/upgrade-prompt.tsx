@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useLicense } from '../../../contexts/LicenseContext';
 import { Modal, ModalCloseButton } from '../../../components/modal';
 import { FREE_TAB_LIMIT } from '../lib/license';
+import { PurchaseButtons } from './purchase-buttons';
 
 /**
  * The prompt shown when the free tier's limit is hit — the tab that would
@@ -17,7 +18,7 @@ export function UpgradePrompt() {
     const { t } = useTranslation();
     const {
         status, products, productsError, product, loadProducts,
-        busy, error, pending, buy, restore, dismissUpgrade,
+        busy, error, pending, dismissUpgrade,
     } = useLicense();
 
     useEffect(() => {
@@ -73,12 +74,7 @@ export function UpgradePrompt() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-primary">
                 <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={buy} disabled={busy !== null} className="btn-primary disabled:opacity-50">
-                        {product ? t('license.buyFor', { price: product.display_price }) : t('license.buy')}
-                    </button>
-                    <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
-                        {t('license.restore')}
-                    </button>
+                    <PurchaseButtons />
                 </div>
                 <button onClick={dismissUpgrade} className="text-sm text-tertiary hover:text-primary transition-colors">
                     {t('license.upgrade.notNow')}
