@@ -14,11 +14,14 @@ interface TabContentProps {
   onStateChange?: (state: TabState) => void;
 }
 
+/** What a tab shows: the browse grid or the SQL view. */
+export type ViewMode = 'browse' | 'query';
+
 export interface TabState {
   scrollPosition?: number;
   currentPage?: number;
   searchTerm?: string;
-  viewMode?: 'browse' | 'query';
+  viewMode?: ViewMode;
   activeFilter?: string;
   selectedRow?: number | null;
   isSearchOpen?: boolean;
@@ -55,7 +58,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   }, []);
 
   // Local state if onStateChange is not provided (though it should be)
-  const [localViewMode, setLocalViewMode] = useState<'browse' | 'query'>('browse');
+  const [localViewMode, setLocalViewMode] = useState<ViewMode>('browse');
   // The toolbar element DataViewer portals its actions into (see its
   // `toolbarSlot`); state, not a ref, so the viewer renders once it exists.
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
@@ -72,7 +75,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   const queryIsActiveRef = useRef(false);
   queryIsActiveRef.current = isActive && viewMode === 'query';
 
-  const handleViewModeChange = (mode: 'browse' | 'query') => {
+  const handleViewModeChange = (mode: ViewMode) => {
     setLocalViewMode(mode);
     onStateChange?.({ viewMode: mode });
   };
@@ -99,7 +102,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   const containerBg = 'bg-white dark:bg-gray-900';
   const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-800';
 
-  const getButtonStyle = (mode: 'browse' | 'query') => {
+  const getButtonStyle = (mode: ViewMode) => {
     const isSelected = viewMode === mode;
     // dark:shadow-none because only the light selected state carries a shadow
     return isSelected
