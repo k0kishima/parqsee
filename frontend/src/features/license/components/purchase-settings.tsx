@@ -5,6 +5,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { useLicense } from '../../../contexts/LicenseContext';
 import { isTauri } from '../../../lib/tauri';
 import { FREE_TAB_LIMIT } from '../lib/license';
+import { PurchaseButtons } from './purchase-buttons';
 
 /** Apple's purchase history, where a purchase can be reviewed or reported. */
 const PURCHASE_HISTORY_URL = 'https://reportaproblem.apple.com/';
@@ -18,7 +19,7 @@ const PURCHASE_HISTORY_URL = 'https://reportaproblem.apple.com/';
  */
 export function PurchaseSettings() {
     const { t } = useTranslation();
-    const { status, unlocked, products, product, loadProducts, busy, error, pending, buy, restore } = useLicense();
+    const { status, unlocked, products, loadProducts, busy, error, pending } = useLicense();
 
     useEffect(() => {
         if (status.has_store && products === null && !unlocked) loadProducts();
@@ -47,12 +48,7 @@ export function PurchaseSettings() {
                 </div>
                 {!unlocked && (
                     <div className="flex shrink-0 items-center gap-2">
-                        <button onClick={buy} disabled={busy !== null} className="btn-primary disabled:opacity-50">
-                            {product ? t('license.buyFor', { price: product.display_price }) : t('license.buy')}
-                        </button>
-                        <button onClick={restore} disabled={busy !== null} className="btn-secondary disabled:opacity-50">
-                            {t('license.restore')}
-                        </button>
+                        <PurchaseButtons />
                     </div>
                 )}
             </div>

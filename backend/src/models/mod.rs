@@ -45,13 +45,18 @@ pub struct FileInfo {
     pub size: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// One row of a directory listing. `size` is set for files, `children`
+/// only by the webview once it has listed the directory itself.
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
 pub struct FileEntry {
     pub path: String,
     pub name: String,
     pub is_directory: bool,
     pub is_parquet: bool,
+    #[ts(optional = nullable)]
     pub size: Option<u64>,
+    #[ts(optional = nullable)]
     pub children: Option<Vec<FileEntry>>,
 }
 

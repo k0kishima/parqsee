@@ -302,6 +302,42 @@ export async function text(page, selector) {
   return page.evaluate((s) => document.querySelector(s)?.textContent ?? null, selector);
 }
 
+/**
+ * What the screenshot scripts read from the environment: `SIZE=WxH` (the
+ * viewport), `SCALE` (the device scale factor; `scale` is the script's own
+ * default), `LANGS` and `THEMES` (comma-separated, every combination is
+ * photographed).
+ */
+export function shotConfig({ scale = 1 } = {}) {
+  const [W, H] = (process.env.SIZE ?? '1280x800').split('x').map(Number);
+  return {
+    W, H,
+    SCALE: Number(process.env.SCALE ?? scale),
+    LANGS: (process.env.LANGS ?? 'en,ja').split(','),
+    THEMES: (process.env.THEMES ?? 'light,dark').split(','),
+  };
+}
+
+/** The settings a screenshot run starts the app with, as `launch`'s `localStorage`. */
+export const shotSettings = (lang, theme) => ({ 'parqsee-settings': JSON.stringify({ theme, language: lang, rowsPerPage: 50 }) });
+
+/** A screenshot taker for one run: `<lang>-<theme>-<scene>-<pixel size>.png` into `dir`, each name logged. */
+export function shooter(dir, { W, H, SCALE }, lang, theme) {
+  return async (page, scene) => {
+    const name = `${lang}-${theme}-${scene}-${W * SCALE}x${H * SCALE}.png`;
+    await page.screenshot({ path: path.join(dir, name) });
+    console.log('  ' + name);
+  };
+}
+
+/** Photograph every language × theme into `dir` with `run(lang, theme)`, over the demo data. */
+export async function shootAll(dir, { LANGS, THEMES }, run) {
+  writeDemoData();
+  mkdirSync(dir, { recursive: true });
+  for (const lang of LANGS) for (const theme of THEMES) await run(lang, theme);
+  console.log(`\n${dir}`);
+}
+
 export const results = [];
 export function report(id, status, note) {
   results.push({ id, status, note });

@@ -39,6 +39,13 @@ vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => false,
 }));
 
+// Mock @tauri-apps/api/event: a listener that never fires and unsubscribes
+// cleanly. Tests that expect an event drive the handler through
+// `vi.mocked(listen)`.
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
+
 // Mock @tauri-apps/api/app. Tests that need the failure path reject it
 // themselves; the value is what a build of this repository reports.
 vi.mock('@tauri-apps/api/app', () => ({

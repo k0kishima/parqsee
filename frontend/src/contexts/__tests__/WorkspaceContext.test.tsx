@@ -17,7 +17,6 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { useAppCommand } from '../../lib/app-commands';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('../../features/workspace/api', () => ({
   listWorkspaceRoots: vi.fn(async () => []),
@@ -72,6 +71,21 @@ async function openTabs(...paths: string[]) {
     await act(() => result.current.openParquetFile(path));
   }
   return result;
+}
+
+/** A tab as the backend hands the last session back, available unless said otherwise. */
+const sessionTab = (path: string, state: Partial<SessionTab['state']> = {}, available = true): SessionTab => ({
+  path,
+  name: path.split('/').pop()!,
+  state: { view_mode: null, current_page: null, active_filter: null, ...state },
+  available,
+});
+
+/** Under fake timers: let the restore's awaits settle and the save delay elapse. */
+async function settle() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
 }
 
 describe('WorkspaceProvider tabs', () => {
@@ -350,13 +364,6 @@ describe('WorkspaceProvider recent files', () => {
 });
 
 describe('WorkspaceProvider session', () => {
-  const sessionTab = (path: string, state: Partial<SessionTab['state']> = {}, available = true): SessionTab => ({
-    path,
-    name: path.split('/').pop()!,
-    state: { view_mode: null, current_page: null, active_filter: null, ...state },
-    available,
-  });
-
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
@@ -369,13 +376,6 @@ describe('WorkspaceProvider session', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** Let the restore's awaits settle and the save delay elapse. */
-  async function settle() {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-  }
 
   it('reopens the tabs of the last session in order, with their state and the active one', async () => {
     vi.mocked(listSessionTabs).mockResolvedValue({
@@ -508,13 +508,6 @@ describe('WorkspaceProvider session', () => {
 // until the webview asks, and hands over later ones as `file-drop` events
 // (see `services::opened` and `deliver_opened` in lib.rs).
 describe('WorkspaceProvider on the free tier', () => {
-  const sessionTab = (path: string): SessionTab => ({
-    path,
-    name: path.split('/').pop()!,
-    state: { view_mode: null, current_page: null, active_filter: null },
-    available: true,
-  });
-
   beforeEach(() => {
     localStorage.clear();
     license.tabLimit = 3;
@@ -597,13 +590,6 @@ describe('WorkspaceProvider on the free tier', () => {
 });
 
 describe('WorkspaceProvider files handed over at launch', () => {
-  const sessionTab = (path: string): SessionTab => ({
-    path,
-    name: path.split('/').pop()!,
-    state: { view_mode: null, current_page: null, active_filter: null },
-    available: true,
-  });
-
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
@@ -616,12 +602,6 @@ describe('WorkspaceProvider files handed over at launch', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  async function settle() {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-  }
 
   it('opens what was handed over, and records it like any other open', async () => {
     vi.mocked(takePendingFiles).mockResolvedValue(['/data/from finder.parquet']);

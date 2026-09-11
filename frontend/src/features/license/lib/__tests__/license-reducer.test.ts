@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { reduceLicense, INITIAL_LICENSE, type LicenseModel, type LicenseEvent } from '../license-reducer';
-import type { IapStatus } from '../../api';
-
-const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, has_store: true, ...partial });
-const FREE = status({});
-const UNLOCKED = status({ state: 'unlocked' });
+import { FREE, UNLOCKED } from './fixtures';
 
 const run = (events: LicenseEvent[], from: LicenseModel = INITIAL_LICENSE) => events.reduce(reduceLicense, from);
 

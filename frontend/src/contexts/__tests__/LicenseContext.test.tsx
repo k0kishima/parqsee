@@ -9,9 +9,9 @@ import {
     restorePurchases,
     onIapStatus,
     type IapStatus,
-    type IapProduct,
 } from '../../features/license/api';
 import { FREE_TAB_LIMIT } from '../../features/license/lib/license';
+import { FREE, UNLOCKED, FULL_PRODUCT } from '../../features/license/lib/__tests__/fixtures';
 
 vi.mock('../../lib/tauri', async () => ({
     ...(await vi.importActual<typeof import('../../lib/tauri')>('../../lib/tauri')),
@@ -25,12 +25,7 @@ vi.mock('../../features/license/api', () => ({
     onIapStatus: vi.fn(() => Promise.resolve(() => {})),
 }));
 
-const status = (partial: Partial<IapStatus>): IapStatus => ({ state: 'free', store_error: null, has_store: true, ...partial });
-const FREE = status({});
-const UNLOCKED = status({ state: 'unlocked' });
-const PRODUCTS: IapProduct[] = [
-    { id: 'parqsee.full', display_name: 'Parqsee Full Version', description: '', display_price: '¥1,500' },
-];
+const PRODUCTS = [FULL_PRODUCT];
 
 const wrapper = ({ children }: { children: ReactNode }) => <LicenseProvider>{children}</LicenseProvider>;
 
