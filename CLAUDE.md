@@ -54,6 +54,7 @@ parqsee/
 ├── frontend/                     # React frontend
 │   ├── src/
 │   │   ├── app/                  # App shell: provider tree and router
+│   │   ├── components/           # Shared UI: Modal (the centred dialog shell every modal uses)
 │   │   ├── contexts/             # SettingsContext, RecentFilesContext, WorkspaceContext
 │   │   ├── features/             # Feature-based modules (see below)
 │   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown, useColumnVirtualizer)
