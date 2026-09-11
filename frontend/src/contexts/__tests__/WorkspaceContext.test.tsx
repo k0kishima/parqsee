@@ -17,7 +17,6 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { useAppCommand } from '../../lib/app-commands';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('../../features/workspace/api', () => ({
   listWorkspaceRoots: vi.fn(async () => []),

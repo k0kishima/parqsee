@@ -6,7 +6,6 @@ import { listen } from '@tauri-apps/api/event';
 import { listRecentFiles } from '../../features/welcome/api';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock('../../features/welcome/api', () => ({
   listRecentFiles: vi.fn(async () => []),
   removeRecentFile: vi.fn(async () => undefined),
