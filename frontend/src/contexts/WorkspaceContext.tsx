@@ -256,6 +256,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         window.addEventListener('pagehide', flushSession);
         return () => window.removeEventListener('pagehide', flushSession);
     }, [flushSession]);
+    // Nor can the provider going away: a save still pending on unmount is
+    // written now instead of firing later from a provider that no longer
+    // exists (in the app `pagehide` has already flushed it; in tests the
+    // stray write would land in the next test).
+    useEffect(() => () => flushSession(), [flushSession]);
 
 
     const handleTabSelect = useCallback((tabId: string) => {
