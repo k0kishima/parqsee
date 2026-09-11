@@ -3,9 +3,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UpgradePrompt } from '../upgrade-prompt';
 import type { IapProduct, IapStatus } from '../../api';
+import { FREE, FULL_PRODUCT as FULL } from '../../lib/__tests__/fixtures';
 
-const FULL: IapProduct = { id: 'parqsee.full', display_name: 'Parqsee Full Version', description: '', display_price: '¥1,500' };
-const FREE: IapStatus = { state: 'free', store_error: null, has_store: true };
 
 // The mocked `t` (test/setup.ts) answers an unknown key with the key itself,
 // interpolation dropped, so the price and the reasons are asserted by key.
