@@ -172,6 +172,23 @@ impl FileAccess {
         }
     }
 
+    /// Hold the grant for `path` from the bookmark just recorded for it,
+    /// unless one is held already (the file may have been reached through
+    /// a root, or the tab is open). A bookmark that does not resolve is
+    /// logged and left in the store: `probe` reports it later.
+    fn hold_new(&self, state: &mut State, path: &str) {
+        if state.held.contains_key(path) {
+            return;
+        }
+        match self.resolve_recorded(state, path) {
+            Ok(Some(resolved)) => {
+                state.held.insert(path.to_string(), resolved.token);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("the new bookmark for {path} does not resolve: {e}"),
+        }
+    }
+
     /// Resolve the bookmark recorded for `path`, if there is one, refreshing
     /// it in the store when the platform reports it stale. `Ok(None)` means
     /// nothing is recorded, so the path is readable or not on its own.
@@ -318,15 +335,7 @@ impl FileAccess {
         };
         let mut state = self.lock()?;
         state.store.upsert_recent(entry);
-        if !state.held.contains_key(path) {
-            match self.resolve_recorded(&mut state, path) {
-                Ok(Some(resolved)) => {
-                    state.held.insert(path.to_string(), resolved.token);
-                }
-                Ok(None) => {}
-                Err(e) => eprintln!("the new bookmark for {path} does not resolve: {e}"),
-            }
-        }
+        self.hold_new(&mut state, path);
         self.save(&state)?;
         Ok(recent)
     }
@@ -438,15 +447,7 @@ impl FileAccess {
             bookmark,
             added_at: now_ms(),
         });
-        if !state.held.contains_key(path) {
-            match self.resolve_recorded(&mut state, path) {
-                Ok(Some(resolved)) => {
-                    state.held.insert(path.to_string(), resolved.token);
-                }
-                Ok(None) => {}
-                Err(e) => eprintln!("the new bookmark for {path} does not resolve: {e}"),
-            }
-        }
+        self.hold_new(&mut state, path);
         self.save(&state)?;
         Ok(root)
     }
