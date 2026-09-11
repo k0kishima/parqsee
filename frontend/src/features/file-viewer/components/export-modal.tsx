@@ -8,6 +8,7 @@ import { getFileName, stripParquetExtension } from "../../../lib/path";
 import { ExportRange, resolveExportRange } from "../lib/export-range";
 import { pageWindow } from "../lib/page-window";
 import { toErrorMessage } from "../../../lib/tauri";
+import { Modal, ModalHeader } from "../../../components/modal";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -64,16 +65,6 @@ export function ExportModal({
     }
   }
 
-  // Esc closes the modal, unless an export is running.
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isExporting) onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, isExporting, onClose]);
-
   // Revert the "Copied" label; the timer must not outlive a closed modal.
   useEffect(() => {
     if (!copied) return;
@@ -82,6 +73,9 @@ export function ExportModal({
   }, [copied]);
 
   if (!isOpen) return null;
+
+  // Escape, the backdrop, ✕ and Cancel all close it — unless an export is running.
+  const close = () => { if (!isExporting) onClose(); };
 
   const hasRows = totalRows > 0;
   const { startRow: pageStart, endRow: pageEnd } = pageWindow(currentPage, rowsPerPage, totalRows);
@@ -174,213 +168,180 @@ export function ExportModal({
 
   if (done) {
     return (
-      <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
-        onClick={onClose}
-      >
-        <div
-          className="rounded-lg shadow-xl w-96 bg-white dark:bg-gray-800"
-          role="dialog"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {t('export.success.title')}
-            </h2>
-          </div>
-          <div className="px-6 py-4 space-y-2">
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              {t('export.success.body', { rows: done.rows.toLocaleString(), file: getFileName(done.path) })}
-            </p>
-            <p className="text-xs font-mono break-all text-gray-500 dark:text-gray-400">{done.path}</p>
-          </div>
-          <div className="px-6 py-4 border-t flex justify-end space-x-3 border-gray-200 dark:border-gray-700">
-            <button
-              onClick={handleCopyPath}
-              className="btn-secondary border border-gray-300 dark:border-gray-600"
-            >
-              {copied ? t('export.success.copied') : t('fileExplorer.contextMenu.copyPath')}
-            </button>
-            <button
-              onClick={() => revealItemInDir(done.path).catch((err) => console.error('Failed to reveal in Finder:', err))}
-              className="btn-secondary border border-gray-300 dark:border-gray-600"
-            >
-              {t('fileExplorer.contextMenu.revealInFinder')}
-            </button>
-            <button onClick={onClose} className="btn-primary">
-              {t('common.close')}
-            </button>
-          </div>
+      <Modal onClose={onClose} labelledBy="export-done-title" panelClassName="max-w-md">
+        <ModalHeader id="export-done-title" title={t('export.success.title')} onClose={onClose} />
+        <div className="px-6 py-4 space-y-2">
+          <p className="text-sm text-secondary">
+            {t('export.success.body', { rows: done.rows.toLocaleString(), file: getFileName(done.path) })}
+          </p>
+          <p className="text-xs font-mono break-all text-tertiary">{done.path}</p>
         </div>
-      </div>
+        <div className="px-6 py-4 border-t border-primary flex justify-end space-x-3">
+          <button onClick={handleCopyPath} className="btn-secondary">
+            {copied ? t('export.success.copied') : t('fileExplorer.contextMenu.copyPath')}
+          </button>
+          <button
+            onClick={() => revealItemInDir(done.path).catch((err) => console.error('Failed to reveal in Finder:', err))}
+            className="btn-secondary"
+          >
+            {t('fileExplorer.contextMenu.revealInFinder')}
+          </button>
+          <button onClick={onClose} className="btn-primary">
+            {t('common.close')}
+          </button>
+        </div>
+      </Modal>
     );
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
-      onClick={() => { if (!isExporting) onClose(); }}
-    >
-      <div
-        className="rounded-lg shadow-xl w-96 bg-white dark:bg-gray-800"
-        role="dialog"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {t('export.title')}
-          </h2>
+    <Modal onClose={close} labelledBy="export-title" panelClassName="max-w-md">
+      <ModalHeader id="export-title" title={t('export.title')} onClose={close} />
+
+      <div className="px-6 py-4 space-y-4">
+        {/* Format Selection */}
+        <div>
+          <label className="block text-sm font-medium mb-2 text-primary">
+            {t('export.format')}
+          </label>
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="csv"
+                checked={exportFormat === "csv"}
+                onChange={(e) => setExportFormat(e.target.value as "csv")}
+                className="mr-2"
+              />
+              <span className="text-secondary">
+                {t('export.formats.csv')}
+              </span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="json"
+                checked={exportFormat === "json"}
+                onChange={(e) => setExportFormat(e.target.value as "json")}
+                className="mr-2"
+              />
+              <span className="text-secondary">
+                {t('export.formats.json')}
+              </span>
+            </label>
+          </div>
         </div>
 
-        <div className="px-6 py-4 space-y-4">
-          {/* Format Selection */}
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-              {t('export.format')}
+        {/* Range Selection */}
+        <div>
+          <label className="block text-sm font-medium mb-2 text-primary">
+            {t('export.range')}
+          </label>
+          {activeFilter && (
+            <p className="mb-2 text-xs text-tertiary">
+              {t('export.filterNotice')}
+              <span className="ml-1 font-mono break-all">{activeFilter}</span>
+            </p>
+          )}
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="all"
+                checked={exportRange === "all"}
+                onChange={() => setExportRange("all")}
+                className="mr-2"
+              />
+              <span className="text-secondary">
+                {t('export.ranges.all', { total: totalRows.toLocaleString() })}
+              </span>
             </label>
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  value="csv"
-                  checked={exportFormat === "csv"}
-                  onChange={(e) => setExportFormat(e.target.value as "csv")}
-                  className="mr-2"
-                />
-                <span className="text-gray-700 dark:text-gray-300">
-                  {t('export.formats.csv')}
-                </span>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="current"
+                checked={exportRange === "current"}
+                onChange={() => setExportRange("current")}
+                className="mr-2"
+              />
+              <span className="text-secondary">
+                {t('export.ranges.current', { start: pageStart.toLocaleString(), end: pageEnd.toLocaleString() })}
+              </span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="custom"
+                checked={exportRange === "custom"}
+                onChange={() => setExportRange("custom")}
+                className="mr-2"
+              />
+              <span className="text-secondary">
+                {t('export.ranges.custom')}
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Custom Range Inputs */}
+        {exportRange === "custom" && (
+          <div className="flex items-center space-x-2">
+            <div className="flex-1">
+              <label className="block text-xs mb-1 text-tertiary">
+                {t('export.startRow')}
               </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  value="json"
-                  checked={exportFormat === "json"}
-                  onChange={(e) => setExportFormat(e.target.value as "json")}
-                  className="mr-2"
-                />
-                <span className="text-gray-700 dark:text-gray-300">
-                  {t('export.formats.json')}
-                </span>
+              <input
+                type="number"
+                min="1"
+                max={totalRows}
+                value={startInput}
+                onChange={(e) => setStartInput(e.target.value)}
+                className="w-full px-3 py-1 border border-primary rounded-md text-sm bg-primary text-primary focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs mb-1 text-tertiary">
+                {t('export.endRow')}
               </label>
+              <input
+                type="number"
+                min="1"
+                max={totalRows}
+                value={endInput}
+                onChange={(e) => setEndInput(e.target.value)}
+                className="w-full px-3 py-1 border border-primary rounded-md text-sm bg-primary text-primary focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           </div>
+        )}
 
-          {/* Range Selection */}
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-              {t('export.range')}
-            </label>
-            {activeFilter && (
-              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-                {t('export.filterNotice')}
-                <span className="ml-1 font-mono break-all">{activeFilter}</span>
-              </p>
-            )}
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  value="all"
-                  checked={exportRange === "all"}
-                  onChange={() => setExportRange("all")}
-                  className="mr-2"
-                />
-                <span className="text-gray-700 dark:text-gray-300">
-                  {t('export.ranges.all', { total: totalRows.toLocaleString() })}
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  value="current"
-                  checked={exportRange === "current"}
-                  onChange={() => setExportRange("current")}
-                  className="mr-2"
-                />
-                <span className="text-gray-700 dark:text-gray-300">
-                  {t('export.ranges.current', { start: pageStart.toLocaleString(), end: pageEnd.toLocaleString() })}
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  value="custom"
-                  checked={exportRange === "custom"}
-                  onChange={() => setExportRange("custom")}
-                  className="mr-2"
-                />
-                <span className="text-gray-700 dark:text-gray-300">
-                  {t('export.ranges.custom')}
-                </span>
-              </label>
-            </div>
-          </div>
+        {!hasRows && (
+          <p className="text-sm text-amber-600 dark:text-amber-400">{t('export.noRows')}</p>
+        )}
+        {hasRows && !rangeIsValid && (
+          <p className="text-sm text-red-600 dark:text-red-400">{t('export.invalidRange', { total: totalRows.toLocaleString() })}</p>
+        )}
 
-          {/* Custom Range Inputs */}
-          {exportRange === "custom" && (
-            <div className="flex items-center space-x-2">
-              <div className="flex-1">
-                <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
-                  {t('export.startRow')}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={totalRows}
-                  value={startInput}
-                  onChange={(e) => setStartInput(e.target.value)}
-                  className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
-                  {t('export.endRow')}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={totalRows}
-                  value={endInput}
-                  onChange={(e) => setEndInput(e.target.value)}
-                  className="w-full px-3 py-1 border rounded-md text-sm bg-white border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                />
-              </div>
-            </div>
-          )}
-
-          {!hasRows && (
-            <p className="text-sm text-amber-700 dark:text-amber-400">{t('export.noRows')}</p>
-          )}
-          {hasRows && !rangeIsValid && (
-            <p className="text-sm text-red-600">{t('export.invalidRange', { total: totalRows.toLocaleString() })}</p>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t flex justify-end space-x-3 border-gray-200 dark:border-gray-700">
-          <button
-            onClick={onClose}
-            disabled={isExporting}
-            className={`btn-secondary border border-gray-300 dark:border-gray-600 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={!canExport}
-            className={`btn-primary ${!canExport ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {isExporting ? t('export.exporting') : t('common.export')}
-          </button>
-        </div>
+        {/* Error Message */}
+        {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
-    </div>
+
+      <div className="px-6 py-4 border-t border-primary flex justify-end space-x-3">
+        <button
+          onClick={onClose}
+          disabled={isExporting}
+          className={`btn-secondary ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          {t('common.cancel')}
+        </button>
+        <button
+          onClick={handleExport}
+          disabled={!canExport}
+          className={`btn-primary ${!canExport ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          {isExporting ? t('export.exporting') : t('common.export')}
+        </button>
+      </div>
+    </Modal>
   );
 }

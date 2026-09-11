@@ -444,7 +444,7 @@ await scenario('S6-export', async ({ page, bridge }) => {
   check('S6.cancelDialog', await modal().isVisible() && !(await modal().locator('button:has-text("Exporting")').isVisible()), 'modal stays open after cancelled save dialog');
   // unwritable path
   await doExport('/nonexistent/dir/out.csv');
-  check('S6.unwritable', await modal().isVisible() && await modal().locator('.bg-red-50').isVisible(), `error shown: ${await modal().locator('.bg-red-50').textContent().catch(() => 'none')}`);
+  check('S6.unwritable', await modal().isVisible() && await modal().locator('[role="alert"]').isVisible(), `error shown: ${await modal().locator('[role="alert"]').textContent().catch(() => 'none')}`);
   check('S6.defaultPath.failedExportNotRecorded', (await bridge.call('export_default_dir', { sourcePath: mr })) === outDir, `after a failed export: ${await bridge.call('export_default_dir', { sourcePath: mr })}`);
   await modal().locator('button:has-text("Cancel")').click();
   // filtered export + json
