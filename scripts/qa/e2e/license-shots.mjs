@@ -18,14 +18,11 @@
 // call was rejected), prompt-store-error (the entitlements could not be
 // read), restore-capped (a relaunch on the free tier with more tabs saved
 // than it keeps).
-import fs from 'node:fs';
 import path from 'node:path';
-import { launch, dropFile, waitGrid, setStore, pushIapStatus, writeDemoData, DEMO_FILES, FREE_STORE, OUT } from './lib.mjs';
+import { launch, dropFile, waitGrid, setStore, pushIapStatus, shotConfig, shotSettings, shooter, shootAll, DEMO_FILES, FREE_STORE, OUT } from './lib.mjs';
 
-const [W, H] = (process.env.SIZE ?? '1280x800').split('x').map(Number);
-const SCALE = Number(process.env.SCALE ?? 1);
-const LANGS = (process.env.LANGS ?? 'en,ja').split(',');
-const THEMES = (process.env.THEMES ?? 'light,dark').split(',');
+const CONFIG = shotConfig({ scale: 1 });
+const { W, H, SCALE } = CONFIG;
 const SHOTS = path.join(OUT, 'shots', 'license');
 
 // The strings the harness reads. The UI is localized, so a selector built
@@ -64,21 +61,11 @@ async function openSettings(page, L) {
   await page.waitForTimeout(200);
 }
 
-function shooter(lang, theme) {
-  return async (page, scene) => {
-    const name = `${lang}-${theme}-${scene}-${W * SCALE}x${H * SCALE}.png`;
-    await page.screenshot({ path: path.join(SHOTS, name) });
-    console.log('  ' + name);
-  };
-}
-
-const settings = (lang, theme) => ({ 'parqsee-settings': JSON.stringify({ theme, language: lang, rowsPerPage: 50 }) });
-
 async function run(lang, theme) {
   console.log(`${lang} / ${theme}`);
-  const shoot = shooter(lang, theme);
+  const shoot = shooter(SHOTS, CONFIG, lang, theme);
   const L = T[lang];
-  const opts = { viewport: { width: W, height: H }, deviceScaleFactor: SCALE, localStorage: settings(lang, theme) };
+  const opts = { viewport: { width: W, height: H }, deviceScaleFactor: SCALE, localStorage: shotSettings(lang, theme) };
 
   // The free tier from the Welcome screen to the purchase.
   {
@@ -197,7 +184,4 @@ async function run(lang, theme) {
   }
 }
 
-writeDemoData();
-fs.mkdirSync(SHOTS, { recursive: true });
-for (const lang of LANGS) for (const theme of THEMES) await run(lang, theme);
-console.log(`\n${SHOTS}`);
+await shootAll(SHOTS, CONFIG, run);

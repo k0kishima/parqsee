@@ -15,14 +15,11 @@
 //   SIZE=1440x900 pnpm shots            # -> 2880×1800
 //   SIZE=1280x800 SCALE=1 pnpm shots    # the 1x sizes
 //   LANGS=en THEMES=light pnpm shots    # one combination
-import fs from 'node:fs';
 import path from 'node:path';
-import { launch, waitGrid, writeDemoData, DEMO, OUT } from './lib.mjs';
+import { launch, waitGrid, shotConfig, shotSettings, shooter, shootAll, DEMO, OUT } from './lib.mjs';
 
-const [W, H] = (process.env.SIZE ?? '1280x800').split('x').map(Number);
-const SCALE = Number(process.env.SCALE ?? 2);
-const LANGS = (process.env.LANGS ?? 'en,ja').split(',');
-const THEMES = (process.env.THEMES ?? 'light,dark').split(',');
+const CONFIG = shotConfig({ scale: 2 });
+const { W, H, SCALE } = CONFIG;
 
 const SHOTS = path.join(OUT, 'shots', 'demo');
 
@@ -42,26 +39,19 @@ ORDER BY revenue DESC`;
 const entry = (page, name) =>
   page.locator('div.group', { has: page.locator(`span:text-is("${name}")`) }).first();
 
-async function shoot(page, lang, theme, scene) {
-  const name = `${lang}-${theme}-${scene}-${W * SCALE}x${H * SCALE}.png`;
-  await page.screenshot({ path: path.join(SHOTS, name) });
-  console.log('  ' + name);
-}
-
 async function run(lang, theme) {
   console.log(`${lang} / ${theme}`);
+  const shoot = shooter(SHOTS, CONFIG, lang, theme);
   const { page, close } = await launch({
     viewport: { width: W, height: H },
     deviceScaleFactor: SCALE,
-    localStorage: {
-      'parqsee-settings': JSON.stringify({ theme, language: lang, rowsPerPage: 50 }),
-    },
+    localStorage: shotSettings(lang, theme),
   });
   const L = T[lang];
   try {
     // 1. The Welcome screen, as the app opens with no history.
     await page.waitForTimeout(300);
-    await shoot(page, lang, theme, 'welcome');
+    await shoot(page, 'welcome');
 
     // 2. The explorer and the grid: a folder open in the sidebar, a file in a tab.
     await page.evaluate((p) => { window.__dialog.open = p; }, DEMO);
@@ -72,7 +62,7 @@ async function run(lang, theme) {
     await entry(page, 'orders.parquet').click();
     await waitGrid(page);
     await page.waitForTimeout(300);
-    await shoot(page, lang, theme, 'viewer');
+    await shoot(page, 'viewer');
 
     // 3. The SQL view over the same file (registered as table `t`).
     await page.locator(`button:has-text("${L.query}")`).first().click();
@@ -81,7 +71,7 @@ async function run(lang, theme) {
     await page.locator(`button:has-text("${L.run}")`).first().click();
     await waitGrid(page);
     await page.waitForTimeout(400);
-    await shoot(page, lang, theme, 'query');
+    await shoot(page, 'query');
 
     if (page.__errors.length) console.log('  errors:', page.__errors);
   } finally {
@@ -89,7 +79,4 @@ async function run(lang, theme) {
   }
 }
 
-writeDemoData();
-fs.mkdirSync(SHOTS, { recursive: true });
-for (const lang of LANGS) for (const theme of THEMES) await run(lang, theme);
-console.log(`\n${SHOTS}`);
+await shootAll(SHOTS, CONFIG, run);
