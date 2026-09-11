@@ -4,7 +4,7 @@ const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB'];
  * Format a byte count for display (e.g. 1024 -> "1.0 KB").
  * Returns an empty string for undefined or zero so callers can omit the label.
  */
-export function formatFileSize(size?: number): string {
+export function formatFileSize(size?: number | null): string {
   if (!size) return '';
   let i = 0;
   let formattedSize = size;
