@@ -1022,8 +1022,22 @@ const badge = (page) => page.locator('[data-testid="free-badge"]');
 
 await scenario('S14-free-tier', async ({ page, bridge }) => {
   check('S14.badge', await badge(page).isVisible() && (await badge(page).getAttribute('title'))?.includes('3'), `badge title="${await badge(page).getAttribute('title')}"`);
-  for (const f of S14_FILES.slice(0, 3)) await openFile(page, f);
-  check('S14.three', (await tabNames(page)).length === 3 && !(await promptOpen(page)), `tabs=${await tabNames(page)}`);
+  for (const f of S14_FILES.slice(0, 2)) await openFile(page, f);
+  // Two files handed over at once into the one slot left (a two-file drop,
+  // or two drops landing in the same tick): the first takes the slot, the
+  // second is refused before the backend hears of it — not opened and then
+  // left without a tab, where nothing could evict it (CT-04).
+  await Promise.all([dropFile(page, S14_FILES[2]), dropFile(page, S14_FILES[3])]);
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 3, null, { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const opened = () => bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => base(l.args.path));
+  const remembered = () => bridge.log.filter(l => l.cmd === 'remember_file').map(l => base(l.args.path));
+  const evicted = () => bridge.log.filter(l => l.cmd === 'evict_cache').map(l => base(l.args.path));
+  check('S14.three', (await tabNames(page)).join(',') === 'one_row.parquet,dict.parquet,numeric.parquet', `tabs=${await tabNames(page)}`);
+  check('S14.concurrentRefused', (await promptOpen(page)) && !opened().includes('nan.parquet') && !remembered().includes('nan.parquet') && evicted().length === 0, `prompt=${await promptOpen(page)} opened=${opened()} remembered=${remembered()} evicted=${evicted()}`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('S14.concurrentEscape', !(await promptOpen(page)) && (await tabNames(page)).length === 3, `prompt=${await promptOpen(page)} tabs=${await tabNames(page)}`);
 
   // The fourth: the prompt, no tab, no cache entry; Escape leaves the three.
   await openFile(page, S14_FILES[3], { expectTab: false });
