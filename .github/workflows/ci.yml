@@ -76,7 +76,7 @@ jobs:
         run: |
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir scripts/qa/e2e install --frozen-lockfile
-          pnpm --dir scripts/qa/e2e exec playwright install webkit
+          pnpm --dir scripts/qa/e2e exec playwright-core install webkit
       - name: Rust static analysis (default and StoreKit)
         working-directory: backend
         run: |

@@ -69,7 +69,7 @@ cd backend   && cargo build --example bridge          # the bridge binary
 cd frontend  && pnpm dev                              # keep running, port 1420
 uv run scripts/qa/gen_fixtures.py                     # -> scripts/qa/fixtures/
 cd scripts/qa/e2e && pnpm install                     # playwright-core
-npx --package=playwright-core playwright install webkit   # once per machine
+pnpm exec playwright-core install webkit              # once per machine
 ```
 
 ## Run
