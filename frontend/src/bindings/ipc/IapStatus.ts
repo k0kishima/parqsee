@@ -12,4 +12,13 @@ store_error: string | null,
  * without one (the plain `pnpm tauri build`, dev, the e2e bridge), where
  * the app is unlocked and the purchase screens have nothing to show.
  */
-has_store: boolean, };
+has_store: boolean, 
+/**
+ * Counts the changes to the backend's purchase state in this process:
+ * 1 at the launch-time read, one more for every purchase, restore and
+ * transaction update; 0 for a status derived from no read at all
+ * (`iap_status` giving up its wait). The `iap-status` event and a
+ * command's answer can cross on their way to the webview, which keeps
+ * whichever carries the higher number.
+ */
+revision: number, };

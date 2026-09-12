@@ -54,6 +54,11 @@ datafusion = { version = "54.0.0", default-features = false, features = [
 ts-rs = { version = "12.0.1", features = ["serde-compat"] }
 base64 = "0.22"
 
+[dev-dependencies]
+# `test-util` pauses the clock in `services::store`'s tests, so the status
+# wait that would otherwise take `INIT_TIMEOUT` elapses at once.
+tokio = { version = "1.47.1", features = ["full", "test-util"] }
+
 # Security-scoped bookmarks (services/access/macos.rs). Same versions tauri
 # already pulls in, so this adds no new crates to the build.
 [target.'cfg(target_os = "macos")'.dependencies]

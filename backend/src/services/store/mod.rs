@@ -10,7 +10,14 @@
 //! of the account's entitlements (from `Transaction.currentEntitlements`,
 //! refreshed after every purchase / restore and on every
 //! `Transaction.updates` event — a refund arrives that way and locks the
-//! app back down) and derives [`IapStatus`] from it. The backend enforces
+//! app back down) and derives [`IapStatus`] from it. Every new snapshot is
+//! numbered (`IapStatus::revision`) and handed to `on_change`, the
+//! launch-time read included: `status` gives up waiting for that read
+//! after [`INIT_TIMEOUT`] and answers the free tier, and a read that lands
+//! afterwards would otherwise never reach the webview. The number is what
+//! lets the webview tell that late read, or a refund pushed while a
+//! command's answer was in flight, from an answer that is merely old:
+//! it keeps whichever status carries the higher one. The backend enforces
 //! nothing: it has no notion of a tab, so the free tier's limit (the number
 //! of tabs open at once) lives in the webview, with `iap_status` as its
 //! only source of truth for "unlocked". A client-side limit is bypassable
@@ -126,17 +133,21 @@ struct Snapshot {
     /// The failure of the read that produced this snapshot; the app is on
     /// the free tier while it is set, and says why.
     error: Option<String>,
+    /// How many snapshots came before this one, plus one; see
+    /// `IapStatus::revision`. The default (no snapshot) is 0.
+    revision: u64,
 }
 
 /// Derive the status from what the account owns: unlocked when the full
-/// version is among the entitlements, free otherwise.
-pub fn derive_status(entitlements: &[Entitlement], store_error: Option<String>, has_store: bool) -> IapStatus {
+/// version is among the entitlements, free otherwise. `revision` is the
+/// snapshot's number, 0 for a status derived from no snapshot.
+pub fn derive_status(entitlements: &[Entitlement], store_error: Option<String>, has_store: bool, revision: u64) -> IapStatus {
     let state = if entitlements.iter().any(|e| e.product_id == PRODUCT_FULL) {
         IapState::Unlocked
     } else {
         IapState::Free
     };
-    IapStatus { state, store_error, has_store }
+    IapStatus { state, store_error, has_store, revision }
 }
 
 /// Called with the new state after every change (see `set_on_change`).
@@ -155,9 +166,12 @@ impl License {
         Self { provider, snapshot, on_change: Mutex::new(None) }
     }
 
-    /// Called with the new status after every transaction update the
-    /// store pushes (a purchase finished elsewhere, a refund); `lib.rs`
-    /// forwards it to the webview as the `iap-status` event.
+    /// Called with the new status after every change to the snapshot: the
+    /// launch-time read (which may land after `status` gave up waiting for
+    /// it), a purchase, a restore, and every transaction update the store
+    /// pushes (a purchase finished elsewhere, a refund). `lib.rs` forwards
+    /// it to the webview as the `iap-status` event; the webview orders it
+    /// against the commands' answers by `IapStatus::revision`.
     pub fn set_on_change(&self, f: OnChange) {
         *self.on_change.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
     }
@@ -169,11 +183,7 @@ impl License {
         let weak = Arc::downgrade(self);
         self.provider.start_updates(Box::new(move |entitlements| {
             if let Some(license) = weak.upgrade() {
-                license.apply(Snapshot { entitlements, error: None });
-                let status = license.status_now();
-                if let Some(f) = license.on_change.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
-                    f(status);
-                }
+                license.apply(entitlements, None);
             }
         }));
     }
@@ -182,30 +192,49 @@ impl License {
     /// that fails leaves the app on the free tier (empty entitlements plus
     /// the error) rather than keeping a state the store no longer vouches for.
     async fn refresh(&self) {
-        let snapshot = match self.provider.entitlements().await {
-            Ok(entitlements) => Snapshot { entitlements, error: None },
-            Err(error) => Snapshot { entitlements: Vec::new(), error: Some(error) },
-        };
-        self.apply(snapshot);
+        match self.provider.entitlements().await {
+            Ok(entitlements) => self.apply(entitlements, None),
+            Err(error) => self.apply(Vec::new(), Some(error)),
+        }
     }
 
-    fn apply(&self, snapshot: Snapshot) {
-        self.snapshot.send_replace(Some(snapshot));
+    /// Replace the snapshot with the next number and tell `on_change`. The
+    /// number is taken under the channel's lock, so two reads that land
+    /// together are numbered in the order they landed; their notifications
+    /// can still cross on the way out, which is what the number is for.
+    fn apply(&self, entitlements: Vec<Entitlement>, error: Option<String>) {
+        let mut applied = None;
+        self.snapshot.send_modify(|slot| {
+            let revision = slot.as_ref().map_or(0, |s| s.revision) + 1;
+            let snapshot = Snapshot { entitlements, error, revision };
+            applied = Some(self.status_of(&snapshot));
+            *slot = Some(snapshot);
+        });
+        let status = applied.expect("send_modify runs its closure");
+        if let Some(f) = self.on_change.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+            f(status);
+        }
+    }
+
+    fn status_of(&self, snapshot: &Snapshot) -> IapStatus {
+        derive_status(&snapshot.entitlements, snapshot.error.clone(), self.provider.has_store(), snapshot.revision)
     }
 
     /// The status from the current snapshot, without waiting for `init`.
     fn status_now(&self) -> IapStatus {
         let snapshot = self.snapshot.borrow().clone().unwrap_or_default();
-        derive_status(&snapshot.entitlements, snapshot.error, self.provider.has_store())
+        self.status_of(&snapshot)
     }
 
-    /// The current status; waits for the launch-time read to finish.
+    /// The current status; waits for the launch-time read to finish. When
+    /// the wait runs out this is the free tier at revision 0 with the
+    /// reason, and the read is delivered through `on_change` when it lands.
     pub async fn status(&self) -> IapStatus {
         let mut rx = self.snapshot.subscribe();
         let ready = tokio::time::timeout(INIT_TIMEOUT, rx.wait_for(|s| s.is_some())).await;
         match ready {
             Ok(Ok(_)) => self.status_now(),
-            _ => derive_status(&[], Some("the App Store did not answer in time".to_string()), self.provider.has_store()),
+            _ => derive_status(&[], Some("the App Store did not answer in time".to_string()), self.provider.has_store(), 0),
         }
     }
 
@@ -261,16 +290,16 @@ mod tests {
 
     #[test]
     fn nothing_owned_is_free() {
-        let s = derive_status(&[], None, true);
+        let s = derive_status(&[], None, true, 1);
         assert_eq!((s.state, s.store_error, s.has_store), (IapState::Free, None, true));
     }
 
     #[test]
     fn owning_the_full_version_is_unlocked_whatever_else_is_owned() {
-        assert_eq!(derive_status(&[full()], None, true).state, IapState::Unlocked);
-        assert_eq!(derive_status(&[other("parqsee.trial14"), full()], None, true).state, IapState::Unlocked);
+        assert_eq!(derive_status(&[full()], None, true, 1).state, IapState::Unlocked);
+        assert_eq!(derive_status(&[other("parqsee.trial14"), full()], None, true, 1).state, IapState::Unlocked);
         // A product this build does not know does not unlock anything.
-        assert_eq!(derive_status(&[other("parqsee.trial14")], None, true).state, IapState::Free);
+        assert_eq!(derive_status(&[other("parqsee.trial14")], None, true, 1).state, IapState::Free);
     }
 
     /// A store whose answers the test sets, and that hands out its update sink.
@@ -358,7 +387,9 @@ mod tests {
         }
     }
 
-    async fn harness(entitlements: Result<Vec<Entitlement>, String>) -> Harness {
+    /// A license over the fake, `on_change` recording into `changes`, not
+    /// yet initialised.
+    fn uninitialised(entitlements: Result<Vec<Entitlement>, String>) -> Harness {
         let store = Arc::new(FakeStore {
             entitlements: Mutex::new(entitlements),
             purchase: Mutex::new(Ok(IapPurchaseOutcome::Purchased)),
@@ -370,8 +401,13 @@ mod tests {
         let changes = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&changes);
         license.set_on_change(Box::new(move |s| seen.lock().unwrap().push(s)));
-        license.init().await;
         Harness { store, license, changes }
+    }
+
+    async fn harness(entitlements: Result<Vec<Entitlement>, String>) -> Harness {
+        let h = uninitialised(entitlements);
+        h.license.init().await;
+        h
     }
 
     impl Harness {
@@ -379,6 +415,11 @@ mod tests {
         fn push_update(&self, entitlements: Vec<Entitlement>) {
             let sink = self.store.sink.lock().unwrap().clone().expect("init subscribed to updates");
             sink(entitlements);
+        }
+
+        /// What `on_change` was given so far, as (state, revision).
+        fn seen(&self) -> Vec<(IapState, u64)> {
+            self.changes.lock().unwrap().iter().map(|s| (s.state, s.revision)).collect()
         }
     }
 
@@ -413,17 +454,57 @@ mod tests {
     #[tokio::test]
     async fn a_transaction_update_changes_the_state_and_notifies() {
         let h = harness(Ok(vec![])).await;
-        assert!(h.changes.lock().unwrap().is_empty());
+        // The launch-time read is delivered like any other change.
+        assert_eq!(h.seen(), vec![(IapState::Free, 1)]);
         // A pending purchase approved elsewhere.
         h.push_update(vec![full()]);
-        assert_eq!(h.license.status().await.state, IapState::Unlocked);
-        let seen = h.changes.lock().unwrap().clone();
-        assert_eq!(seen.len(), 1);
-        assert_eq!(seen[0].state, IapState::Unlocked);
+        let s = h.license.status().await;
+        assert_eq!((s.state, s.revision), (IapState::Unlocked, 2));
+        assert_eq!(h.seen(), vec![(IapState::Free, 1), (IapState::Unlocked, 2)]);
         // A refund locks the app back down.
         h.push_update(vec![]);
         assert_eq!(h.license.status().await.state, IapState::Free);
-        assert_eq!(h.changes.lock().unwrap().len(), 2);
+        assert_eq!(h.seen().last(), Some(&(IapState::Free, 3)));
+    }
+
+    /// The launch-time read takes longer than `status` waits: the caller
+    /// gets the free tier at revision 0 with the reason, and the read is
+    /// delivered through `on_change` when it lands, numbered above it. The
+    /// paused clock makes the wait elapse at once.
+    #[tokio::test(start_paused = true)]
+    async fn a_launch_read_that_outlasts_the_wait_is_delivered_when_it_lands() {
+        let h = uninitialised(Ok(vec![full()]));
+        let first = h.license.status().await;
+        assert_eq!((first.state, first.revision), (IapState::Free, 0));
+        assert!(first.store_error.as_deref().unwrap_or_default().contains("did not answer in time"));
+        assert!(h.seen().is_empty());
+
+        h.license.init().await;
+        assert_eq!(h.seen(), vec![(IapState::Unlocked, 1)]);
+        let s = h.license.status().await;
+        assert_eq!((s.state, s.revision, s.store_error), (IapState::Unlocked, 1, None));
+    }
+
+    /// Every change is numbered in order and delivered, and a command's
+    /// answer carries the number of the change it reports, so the webview
+    /// can order an answer against the events around it.
+    #[tokio::test]
+    async fn every_change_is_numbered_in_order_and_delivered() {
+        let h = harness(Ok(vec![])).await;
+        assert_eq!(h.seen(), vec![(IapState::Free, 1)]);
+        let r = h.license.purchase(PRODUCT_FULL).await.unwrap();
+        assert_eq!((r.status.state, r.status.revision), (IapState::Unlocked, 2));
+        h.push_update(vec![]);
+        let s = h.license.restore().await.unwrap();
+        assert_eq!((s.state, s.revision), (IapState::Unlocked, 4));
+        assert_eq!(
+            h.seen(),
+            vec![(IapState::Free, 1), (IapState::Unlocked, 2), (IapState::Free, 3), (IapState::Unlocked, 4)]
+        );
+        // A cancelled purchase reads nothing and changes nothing.
+        *h.store.purchase.lock().unwrap() = Ok(IapPurchaseOutcome::Cancelled);
+        assert_eq!(h.license.purchase(PRODUCT_FULL).await.unwrap().status.revision, 4);
+        assert_eq!(h.seen().len(), 4);
     }
 
     #[tokio::test]
@@ -444,6 +525,10 @@ mod tests {
         let h = harness(Err("no network".into())).await;
         let s = h.license.status().await;
         assert_eq!((s.state, s.store_error.as_deref()), (IapState::Free, Some("no network")));
+        // A failed launch-time read is delivered too, so a wait that ran
+        // out before it learns the reason.
+        assert_eq!(h.seen(), vec![(IapState::Free, 1)]);
+        assert_eq!(h.changes.lock().unwrap()[0].store_error.as_deref(), Some("no network"));
 
         *h.store.entitlements.lock().unwrap() = Ok(vec![full()]);
         let s = h.license.restore().await.unwrap();
