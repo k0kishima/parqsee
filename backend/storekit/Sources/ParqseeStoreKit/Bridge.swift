@@ -25,6 +25,14 @@ public typealias SKCallback = @convention(c) (
 // MARK: - Result delivery
 
 private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: Any) {
+    // `dataWithJSONObject:` raises an Objective-C exception — which `catch`
+    // below cannot see, so it aborts the process — for anything that is not
+    // an array or a dictionary at the top level. Refuse it here instead:
+    // a bridge that answers with the wrong shape is a bug, but never a crash.
+    guard JSONSerialization.isValidJSONObject(json) else {
+        deliver(ctx, cb, error: "the result is not a JSON array or object: \(type(of: json))")
+        return
+    }
     do {
         let data = try JSONSerialization.data(withJSONObject: json, options: [])
         guard let text = String(data: data, encoding: .utf8) else {
@@ -163,14 +171,17 @@ public func sk_purchase(
 }
 
 /// Asks the App Store for the account's transactions again (Restore
-/// Purchases). Result: `null`. The entitlements are read separately.
+/// Purchases). Result: an empty object, which the caller discards — the
+/// entitlements are read separately. It must not be `null`: only an array
+/// or an object is a valid top-level value for `JSONSerialization`, and
+/// anything else aborts the process rather than throwing.
 @_cdecl("sk_restore")
 public func sk_restore(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback) {
     let sendableCtx = SendablePointer(ctx)
     Task.detached {
         do {
             try await AppStore.sync()
-            deliver(sendableCtx.pointer, cb, json: NSNull())
+            deliver(sendableCtx.pointer, cb, json: [String: Any]())
         } catch {
             deliver(sendableCtx.pointer, cb, error: describe(error))
         }
