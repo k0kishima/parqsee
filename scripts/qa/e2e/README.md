@@ -26,6 +26,11 @@ listeners are kept so `window.__emit('file-drop', [path])` delivers drops,
 and `alert()` are recorded, `app|version` answers with `tauri.conf.json`'s
 version so Settings shows the one a build would carry). `window.__delays[cmd] = ms` holds one command's
 responses back, which is how the suite provokes out-of-order responses.
+It sleeps *before* the bridge runs the command, so the command reads the store
+as it is when it finally runs. `launch({ hold: ['cmd'] })` is the other half:
+the command runs at once and its answer waits until `release(page, cmd)`,
+which is how the app is handed a listing of the store from before something
+changed it (S7b).
 
 The bridge has no App Store: `iap_status` answers `unlocked` (the same
 `AlwaysUnlocked` provider every build without the `app-store` feature uses),
