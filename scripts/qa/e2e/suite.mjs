@@ -685,8 +685,8 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   await openFolder(page, FIX);
   await page.waitForTimeout(400);
   const roots = await bridge.call('list_workspace_roots');
-  check('S9.rootStored', roots.length === 1 && roots[0].path === FIX && roots[0].name === 'fixtures', JSON.stringify(roots));
-  check('S9.workspaceWithoutTabs', await page.locator('text=Drop your Parquet file here').isVisible() && (await names())[0] === 'fixtures', 'tree next to the welcome content, no tab yet');
+  check('S9.rootStored', roots.length === 1 && roots[0].path === FIX && roots[0].name === base(FIX), JSON.stringify(roots));
+  check('S9.workspaceWithoutTabs', await page.locator('text=Drop your Parquet file here').isVisible() && (await names())[0] === base(FIX), 'tree next to the welcome content, no tab yet');
   const n1 = await names();
   report('S9.list', n1.length > 10 ? 'PASS' : 'FAIL', `explorer entries: ${n1.slice(0, 6)}… (${n1.length})`);
   check('S9.dirsFirst', n1[1]?.startsWith('paths'), `first entry under the root ${n1[1]}`);
@@ -708,7 +708,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   check('S9.brokenLink', al.length === 1, `alerts=${al}`);
   // The breadcrumb starts at the root and stops there: no "/" above it.
   const c1 = await crumbs();
-  check('S9.crumbBounded', c1.join('/') === 'fixtures/paths' && (await page.locator('nav[aria-label="breadcrumb"]').getAttribute('title')) === `${FIX}/paths`, `crumbs=${c1}`);
+  check('S9.crumbBounded', c1.join('/') === `${base(FIX)}/paths` && (await page.locator('nav[aria-label="breadcrumb"]').getAttribute('title')) === `${FIX}/paths`, `crumbs=${c1}`);
   // Collapse paths in the tree, then bring it back from the crumb.
   await page.click('.py-1 >> text=paths'); await page.waitForTimeout(200);
   check('S9.collapse', !(await names()).some(n => n.startsWith('UPPER.PARQUET')));
@@ -717,7 +717,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   // search box: the whole loaded tree, keeping the folders above a match
   await page.fill('input[placeholder="Filter files..."]', 'nan'); await page.waitForTimeout(200);
   const n3 = await names();
-  check('S9.search', n3.length === 2 && n3[0] === 'fixtures' && n3[1].startsWith('nan.parquet'), `${n3}`);
+  check('S9.search', n3.length === 2 && n3[0] === base(FIX) && n3[1].startsWith('nan.parquet'), `${n3}`);
   await page.fill('input[placeholder="Filter files..."]', 'GLOB'); await page.waitForTimeout(200);
   const n3b = await names();
   check('S9.searchDeep', n3b.length === 3 && n3b[1] === 'paths' && n3b[2].startsWith('glob[1]'), `case-insensitive, through the subfolder: ${n3b}`);
@@ -737,7 +737,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   await openFolder(page, `${FIX}/paths/dir with space`);
   await page.waitForTimeout(300);
   const n4 = await names();
-  check('S9.secondRoot', n4[0] === 'fixtures' && n4.includes('dir with space') && n4.some(n => n.startsWith('inner.parquet')) && n4.some(n => n.startsWith('UPPER.PARQUET')), `${n4.slice(-4)} (${n4.length})`);
+  check('S9.secondRoot', n4[0] === base(FIX) && n4.includes('dir with space') && n4.some(n => n.startsWith('inner.parquet')) && n4.some(n => n.startsWith('UPPER.PARQUET')), `${n4.slice(-4)} (${n4.length})`);
   check('S9.rootsStored', (await bridge.call('list_workspace_roots')).length === 2);
   // Remove the second root from its row.
   await removeRoot(page, `${FIX}/paths/dir with space`);
@@ -1034,5 +1034,7 @@ await scenario('S14-free-restore', async ({ page, bridge }) => {
   await page.waitForTimeout(600);
   await screenshot(page, { path: `${OUT}/shots/S14r.png` });
 }, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
+
+await (await import('./exploratory.mjs')).exploratoryScenarios();
 
 finishSuite();

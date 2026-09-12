@@ -1,0 +1,265 @@
+{
+  "application_base": "5903c2e",
+  "date": "2026-09-12",
+  "new_regressions": [
+    {
+      "id": "S15.otherTab",
+      "status": "PASS",
+      "note": "Late result leaves the other tab intact"
+    },
+    {
+      "id": "S15.reopen",
+      "status": "PASS",
+      "note": "Reopened tab starts at id 0 with no filter or spinner"
+    },
+    {
+      "id": "S15.continue",
+      "status": "PASS",
+      "note": "Pagination remains usable after the stale read"
+    },
+    {
+      "id": "S16.failure",
+      "status": "PASS",
+      "note": "Failed to move the export into place at /private/tmp/parqsee-spec3-new/data/launch-42977-2/not-a-directory/out.json: Not a directory (os error 20)"
+    },
+    {
+      "id": "S16.retry",
+      "status": "PASS",
+      "note": "[{\"id\":5,\"grp\":5,\"name\":\"row-5\",\"val\":0.2831968025438686}]"
+    },
+    {
+      "id": "S16.recovered",
+      "status": "PASS",
+      "note": "Successful retry closes modal and preserves filtered grid"
+    },
+    {
+      "id": "S17.disk",
+      "status": "PASS",
+      "note": "{\"active\":\"/private/tmp/parqsee-spec3-fixtures/multi_rowgroup.parquet\",\"tabs\":[{\"available\":true,\"name\":\"multi_rowgroup.parquet\",\"path\":\"/private/tmp/parqsee-spec3-fixtures/multi_rowgroup.parquet\",\"state\":{\"active_filter\":null,\"current_page\":2,\"view_mode\":null}},{\"available\":true,\"name\":\"one_row.parquet\",\"path\":\"/private/tmp/parqsee-spec3-fixtures/one_row.parquet\",\"state\":{\"active_filter\":null,\"current_page\":1,\"view_mode\":null}}]}"
+    },
+    {
+      "id": "S17.restore",
+      "status": "PASS",
+      "note": "Fresh browser and Rust process restore persisted page, order and selection"
+    },
+    {
+      "id": "S18.failed",
+      "status": "PASS",
+      "note": "Purchase failure releases both controls and preserves three tabs"
+    },
+    {
+      "id": "S18.pending",
+      "status": "PASS",
+      "note": "Pending purchase remains free and permits retry"
+    },
+    {
+      "id": "S18.refund",
+      "status": "PASS",
+      "note": "Refund retains existing four tabs, refuses fifth; failed restore can retry"
+    },
+    {
+      "id": "S18.restored",
+      "status": "PASS",
+      "note": "Restore retry unlocks fifth tab"
+    },
+    {
+      "id": "screenshot/playwright-csp",
+      "status": "OBSERVE",
+      "note": "One WebKit screenshot stylesheet was blocked by CSP"
+    }
+  ],
+  "s9_fixture_override": [
+    {
+      "id": "S9.emptyState",
+      "status": "PASS",
+      "note": "sidebar empty state with a file open but no folder"
+    },
+    {
+      "id": "S9.noListingOutsideRoots",
+      "status": "PASS",
+      "note": "list_directory calls: 0"
+    },
+    {
+      "id": "S9.welcomeOpenFolder",
+      "status": "PASS",
+      "note": "welcome screen has Open Folder"
+    },
+    {
+      "id": "S9.rootStored",
+      "status": "PASS",
+      "note": "[{\"name\":\"parqsee-spec3-fixtures\",\"path\":\"/private/tmp/parqsee-spec3-fixtures\"}]"
+    },
+    {
+      "id": "S9.workspaceWithoutTabs",
+      "status": "PASS",
+      "note": "tree next to the welcome content, no tab yet"
+    },
+    {
+      "id": "S9.list",
+      "status": "PASS",
+      "note": "explorer entries: parqsee-spec3-fixtures,paths,.parqsee-fixtures,all_null.parquet1.0 KB,bad_page.parquet2.1 MB,big_ints.parquet784.0 B… (25)"
+    },
+    {
+      "id": "S9.dirsFirst",
+      "status": "PASS",
+      "note": "first entry under the root paths"
+    },
+    {
+      "id": "S9.expand",
+      "status": "PASS",
+      "note": "expanded: contains glob[1]? true"
+    },
+    {
+      "id": "S9.folderParquet",
+      "status": "OBSERVE",
+      "note": "folder.parquet rendered as: <div><div class=\"\n          group flex items-center px-2 py-1\n          cursor-pointer\n          hover:bg-tertiary\n        \" style=\"padding-left: 40px;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\""
+    },
+    {
+      "id": "S9.noperm",
+      "status": "OBSERVE",
+      "note": "clicking noperm dir: errors=[\"console: Failed to load directory: Permission denied (os error 13)\"] any UI error=1"
+    },
+    {
+      "id": "expected-console-error",
+      "status": "PASS",
+      "note": "Failed to load directory: Permission denied (os error 13)"
+    },
+    {
+      "id": "S9.openUpper",
+      "status": "PASS",
+      "note": "active=UPPER.PARQUET"
+    },
+    {
+      "id": "S9.brokenLink",
+      "status": "PASS",
+      "note": "alerts=File not found: /private/tmp/parqsee-spec3-fixtures/paths/broken_link.parquet"
+    },
+    {
+      "id": "S9.crumbBounded",
+      "status": "PASS",
+      "note": "crumbs=parqsee-spec3-fixtures,paths"
+    },
+    {
+      "id": "S9.collapse",
+      "status": "PASS"
+    },
+    {
+      "id": "S9.crumbReveal",
+      "status": "PASS",
+      "note": "tree after crumb click: parqsee-spec3-fixtures,paths,dir with space,folder.parquet"
+    },
+    {
+      "id": "S9.search",
+      "status": "PASS",
+      "note": "parqsee-spec3-fixtures,nan.parquet1.0 KB"
+    },
+    {
+      "id": "S9.searchDeep",
+      "status": "PASS",
+      "note": "case-insensitive, through the subfolder: parqsee-spec3-fixtures,paths,glob[1].parquet723.0 B"
+    },
+    {
+      "id": "S9.contextMenu",
+      "status": "PASS"
+    },
+    {
+      "id": "S9.openNewTab",
+      "status": "PASS"
+    },
+    {
+      "id": "S9.openNewTabDup",
+      "status": "OBSERVE",
+      "note": "\"Open\" on an already-open file: tabs=2"
+    },
+    {
+      "id": "S9.highlight",
+      "status": "PASS",
+      "note": "selected rows: UPPER.PARQUET723.0 B"
+    },
+    {
+      "id": "S9.secondRoot",
+      "status": "PASS",
+      "note": "truncated.parquet1.1 MB,wide.parquet176.6 KB,dir with space,inner.parquet723.0 B (44)"
+    },
+    {
+      "id": "S9.rootsStored",
+      "status": "PASS"
+    },
+    {
+      "id": "S9.removeRoot",
+      "status": "PASS",
+      "note": "roots=[{\"name\":\"parqsee-spec3-fixtures\",\"path\":\"/private/tmp/parqsee-spec3-fixtures\"}]"
+    },
+    {
+      "id": "S9.hideSidebar",
+      "status": "PASS"
+    },
+    {
+      "id": "screenshot/playwright-csp",
+      "status": "OBSERVE",
+      "note": "One WebKit screenshot stylesheet was blocked by CSP"
+    },
+    {
+      "id": "S9r.rootRestored",
+      "status": "PASS",
+      "note": "[{\"name\":\"parqsee-spec3-fixtures\",\"path\":\"/private/tmp/parqsee-spec3-fixtures\"}]"
+    },
+    {
+      "id": "S9r.workspaceOnLaunch",
+      "status": "PASS",
+      "note": "the tree is back, and so are the tabs: UPPER.PARQUET,dict.parquet"
+    },
+    {
+      "id": "S9r.treeLoaded",
+      "status": "PASS",
+      "note": "root expanded and listed"
+    },
+    {
+      "id": "S9r.recentRestored",
+      "status": "PASS",
+      "note": "recent=dict.parquet,UPPER.PARQUET,one_row.parquet"
+    },
+    {
+      "id": "S9r.recentUi",
+      "status": "PASS",
+      "note": "recent files listed next to the tree"
+    },
+    {
+      "id": "S9r.openFromTree",
+      "status": "PASS"
+    },
+    {
+      "id": "S9r.removeLastRoot",
+      "status": "PASS",
+      "note": "empty sidebar, tab stays"
+    },
+    {
+      "id": "S9r.welcomeAgain",
+      "status": "PASS",
+      "note": "no roots, no tabs: the welcome screen"
+    }
+  ],
+  "defect_diagnostic": [
+    {
+      "id": "expected-console-error",
+      "status": "PASS",
+      "note": "Failed to save the session: exploration save failure"
+    },
+    {
+      "id": "EX-01",
+      "status": "OBSERVE",
+      "note": "{\"uiPage\":2,\"diskPage\":1,\"attemptsAfterPagehide\":1,\"injected\":\"first save_session rejected before backend; following calls allowed\"}"
+    },
+    {
+      "id": "screenshot/playwright-csp",
+      "status": "OBSERVE",
+      "note": "One WebKit screenshot stylesheet was blocked by CSP"
+    },
+    {
+      "id": "EX-01-recovery",
+      "status": "OBSERVE",
+      "note": "Changing state again writes page 3; attempts=2"
+    }
+  ],
+  "diagnostic_note": "OBSERVE describes EX-01 reproduction, not a passed application requirement. Absolute paths identify isolated data from this run."
+}

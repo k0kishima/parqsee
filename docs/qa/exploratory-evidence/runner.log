@@ -1,0 +1,15 @@
+
+> parqsee-e2e@ test /Users/k0kishima/work/fuji/parqsee/scripts/qa/e2e
+> node --test runner.test.mjs
+
+✔ uncaught exceptions, rejected promises and console errors fail the suite (789.374584ms)
+✔ an explicitly expected console error and a screenshot pass (583.730583ms)
+✔ expected errors cannot hide duplicates, missing errors, or CSP violations (2005.634334ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3408.312458

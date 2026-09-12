@@ -1,0 +1,13 @@
+
+> parqsee@1.0.0 build /Users/k0kishima/work/fuji/parqsee/frontend
+> tsc && vite build
+
+vite v6.4.1 building for production...
+transforming...
+✓ 1775 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.52 kB │ gzip:   0.32 kB
+dist/assets/index-H4t7OnUx.css   45.19 kB │ gzip:   8.37 kB
+dist/assets/index-fUMKLAhi.js   329.24 kB │ gzip: 100.71 kB
+✓ built in 949ms
