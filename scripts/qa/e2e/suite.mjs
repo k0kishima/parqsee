@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { launch, dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, results, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
+import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
 
@@ -28,18 +29,6 @@ const visibleHeader = async (page) => page.evaluate(() => {
   const tables = [...document.querySelectorAll('table')].filter(t => t.offsetParent !== null);
   return [...(tables[0]?.querySelectorAll('thead th') ?? [])].filter(th => !th.hasAttribute('aria-hidden')).map(th => th.querySelector('div')?.firstChild?.textContent ?? th.textContent);
 });
-
-async function scenario(name, fn, opts) {
-  if (process.env.ONLY && !name.startsWith(process.env.ONLY)) return;
-  console.log(`\n### ${name}`);
-  const h = await launch(opts);
-  try { await fn(h); }
-  catch (e) { report(`${name}/exception`, 'ERROR', String(e).slice(0, 300)); await h.page.screenshot({ path: `${OUT}/shots/${name}-error.png` }).catch(() => {}); }
-  finally {
-    if (h.page.__errors.length) report(`${name}/page-errors`, 'OBSERVE', JSON.stringify(h.page.__errors.slice(0, 3)).slice(0, 500));
-    await h.close();
-  }
-}
 
 // ---------------------------------------------------------------- S1 data fidelity
 await scenario('S1-fidelity', async ({ page }) => {
@@ -82,7 +71,7 @@ await scenario('S1-fidelity', async ({ page }) => {
   report('S1.nested', 'OBSERVE', `li=${ns[0][nc.indexOf('li')]} st=${ns[0][nc.indexOf('st')]} mp=${ns[0][nc.indexOf('mp')]} deep=${ns[0][nc.indexOf('deep')]} st_big=${ns[0][nc.indexOf('st_big')]} st_dec=${ns[0][nc.indexOf('st_dec')]} emptyList=${ns[1][nc.indexOf('li')]} nullList=${ns[2][nc.indexOf('li')]}`);
 
   await openFile(page, `${FIX}/dup_names.parquet`, { expectTab: false });
-  { const al = await page.evaluate(() => window.__alerts.splice(0)); check('S1.dup', al[0]?.includes('more than one column'), `dup column names refused: ${JSON.stringify(al)}`); }
+  { const al = await page.evaluate(() => window.__alerts.splice(0)); check('S1.dup', al[0]?.includes('more than one column'), `dup column names refused: ${JSON.stringify(al)}`); expectConsoleError(page, al[0]?.replace('Failed to open file:', 'Failed to open parquet file:')); }
 
   await openFile(page, `${FIX}/all_null.parquet`);
   const an = await visibleGrid(page);
@@ -105,6 +94,7 @@ await scenario('S1-fidelity', async ({ page }) => {
     const after = await page.evaluate(() => document.querySelectorAll('[title^="Close tab"]').length);
     const alerts = await page.evaluate(() => window.__alerts.splice(0));
     check(`S1.broken.${f}`, after === before && alerts.length === 1, `alerts=${JSON.stringify(alerts).slice(0, 200)}`);
+    expectConsoleError(page, alerts[0]?.replace('Failed to open file:', 'Failed to open parquet file:'));
   }
 
   // Valid footer, corrupted data pages: the file is unreadable as a whole, so
@@ -120,7 +110,7 @@ await scenario('S1-fidelity', async ({ page }) => {
   await page.waitForTimeout(300);
   const hc2 = await visibleHeader(page);
   check('S1.wide.virtual', hc1[0] === 'col_000' && hc2.includes('col_599'), `first=${hc1.slice(0, 2)} after scroll=${hc2.slice(-2)} rendered=${hc2.length}`);
-  await page.screenshot({ path: `${OUT}/shots/S1-wide.png` });
+  await screenshot(page, { path: `${OUT}/shots/S1-wide.png` });
 });
 
 // ---------------------------------------------------------------- S2 pagination
@@ -348,8 +338,10 @@ await scenario('S5-sql', async ({ page }) => {
   check('S5.scrollBottom', lastRows.at(-1)?.[0] === '9999', `last rendered id=${lastRows.at(-1)?.[0]}`);
   await run('SELECT bogus FROM t');
   check('S5.error', (await qerr())?.includes('bogus'), `${(await qerr())?.slice(0, 120)}`);
+  expectConsoleError(page, await qerr());
   await run('');
   report('S5.emptyQuery', 'OBSERVE', `empty query -> ${(await qerr())?.slice(0, 120)}`);
+  expectConsoleError(page, await qerr());
   await run('SELECT id AS "a b", id AS "日本語", COUNT(*) OVER () AS c FROM t LIMIT 1');
   check('S5.aliases', (await visibleHeader(page)).join('|').includes('a b') && (await visibleGrid(page))[0]?.length === 3, `${(await visibleHeader(page)).join('|')} ${JSON.stringify((await visibleGrid(page))[0])}`);
   await run('SELECT CAST(id AS DECIMAL(20,4)) AS d, id * 1000000000000 AS big, ARROW_CAST(id, \'Utf8\') AS s FROM t WHERE id = 9999');
@@ -369,6 +361,7 @@ await scenario('S5-sql', async ({ page }) => {
   // DROP TABLE t
   await run('DROP TABLE t');
   report('S5.drop', 'OBSERVE', `DROP TABLE t -> status=${await status()} err=${await qerr()}`);
+  expectConsoleError(page, await qerr());
   await act(page).locator('button:has-text("Content")').click(); await page.waitForTimeout(100);
   await act(page).locator('button:has-text("Next")').click(); await waitGrid(page);
   check('S5.dropBreaksBrowse', !(await dataError(page)), `after DROP TABLE t in SQL view, paging: dataError=${await dataError(page)} msg=${await act(page).locator('.font-mono.break-words').textContent().catch(() => '')}`);
@@ -377,6 +370,7 @@ await scenario('S5-sql', async ({ page }) => {
   // SET partitions then paging determinism
   await act(page).locator('button:has-text("Query")').click();
   await run('SET datafusion.execution.target_partitions = 8');
+  expectConsoleError(page, await qerr());
   await run('SELECT COUNT(*) FROM t');
   await act(page).locator('button:has-text("Content")').click();
   const pageInput = act(page).locator('input[inputmode="numeric"]');
@@ -616,10 +610,10 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   check('S8.purchaseHidden', (await page.locator('[data-testid="purchase-status"]').count()) === 0, 'no purchase section in a build without a store (has_store false)');
   await page.locator('[role=dialog] [title="Close"]').click(); await page.waitForTimeout(200);
   check('S8.closeButton', (await page.locator('h2:has-text("Settings")').count()) === 0, '✕ closes the dialog');
-  await page.screenshot({ path: `${OUT}/shots/S8-dark-welcome.png` });
+  await screenshot(page, { path: `${OUT}/shots/S8-dark-welcome.png` });
   // view options in the viewer: density and column types apply at once
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
-  await page.screenshot({ path: `${OUT}/shots/S8-dark-viewer.png` });
+  await screenshot(page, { path: `${OUT}/shots/S8-dark-viewer.png` });
   await act(page).locator('[title="View options"]').click(); await page.waitForTimeout(100);
   await act(page).locator('[role=radio]:has-text("Compact")').click(); await page.waitForTimeout(100);
   await act(page).locator('[role=radio]:has-text("Physical")').click(); await page.waitForTimeout(300);
@@ -704,6 +698,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
   // noperm
   await page.click('.py-1 >> text=noperm'); await page.waitForTimeout(400);
   report('S9.noperm', 'OBSERVE', `clicking noperm dir: errors=${JSON.stringify(page.__errors.filter(e => e.includes('directory')).slice(0, 1))} any UI error=${await page.locator('text=/denied|error/i').count()}`);
+  expectConsoleError(page, 'Failed to load directory: Permission denied (os error 13)');
   // click UPPER.PARQUET entry
   await page.click('.py-1 >> text=UPPER.PARQUET'); await page.waitForTimeout(500); await waitGrid(page);
   check('S9.openUpper', (await activeTabName(page)) === 'UPPER.PARQUET', `active=${await activeTabName(page)}`);
@@ -757,7 +752,7 @@ await scenario('S9-explorer', async ({ page, bridge }) => {
     return input?.closest('.overflow-hidden')?.clientWidth === 0;
   }, null, { timeout: 2000 }).then(() => true, () => false);
   check('S9.hideSidebar', collapsed);
-  await page.screenshot({ path: `${OUT}/shots/S9.png` });
+  await screenshot(page, { path: `${OUT}/shots/S9.png` });
 }, { dataDir: S9_DATA });
 
 // "Relaunch": a fresh browser and bridge on the same store. The tabs open
@@ -861,7 +856,7 @@ await scenario('S11-session-restore', async ({ page, bridge }) => {
   await page.waitForTimeout(600);
   const saved = await bridge.call('list_session_tabs');
   check('S11r.pruned', sessionPaths(saved).join(',') === 'multi_rowgroup.parquet,one_row.parquet' && saved.active === `${FIX}/one_row.parquet`, `${sessionPaths(saved)} active=${saved.active}`);
-  await page.screenshot({ path: `${OUT}/shots/S11.png` });
+  await screenshot(page, { path: `${OUT}/shots/S11.png` });
 }, { dataDir: S11_DATA });
 
 // With the setting off nothing is restored, and nothing is even asked for.
@@ -912,7 +907,7 @@ await scenario('S12-finder', async ({ page, bridge }) => {
   await page.waitForTimeout(300);
   const alerts = await page.evaluate(() => window.__alerts);
   check('S12.notParquet', (await tabNames(page)).length === 3 && alerts.includes('Parqsee can only open .parquet files'), `tabs=${(await tabNames(page)).length} alerts=${JSON.stringify(alerts)}`);
-  await page.screenshot({ path: `${OUT}/shots/S12.png` });
+  await screenshot(page, { path: `${OUT}/shots/S12.png` });
 }, { dataDir: S12_DATA, pendingFiles: [S12_JA] });
 
 // ---------------------------------------------------------------- S13 the bundled sample file
@@ -948,7 +943,7 @@ await scenario('S13-sample', async ({ page, bridge }) => {
   await page.waitForTimeout(600);
   const saved = await bridge.call('list_session_tabs');
   check('S13.session', sessionPaths(saved).join(',') === 'sample.parquet,one_row.parquet' && saved.active === S13_SAMPLE, `${sessionPaths(saved)} active=${saved.active}`);
-  await page.screenshot({ path: `${OUT}/shots/S13.png` });
+  await screenshot(page, { path: `${OUT}/shots/S13.png` });
 }, { dataDir: S13_DATA });
 
 await scenario('S13-sample-restore', async ({ page }) => {
@@ -1015,7 +1010,7 @@ await scenario('S14-free-tier', async ({ page, bridge }) => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
   check('S14.session', sessionPaths(await bridge.call('list_session_tabs')).length === 5, `saved=${sessionPaths(await bridge.call('list_session_tabs'))}`);
-  await page.screenshot({ path: `${OUT}/shots/S14.png` });
+  await screenshot(page, { path: `${OUT}/shots/S14.png` });
 }, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
 
 // The relaunch on the free tier with five tabs saved: the first three come
@@ -1037,12 +1032,7 @@ await scenario('S14-free-restore', async ({ page, bridge }) => {
   check('S14r.restored', !(await badge(page).count()), `badge count=${await badge(page).count()}`);
   // The next save drops the two tabs that did not come back.
   await page.waitForTimeout(600);
-  await page.screenshot({ path: `${OUT}/shots/S14r.png` });
+  await screenshot(page, { path: `${OUT}/shots/S14r.png` });
 }, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
 
-console.log('\n\n===== SUMMARY =====');
-for (const r of results) console.log(`${r.status.padEnd(7)} ${r.id}  ${r.note ?? ''}`);
-fs.writeFileSync(`${OUT}/suite_results.json`, JSON.stringify(results, null, 2));
-const failed = results.filter(r => r.status === 'FAIL' || r.status === 'ERROR').length;
-console.log(`\n${results.filter(r => r.status === 'PASS').length} PASS, ${failed} FAIL/ERROR, ${results.filter(r => r.status === 'OBSERVE').length} OBSERVE`);
-process.exit(failed ? 1 : 0);
+finishSuite();

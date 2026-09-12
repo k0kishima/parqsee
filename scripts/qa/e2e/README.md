@@ -78,6 +78,7 @@ npx --package=playwright-core playwright install webkit   # once per machine
 cd scripts/qa/e2e
 pnpm smoke                 # one file, prints the grid
 pnpm suite                 # the regression suite; exit code 1 on any FAIL/ERROR
+pnpm test                  # inject browser errors and verify the suite fails
 ONLY=S3 pnpm suite         # one scenario prefix
 pnpm large-file            # needs `uv run scripts/qa/gen_huge.py`; use a release bridge for real numbers
 BRIDGE_BIN=../../../backend/target/release/examples/bridge pnpm suite
@@ -137,10 +138,13 @@ DEV_URL=http://localhost:1421/ pnpm suite # in another shell
 ```
 
 WebKit reports a violation as a console error starting with `Refused to`,
-which the suite prints in the `page-errors` OBSERVE lines. One is expected
-and harmless: `Refused to apply a stylesheet … (:5)` right after a
-`page.screenshot()` — Playwright injects an inline `<style>` to hide the
-caret. Anything else is a real violation. Run this after adding inline
+which fails the suite. Use `screenshot(page, options)` from `runner.mjs`
+for regression screenshots: Playwright's WebKit animation synchronization
+injects an inline `body {}` stylesheet even with `caret: 'initial'`.
+The wrapper accounts for at most one exact known warning emitted during
+that screenshot call and records it as `OBSERVE`. Earlier warnings,
+additional warnings and other errors still fail; the app's CSP is unchanged.
+Run this after adding inline
 styles/scripts, images, fonts or a new plugin. Only the release `.app`
 exercises `connect-src` (the IPC goes through the fake `__TAURI_INTERNALS__`
 here); that stays on `docs/MANUAL_QA.md` MQ-11.
@@ -150,7 +154,18 @@ and the suite's export files. `BRIDGE_QUIET=1` silences the bridge's stderr.
 
 Check statuses: `PASS`/`FAIL` are assertions; `OBSERVE` lines record
 behaviour worth a look without asserting it; `ERROR` is an exception in the
-scenario itself (screenshot in `out/shots/<scenario>-error.png`).
+scenario itself (screenshot in `out/shots/<scenario>-error.png`). Unexpected
+`pageerror` (including unhandled promise rejections) and `console.error`
+messages are `FAIL`, checked after teardown and saved in full in the JSON
+results. Negative tests call `expectConsoleError(page, exactMessage)` after
+the operation to account for exactly one expected console message. A missing
+message fails too. Do not add broad scenario-wide ignore patterns.
+
+`pnpm test` uses real WebKit child suites to check nonzero exit codes for
+uncaught exceptions, unhandled rejections, console errors and CSP violations,
+plus the expected-message and screenshot exceptions. It requires the same
+server and bridge as `pnpm suite`; run both under CSP before merging changes
+to the harness.
 
 ## Writing checks
 

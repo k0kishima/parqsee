@@ -202,24 +202,30 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
   mkdirSync(dataDir, { recursive: true });
   const bridge = new Bridge(dataDir, pendingFiles);
   const engine = browser === 'chromium' ? chromium : webkit;
-  const b = await engine.launch({ headless });
-  const ctx = await b.newContext({ viewport, deviceScaleFactor, locale });
-  const page = await ctx.newPage();
-  page.__errors = [];
-  page.on('pageerror', (e) => page.__errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') page.__errors.push('console: ' + m.text()); });
-  await page.exposeFunction('__bridgeInvoke', async (cmd, args, delayMs) => {
-    try { return { __ok: await bridge.call(cmd, args, delayMs) }; }
-    catch (e) { return { __err: e }; }
-  });
-  await page.addInitScript(INIT);
-  await page.addInitScript(v => { window.__appVersion = v; }, APP_VERSION);
-  await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
-  if (iap) await page.addInitScript((store) => { window.__iap = store; }, iap);
-  await page.goto(DEV_URL);
-  await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
-  const close = async () => { await b.close(); bridge.close(); };
-  return { page, bridge, browser: b, dataDir, close };
+  let b;
+  try {
+    b = await engine.launch({ headless });
+    const ctx = await b.newContext({ viewport, deviceScaleFactor, locale });
+    const page = await ctx.newPage();
+    page.__errors = [];
+    page.on('pageerror', (e) => page.__errors.push(String(e)));
+    page.on('console', (m) => { if (m.type() === 'error') page.__errors.push('console: ' + m.text()); });
+    await page.exposeFunction('__bridgeInvoke', async (cmd, args, delayMs) => {
+      try { return { __ok: await bridge.call(cmd, args, delayMs) }; }
+      catch (e) { return { __err: e }; }
+    });
+    await page.addInitScript(INIT);
+    await page.addInitScript(v => { window.__appVersion = v; }, APP_VERSION);
+    await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
+    if (iap) await page.addInitScript((store) => { window.__iap = store; }, iap);
+    await page.goto(DEV_URL);
+    await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
+    const close = async () => { try { await b.close(); } finally { bridge.close(); } };
+    return { page, bridge, browser: b, dataDir, close };
+  } catch (error) {
+    try { await b?.close(); } finally { bridge.close(); }
+    throw error;
+  }
 }
 
 /** Deliver a file-drop the way lib.rs's drag-drop handler does. */
