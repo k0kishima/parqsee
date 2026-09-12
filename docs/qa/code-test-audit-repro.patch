@@ -1,0 +1,113 @@
+--- a/backend/src/services/parquet.rs
++++ b/backend/src/services/parquet.rs
+@@ -1855,3 +1855,27 @@
+         assert!(batches.is_empty());
+     }
+ }
++
++#[cfg(test)]
++mod audit_diagnostics {
++    use super::*;
++    use crate::services::access::fake::FakeBookmarks;
++    #[tokio::test]
++    async fn audit_failed_open_retains_grant() {
++        let path = crate::services::test_support::temp_path("audit", "broken.parquet");
++        std::fs::write(&path, b"broken parquet").unwrap();
++        let path = path.to_string_lossy().into_owned();
++        let fake = FakeBookmarks::default();
++        let access = Arc::new(FileAccess::load(Box::new(fake.clone()), None));
++        access.remember_file(&path).unwrap();
++        access.release(&path);
++        let cache = ParquetCache::with_access(access);
++        assert!(cache.get_or_create_metadata(&path).await.is_err());
++        assert!(cache.metadata.lock().unwrap().is_empty());
++        assert!(cache.sessions.lock().unwrap().is_empty());
++        assert_eq!(fake.active(), vec![path.clone()]);
++        println!("AUDIT: failed metadata, zero cache entries, one held grant");
++        cache.evict(&path).await.unwrap();
++        assert!(fake.active().is_empty());
++    }
++}
+--- a/backend/src/services/store/mod.rs
++++ b/backend/src/services/store/mod.rs
+@@ -489,3 +489,22 @@
+         assert_eq!(waiting.await.unwrap().state, IapState::Unlocked);
+     }
+ }
++
++#[cfg(test)]
++mod audit_diagnostics {
++    use super::*;
++    #[tokio::test]
++    async fn audit_late_init_does_not_notify() {
++        let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
++        let changes = Arc::new(Mutex::new(Vec::new()));
++        let seen = changes.clone();
++        license.set_on_change(Box::new(move |s| seen.lock().unwrap().push(s)));
++        let first = license.status().await;
++        assert_eq!(first.state, crate::models::IapState::Free);
++        assert!(first.store_error.unwrap().contains("did not answer in time"));
++        license.init().await;
++        assert_eq!(license.status().await.state, crate::models::IapState::Unlocked);
++        assert!(changes.lock().unwrap().is_empty());
++        println!("AUDIT: timeout Free -> backend Unlocked; zero UI notifications");
++    }
++}
+--- a/frontend/src/contexts/__tests__/WorkspaceContext.test.tsx
++++ b/frontend/src/contexts/__tests__/WorkspaceContext.test.tsx
+@@ -813,3 +813,21 @@
+     expect(openUrl).toHaveBeenCalledWith('https://parqsee.fuji.llc/support.html');
+   });
+ });
++
++it('audit concurrent opens leave rejected file unclosed', async () => {
++  localStorage.clear();
++  license.tabLimit = 3;
++  license.showUpgrade.mockClear();
++  vi.mocked(listSessionTabs).mockResolvedValue({ tabs: [], active: null });
++  vi.mocked(evictCacheQuietly).mockClear();
++  const result = await openTabs('/data/a.parquet', '/data/b.parquet');
++  await act(async () => {
++    await Promise.all([result.current.openParquetFile('/data/c.parquet'), result.current.openParquetFile('/data/d.parquet')]);
++  });
++  expect(result.current.tabs).toHaveLength(3);
++  expect(openParquetFile).toHaveBeenCalledWith('/data/d.parquet');
++  expect(rememberFile).toHaveBeenCalledWith('/data/d.parquet');
++  expect(evictCacheQuietly).not.toHaveBeenCalledWith('/data/d.parquet');
++  expect(license.showUpgrade).not.toHaveBeenCalled();
++  license.tabLimit = null;
++});
+--- a/frontend/src/contexts/__tests__/LicenseContext.test.tsx
++++ b/frontend/src/contexts/__tests__/LicenseContext.test.tsx
+@@ -152,3 +152,15 @@
+         expect(result.current.status.store_error).toContain('boom');
+     });
+ });
++
++it('audit stale initial status overwrites a newer refund event', async () => {
++  let finish!: (s: IapStatus) => void;
++  let push!: (s: IapStatus) => void;
++  vi.mocked(getIapStatus).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
++  vi.mocked(onIapStatus).mockImplementation(handler => { push = handler; return Promise.resolve(() => {}); });
++  const { result } = renderHook(() => useLicense(), { wrapper });
++  act(() => push(FREE));
++  expect(result.current.unlocked).toBe(false);
++  await act(async () => finish(UNLOCKED));
++  expect(result.current.unlocked).toBe(true);
++});
+--- a/frontend/src/contexts/__tests__/RecentFilesContext.test.tsx
++++ b/frontend/src/contexts/__tests__/RecentFilesContext.test.tsx
+@@ -44,3 +44,13 @@
+     expect(result.current.recentFiles[0].name).toBe('new.parquet');
+   });
+ });
++
++it('audit late listing overwrites a newly opened recent file', async () => {
++  let finish!: (files: ReturnType<typeof file>[]) => void;
++  vi.mocked(listRecentFiles).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
++  const { result } = renderHook(() => useRecentFiles(), { wrapper });
++  act(() => result.current.upsertRecentFile(file('new.parquet')));
++  expect(result.current.recentFiles[0].name).toBe('new.parquet');
++  await act(async () => finish([file('old.parquet')]));
++  expect(result.current.recentFiles.map(f => f.name)).toEqual(['old.parquet']);
++});
