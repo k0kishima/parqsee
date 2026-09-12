@@ -107,6 +107,9 @@ interface WorkspaceContextType {
     /** Set once the launch-time restore skipped a file; cleared by `dismissRestoreNotice`. */
     restoreNotice: RestoreNotice | null;
     dismissRestoreNotice: () => void;
+    /** Latest session remains unsaved; retry explicitly or on pagehide. */
+    sessionSaveFailed: boolean;
+    retrySessionSave: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -230,26 +233,62 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    // Persist the session on every change worth keeping, after a short
-    // delay; a snapshot equal to the last one written is not written again.
+    // Keep the latest unsaved snapshot until acknowledgement. Writes are
+    // serialized so an older completion cannot replace a newer disk state.
+    const [sessionSaveFailed, setSessionSaveFailed] = useState(false);
     const lastSavedSession = useRef<string | null>(null);
-    const pendingSession = useRef<{ snapshot: SessionSnapshot; timer: ReturnType<typeof setTimeout> } | null>(null);
-    const flushSession = useCallback(() => {
+    const pendingSession = useRef<{ snapshot: SessionSnapshot; key: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+    const savingSession = useRef(false);
+    const flushRequested = useRef(false);
+    const flushSession = useCallback(function flush() {
         const pending = pendingSession.current;
         if (!pending) return;
         clearTimeout(pending.timer);
-        pendingSession.current = null;
+        if (savingSession.current) {
+            flushRequested.current = true;
+            return;
+        }
+        if (pending.key === lastSavedSession.current) {
+            pendingSession.current = null;
+            setSessionSaveFailed(false);
+            return;
+        }
+        savingSession.current = true;
+        flushRequested.current = false;
         saveSession(pending.snapshot.tabs, pending.snapshot.active)
-            .catch(error => console.error('Failed to save the session:', error));
+            .then(() => {
+                lastSavedSession.current = pending.key;
+                if (pendingSession.current === pending) {
+                    pendingSession.current = null;
+                    setSessionSaveFailed(false);
+                }
+            })
+            .catch(error => {
+                console.error('Failed to save the session:', error);
+                if (pendingSession.current === pending) setSessionSaveFailed(true);
+            })
+            .finally(() => {
+                savingSession.current = false;
+                // Only an explicit flush or an elapsed debounce requests
+                // another attempt; failure itself never starts a retry loop.
+                if (flushRequested.current) {
+                    flushRequested.current = false;
+                    flush();
+                }
+            });
     }, []);
     useEffect(() => {
         if (!isTauri() || !sessionReady) return;
         const snapshot = sessionSnapshot(workspaceTabs);
         const key = JSON.stringify(snapshot);
-        if (key === lastSavedSession.current) return;
-        lastSavedSession.current = key;
+        if (key === pendingSession.current?.key) return;
         if (pendingSession.current) clearTimeout(pendingSession.current.timer);
-        pendingSession.current = { snapshot, timer: setTimeout(flushSession, SESSION_SAVE_DELAY_MS) };
+        if (!savingSession.current && key === lastSavedSession.current) {
+            pendingSession.current = null;
+            setSessionSaveFailed(false);
+            return;
+        }
+        pendingSession.current = { snapshot, key, timer: setTimeout(flushSession, SESSION_SAVE_DELAY_MS) };
     }, [workspaceTabs, sessionReady, flushSession]);
     // The window going away is the one change that cannot wait.
     useEffect(() => {
@@ -607,6 +646,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setTabState: (tabId: string, patch: Partial<TabState>) => dispatch({ type: 'patchState', tabId, patch }),
         activeTab,
         isReady: rootsReady && sessionReady,
+        sessionSaveFailed,
+        retrySessionSave: flushSession,
         restoreNotice,
         dismissRestoreNotice: () => setRestoreNotice(null),
     };

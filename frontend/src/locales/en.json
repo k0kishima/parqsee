@@ -172,6 +172,8 @@
         }
     },
     "session": {
+    "saveFailed": "Could not save your tabs and viewing state. Recent changes may not be restored next time.",
+    "retrySave": "Retry",
         "notReopened_one": "{{count}} file from the last session could not be reopened",
         "notReopened_other": "{{count}} files from the last session could not be reopened",
         "notRestoredFree_one": "{{count}} tab from the last session was not restored: the free version keeps {{limit}} tabs open at a time.",

@@ -474,6 +474,91 @@ describe('WorkspaceProvider session', () => {
     );
   });
 
+  it('retries the same failed snapshot on pagehide without an immediate retry loop', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    await settle();
+    vi.mocked(saveSession).mockClear().mockRejectedValueOnce('save failed');
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await settle();
+    const failed = vi.mocked(saveSession).mock.calls[0];
+    expect(result.current.sessionSaveFailed).toBe(true);
+    expect(error).toHaveBeenCalledWith('Failed to save the session:', 'save failed');
+    await settle();
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    // A render with only transient changes still represents the failed snapshot.
+    act(() => result.current.setTabState(result.current.tabs[0].id, { searchTerm: 'x' }));
+    await settle();
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); });
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    expect(saveSession).toHaveBeenLastCalledWith(...failed);
+    expect(result.current.sessionSaveFailed).toBe(false);
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); });
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+
+  it('retains a repeatedly failed save for explicit retry, then saves a newer state', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    await settle();
+    vi.mocked(saveSession).mockClear().mockRejectedValueOnce('first').mockRejectedValueOnce('second');
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await settle();
+    await act(async () => { result.current.retrySessionSave(); });
+    await settle();
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    expect(result.current.sessionSaveFailed).toBe(true);
+    act(() => result.current.setTabState(result.current.tabs[0].id, { currentPage: 3 }));
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); });
+    expect(saveSession).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(saveSession).mock.lastCall?.[0][0].state.current_page).toBe(3);
+    expect(result.current.sessionSaveFailed).toBe(false);
+    error.mockRestore();
+  });
+
+  it('persists a return to the last saved state after an in-flight write', async () => {
+    const { result } = renderWorkspace();
+    await settle();
+    let finish!: () => void;
+    vi.mocked(saveSession).mockClear().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await settle();
+    act(() => result.current.closeTab(result.current.tabs[0].id));
+    await settle();
+    await act(async () => { finish(); });
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    expect(saveSession).toHaveBeenLastCalledWith([], null);
+  });
+
+  it.each(['resolve', 'reject'] as const)('keeps the latest pending state when an older save finishes with %s', async outcome => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    await settle();
+    let resolve!: () => void;
+    let reject!: (error: string) => void;
+    vi.mocked(saveSession).mockClear().mockImplementationOnce(() => new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    }));
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await settle();
+    act(() => result.current.setTabState(result.current.tabs[0].id, { currentPage: 2 }));
+    await settle();
+    // Saves are serialized, even when pagehide asks to flush during a write.
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    await act(async () => { if (outcome === 'resolve') resolve(); else reject('old failure'); });
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    expect(saveSession).toHaveBeenLastCalledWith([
+      { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: null } },
+    ], '/data/a.parquet');
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); });
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+
   it('writes a pending change at once when the page is hidden', async () => {
     const { result } = renderWorkspace();
     await settle();

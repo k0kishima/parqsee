@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { useLicense } from '../contexts/LicenseContext';
 import { Workspace, RestoreNotice } from '../features/workspace';
@@ -7,10 +8,11 @@ import { UpgradePrompt } from '../features/license';
 import { ShortcutSheet } from '../features/help';
 
 export const AppRouter = () => {
+    const { t } = useTranslation();
     const {
         tabs, roots, isReady, isSettingsOpen, toggleSettings, isShortcutsOpen, toggleShortcuts,
         openParquetFile, openSampleFile, openFileDialog, openFolderDialog,
-        restoreNotice, dismissRestoreNotice,
+        restoreNotice, dismissRestoreNotice, sessionSaveFailed, retrySessionSave,
     } = useWorkspace();
     // From Settings the sheet takes the dialog's place, so one Escape
     // closes one thing.
@@ -57,6 +59,15 @@ export const AppRouter = () => {
 
             {/* Over either screen: the free tier's limit was hit, or Upgrade was clicked. */}
             {upgradeOpen && <UpgradePrompt />}
+
+            {sessionSaveFailed && (
+                <div role="status" className="fixed top-4 left-1/2 -translate-x-1/2 z-30 max-w-xl px-4 py-3 rounded-lg shadow-lg border text-sm bg-amber-50 border-amber-300 text-amber-950 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-50">
+                    {t('session.saveFailed')}{' '}
+                    <button onClick={retrySessionSave} className="font-medium underline">
+                        {t('session.retrySave')}
+                    </button>
+                </div>
+            )}
 
             {/* Shown over either screen: the whole session may have failed to come back. */}
             {restoreNotice && (

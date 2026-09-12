@@ -189,7 +189,14 @@ pending approval, refund, restore failure and retry at the tab limit.
 Tests wait for responses, visible results or persisted snapshots. Filesystem
 failures use a regular file as the destination parent, not host permissions.
 
-`exploratory-diagnostics.mjs` is an **opt-in defect reproducer**, outside CI:
+EX-01 is now covered by `S11-session-save-retry` in the regular suite:
+`ONLY=S11` checks restoration plus retry after failure via pagehide and the
+visible Retry button, disk persistence, and successful-save deduplication.
+The notification is nonmodal, localized in English/Japanese, remains until
+the latest state is saved, and does not claim native Quit completion.
+
+`exploratory-diagnostics.mjs` is a **historical defect reproducer**, outside CI.
+Run it on the pre-fix revision; it intentionally fails once EX-01 is fixed:
 
 ```sh
 DEV_URL=http://localhost:1421/ BRIDGE_QUIET=1 node exploratory-diagnostics.mjs
