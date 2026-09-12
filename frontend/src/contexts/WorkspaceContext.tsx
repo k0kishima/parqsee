@@ -23,6 +23,7 @@ import {
     listSessionTabs,
     saveSession,
     takePendingFiles,
+    SessionTab,
 } from '../features/workspace/api';
 import {
     Tab,
@@ -48,7 +49,10 @@ export type { Tab, WorkspaceRoot };
 export interface RestoreNotice {
     /** The files that could not be reopened (gone, or failed to open). */
     skipped: string[];
-    /** The tabs left out because the free tier's limit was reached. */
+    /**
+     * The tabs left out because the free tier's limit was reached. They
+     * come back on their own when the limit lifts (see `cappedTabs`).
+     */
     capped: string[];
 }
 
@@ -159,6 +163,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // Read once: the setting decides what happens at launch, not later.
     const restoreOnLaunch = useRef(settings.restoreTabs);
     const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
+    // The session tabs the free tier left out at launch, with their saved
+    // state, kept until the limit lifts — a purchase, Restore Purchases,
+    // or the launch-time read of the store landing after `iap_status`
+    // gave up waiting for it and answered the free tier (`LicenseProvider`
+    // takes the late read from the `iap-status` event). They are then
+    // opened as the rest of the session was. Only in memory: the next save
+    // keeps what is open, so a quit before the limit lifts drops them.
+    const cappedTabs = useRef<SessionTab[]>([]);
     // Saving starts once the restore has finished (or was skipped): the
     // empty workspace of the first render must not overwrite the store.
     const [sessionReady, setSessionReady] = useState(!isTauri());
@@ -191,7 +203,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let cancelled = false;
         (async () => {
             const skipped: string[] = [];
-            const capped: string[] = [];
+            const capped: SessionTab[] = [];
             if (restoreOnLaunch.current) {
                 try {
                     const session = await listSessionTabs();
@@ -203,7 +215,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                             continue;
                         }
                         if (!hasRoomForTab(restored.length, limit)) {
-                            capped.push(tab.path);
+                            capped.push(tab);
                             continue;
                         }
                         try {
@@ -225,13 +237,52 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 }
             }
             if (cancelled) return;
-            if (skipped.length > 0 || capped.length > 0) setRestoreNotice({ skipped, capped });
+            cappedTabs.current = capped;
+            if (skipped.length > 0 || capped.length > 0) setRestoreNotice({ skipped, capped: capped.map(t => t.path) });
             setSessionReady(true);
         })();
         return () => {
             cancelled = true;
         };
     }, []);
+
+    // The limit lifted: the tabs it left out at launch come back, opened
+    // as the restore opened the others (no `rememberFile`; a file that
+    // fails to open is named in the notice like a skipped one). The active
+    // tab stays; the capped part of the notice goes.
+    useEffect(() => {
+        if (tabLimit !== null || !sessionReady || cappedTabs.current.length === 0) return;
+        const leftOut = cappedTabs.current;
+        cappedTabs.current = [];
+        let cancelled = false;
+        (async () => {
+            const restored: RestoredTab[] = [];
+            const skipped: string[] = [];
+            for (const tab of leftOut) {
+                try {
+                    await apiOpenParquetFile(tab.path);
+                } catch (error) {
+                    console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                    skipped.push(tab.path);
+                    continue;
+                }
+                restored.push({
+                    tab: { id: newTabId(), path: tab.path, name: tab.name },
+                    state: restoredTabState(tab.state),
+                });
+            }
+            if (cancelled) return;
+            dispatch({ type: 'restore', tabs: restored, activePath: null });
+            setRestoreNotice(notice => {
+                const stillSkipped = [...(notice?.skipped ?? []), ...skipped];
+                const stillCapped = (notice?.capped ?? []).filter(path => !leftOut.some(t => t.path === path));
+                return stillSkipped.length > 0 || stillCapped.length > 0 ? { skipped: stillSkipped, capped: stillCapped } : null;
+            });
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [tabLimit, sessionReady]);
 
     // Keep the latest unsaved snapshot until acknowledgement. Writes are
     // serialized so an older completion cannot replace a newer disk state.
