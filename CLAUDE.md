@@ -342,7 +342,11 @@ store (a purchase approved elsewhere, a refund).
     held per path — for a root from open until removed, for a file exactly as
     long as its `ParquetCache` entry (`acquire` on fill, `release` on evict;
     DataFusion reopens the file on every query, so the grant cannot end with
-    the first read). Files dropped on the window or picked in a dialog are
+    the first read; a fill that fails gives the grant back itself through
+    `release_unless_used`, unless the other half's entry or a fill in
+    flight still holds it — the file gets no tab, so nothing would evict
+    it, and each failed open of a different file would otherwise keep one
+    more grant until the process ends). Files dropped on the window or picked in a dialog are
     readable without any of this for the rest of the session; `remember_file`
     creates their bookmark at open time so Recent Files can reopen them
     later. The ObjC calls sit behind the `BookmarkProvider` trait
