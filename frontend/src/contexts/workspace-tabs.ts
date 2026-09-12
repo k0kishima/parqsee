@@ -43,9 +43,11 @@ export interface RestoredTab {
 /**
  * How many tabs may be open at once; `null` for no limit. The free tier's
  * limit (see `features/license/lib/license.ts`) is checked before a file is
- * opened so the user gets the upgrade prompt instead of a silent no-op —
- * the transitions take it too, as the backstop that holds when several
- * opens race within one render.
+ * opened so the user gets the upgrade prompt instead of a silent no-op
+ * (with the opens in flight counted, so files handed over together cannot
+ * all pass) — the transitions take it too, as the backstop for a limit
+ * that came back (a refund) while a file was opening; `WorkspaceContext`
+ * evicts and prompts for a tab the backstop refused.
  */
 export type TabLimit = number | null;
 
