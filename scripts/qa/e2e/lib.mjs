@@ -99,23 +99,28 @@ window.__delays = {};
 // with \`iap\` set answers them here instead — see \`FREE_STORE\` and
 // \`setStore\` — which is the only way the free tier is reachable outside a
 // signed store build. \`__purchases\` records every product id bought.
+// Like the backend, the store numbers its state (\`revision\`, from 1 at
+// launch, one more per change) and stamps it on every status it hands
+// out; the webview keeps the higher number when an answer and an event
+// cross (\`isCurrent\` in the license reducer).
 window.__iap = null;
 window.__purchases = [];
+window.__iapStamp = (status) => Object.assign({}, status, { revision: window.__iap.revision });
 window.__iapInvoke = async (cmd, args) => {
   const s = window.__iap;
   const delay = window.__delays[cmd] || 0;
   if (delay) await new Promise(r => setTimeout(r, delay));
-  const unlock = () => { s.status = Object.assign({}, s.status, { state: 'unlocked' }); };
+  const unlock = () => { s.status = Object.assign({}, s.status, { state: 'unlocked' }); s.revision += 1; };
   switch (cmd) {
-    case 'iap_status': return s.status;
+    case 'iap_status': return window.__iapStamp(s.status);
     case 'iap_products': if (s.productsError) throw s.productsError; return s.products;
     case 'iap_purchase': {
       window.__purchases.push(args.productId);
       if (s.purchaseError) throw s.purchaseError;
       if (s.purchaseOutcome === 'purchased') unlock();
-      return { outcome: s.purchaseOutcome, status: s.status };
+      return { outcome: s.purchaseOutcome, status: window.__iapStamp(s.status) };
     }
-    case 'iap_restore': if (s.restoreError) throw s.restoreError; if (s.owned) unlock(); return s.status;
+    case 'iap_restore': if (s.restoreError) throw s.restoreError; if (s.owned) unlock(); return window.__iapStamp(s.status);
     default: throw 'unmocked ' + cmd;
   }
 };
@@ -217,7 +222,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
     await page.addInitScript(INIT);
     await page.addInitScript(v => { window.__appVersion = v; }, APP_VERSION);
     await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
-    if (iap) await page.addInitScript((store) => { window.__iap = store; }, iap);
+    if (iap) await page.addInitScript((store) => { window.__iap = { revision: 1, ...store }; }, iap);
     await page.goto(DEV_URL);
     await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
     const close = async () => { try { await b.close(); } finally { bridge.close(); } };
@@ -269,10 +274,21 @@ export async function setStore(page, patch) {
 /**
  * Push a status the way the backend does after a transaction update from
  * the store — a purchase approved elsewhere, a refund — as the `iap-status`
- * event; the scripted store answers `iap_status` with it from then on.
+ * event, numbered as the next change; the scripted store answers
+ * `iap_status` with it from then on. Without a scripted store (the
+ * bridge's `AlwaysUnlocked`, whose launch read is revision 1) the event is
+ * numbered 2, which outranks that read once.
  */
 export async function pushIapStatus(page, status) {
-  await page.evaluate((s) => { if (window.__iap) window.__iap.status = s; window.__emit('iap-status', s); }, status);
+  await page.evaluate((s) => {
+    if (window.__iap) {
+      window.__iap.status = s;
+      window.__iap.revision += 1;
+      window.__emit('iap-status', window.__iapStamp(s));
+    } else {
+      window.__emit('iap-status', { ...s, revision: 2 });
+    }
+  }, status);
 }
 
 /**

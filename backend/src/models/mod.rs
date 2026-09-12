@@ -154,6 +154,13 @@ pub struct IapStatus {
     /// without one (the plain `pnpm tauri build`, dev, the e2e bridge), where
     /// the app is unlocked and the purchase screens have nothing to show.
     pub has_store: bool,
+    /// Counts the changes to the backend's purchase state in this process:
+    /// 1 at the launch-time read, one more for every purchase, restore and
+    /// transaction update; 0 for a status derived from no read at all
+    /// (`iap_status` giving up its wait). The `iap-status` event and a
+    /// command's answer can cross on their way to the webview, which keeps
+    /// whichever carries the higher number.
+    pub revision: u64,
 }
 
 /// A product as the App Store describes it in the user's storefront —

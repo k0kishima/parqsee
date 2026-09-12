@@ -11,7 +11,7 @@ import {
     type IapStatus,
 } from '../../features/license/api';
 import { FREE_TAB_LIMIT } from '../../features/license/lib/license';
-import { FREE, UNLOCKED, FULL_PRODUCT } from '../../features/license/lib/__tests__/fixtures';
+import { FREE, UNLOCKED, FULL_PRODUCT, iapStatus } from '../../features/license/lib/__tests__/fixtures';
 
 vi.mock('../../lib/tauri', async () => ({
     ...(await vi.importActual<typeof import('../../lib/tauri')>('../../lib/tauri')),
@@ -150,5 +150,91 @@ describe('LicenseProvider', () => {
         expect(result.current.unlocked).toBe(false);
         expect(result.current.tabLimit).toBe(FREE_TAB_LIMIT);
         expect(result.current.status.store_error).toContain('boom');
+    });
+});
+
+// The backend delivers every change to its state as the `iap-status`
+// event, numbered (`revision`); the event and a command's answer can
+// cross on the way here. See `isCurrent` in the reducer.
+describe('LicenseProvider against a backend whose answers and events cross', () => {
+    /** The `iap-status` event, once the provider listens. */
+    let push: (s: IapStatus) => void;
+
+    beforeEach(() => {
+        vi.mocked(getIapStatus).mockReset();
+        vi.mocked(onIapStatus).mockReset().mockImplementation(handler => {
+            push = handler;
+            return Promise.resolve(() => {});
+        });
+    });
+
+    it('listens before it asks, so a change between the two is not lost', async () => {
+        let listening!: () => void;
+        vi.mocked(onIapStatus).mockImplementationOnce(handler => {
+            push = handler;
+            return new Promise(resolve => {
+                listening = () => resolve(() => {});
+            });
+        });
+        vi.mocked(getIapStatus).mockResolvedValue(FREE);
+        const { result } = renderHook(() => useLicense(), { wrapper });
+        await act(async () => {});
+        expect(getIapStatus).not.toHaveBeenCalled();
+        await act(async () => listening());
+        await waitFor(() => expect(result.current).not.toBeNull());
+        expect(getIapStatus).toHaveBeenCalledTimes(1);
+        expect(result.current.tabLimit).toBe(FREE_TAB_LIMIT);
+    });
+
+    it('the launch-time read that outlasted iap_status arrives as an event and unlocks', async () => {
+        // iap_status gave up waiting: the free tier at revision 0, with the reason.
+        vi.mocked(getIapStatus).mockResolvedValue(iapStatus({ store_error: 'the App Store did not answer in time', revision: 0 }));
+        const { result } = await renderLicense();
+        expect(result.current.tabLimit).toBe(FREE_TAB_LIMIT);
+        expect(result.current.status.store_error).toContain('did not answer');
+
+        act(() => push(iapStatus({ state: 'unlocked', revision: 1 })));
+        expect([result.current.unlocked, result.current.tabLimit, result.current.status.store_error]).toEqual([true, null, null]);
+    });
+
+    it('an answer to the first read that lands after a refund does not undo the refund', async () => {
+        let answer!: (s: IapStatus) => void;
+        vi.mocked(getIapStatus).mockReturnValue(new Promise(resolve => {
+            answer = resolve;
+        }));
+        const { result } = renderHook(() => useLicense(), { wrapper });
+        await waitFor(() => expect(getIapStatus).toHaveBeenCalled());
+        // The refund's event gets here first; the answer computed before it lands after.
+        act(() => push(iapStatus({ state: 'free', revision: 2 })));
+        expect(result.current.tabLimit).toBe(FREE_TAB_LIMIT);
+        await act(async () => answer(iapStatus({ state: 'unlocked', revision: 1 })));
+        expect([result.current.unlocked, result.current.tabLimit]).toEqual([false, FREE_TAB_LIMIT]);
+    });
+
+    it('a refund pushed while restore was answering wins; a purchase answer beats an older update', async () => {
+        vi.mocked(getIapStatus).mockResolvedValue(iapStatus({ revision: 1 }));
+        vi.mocked(listIapProducts).mockResolvedValue(PRODUCTS);
+        let answerRestore!: (s: IapStatus) => void;
+        vi.mocked(restorePurchases).mockReturnValue(new Promise(resolve => {
+            answerRestore = resolve;
+        }));
+        const { result } = await renderLicense();
+
+        let restoring!: Promise<void>;
+        act(() => {
+            restoring = result.current.restore();
+        });
+        expect(result.current.busy).toBe('restore');
+        act(() => push(iapStatus({ state: 'free', revision: 3 })));
+        await act(async () => {
+            answerRestore(iapStatus({ state: 'unlocked', revision: 2 }));
+            await restoring;
+        });
+        expect([result.current.busy, result.current.unlocked]).toEqual([null, false]);
+
+        vi.mocked(purchaseProduct).mockResolvedValue({ outcome: 'purchased', status: iapStatus({ state: 'unlocked', revision: 5 }) });
+        act(() => push(iapStatus({ state: 'free', revision: 4 })));
+        await act(() => result.current.buy());
+        expect([result.current.busy, result.current.unlocked]).toEqual([null, true]);
     });
 });

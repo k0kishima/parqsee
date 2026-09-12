@@ -11,7 +11,7 @@ import { FREE, FULL_PRODUCT as FULL } from '../../lib/__tests__/fixtures';
 
 /** The license as the prompt sees it; each test sets the state it is about. */
 const license = vi.hoisted(() => ({
-  status: { state: 'free', store_error: null, has_store: true } as IapStatus,
+  status: { state: 'free', store_error: null, has_store: true, revision: 1 } as IapStatus,
   products: null as IapProduct[] | null,
   productsError: null as string | null,
   product: undefined as IapProduct | undefined,

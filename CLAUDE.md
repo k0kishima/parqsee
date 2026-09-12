@@ -211,7 +211,7 @@ Argument names are camelCase on the JS side.
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
-| `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?}`, derived from the App Store entitlements on every call; waits for the launch-time read |
+| `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?, revision}`, derived from the App Store entitlements on every call; waits for the launch-time read (20 s at most, then the free tier at revision 0 with the reason, and the read arrives as `iap-status` when it lands) |
 | `iap_products` | `()` → `IapProduct[]` | The full version (one product) with the storefront's name, description and `display_price`; empty in a build without a store |
 | `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy the product `iap_products` returned; `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
 | `iap_restore` | `()` → `IapStatus` | Restore Purchases, then the state |
@@ -236,8 +236,12 @@ mirror follows; the submenu itself is `menu.rs`: rebuilt from the store
 after every change to Recent Files, a pick arrives as `file-drop`, so
 nothing of it reaches the `menu` event) —
 because a native key equivalent beats the webview's keydown handler — and
-for `iap-status`, the new `IapStatus` after a transaction update from the
-store (a purchase approved elsewhere, a refund).
+for `iap-status`, the new `IapStatus` after every change to the purchase
+state: the launch-time read (which may land after `iap_status` gave up
+waiting for it), a purchase, a restore, and a transaction update from the
+store (a purchase approved elsewhere, a refund). `LicenseProvider`
+listens before it asks, and the reducer keeps whichever of the event and a
+command's answer carries the higher `revision`, since the two can cross.
 
 ## Architecture Notes
 
@@ -400,13 +404,18 @@ store (a purchase approved elsewhere, a refund).
     limit for good, and a refund puts it back. `License` (Tauri managed
     state, `Arc<License>`) keeps a snapshot of the entitlements — read at
     launch, after purchase / restore, and on every `Transaction.updates`
-    event — and derives `IapStatus` (`free | unlocked`, plus
+    event, each snapshot numbered (`IapStatus.revision`) and handed to
+    `on_change` — and derives `IapStatus` (`free | unlocked`, plus
     `store_error`) from it; there is no clock. **The backend enforces
     nothing**: it has no notion of a tab, so the limit lives in the
     webview (`FREE_TAB_LIMIT` in `features/license/lib/license.ts`,
     checked by `WorkspaceContext` before a file is opened and when the
     session is restored — the first tabs up to the limit come back, the
-    rest are named in the restore notice — with the `open` / `restore`
+    rest are named in the restore notice and kept in memory with their
+    state until the limit lifts (a purchase, Restore Purchases, or the
+    launch-time read landing after `iap_status` gave up waiting), when
+    they are opened like the rest were; a quit before that drops them
+    from the session at the next save — with the `open` / `restore`
     transitions in `workspace-tabs.ts` as the backstop), and the row
     commands never refuse. A client-side limit is bypassable by patching
     the bundle; that is the trade a one-time-purchase utility makes — do

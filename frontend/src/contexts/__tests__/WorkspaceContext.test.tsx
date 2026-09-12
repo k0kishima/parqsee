@@ -672,6 +672,66 @@ describe('WorkspaceProvider on the free tier', () => {
     expect(result.current.tabs).toHaveLength(4);
     expect(license.showUpgrade).not.toHaveBeenCalled();
   });
+
+  // The limit lifts after the restore: the full version was bought or
+  // restored, or the launch-time read of the store landed after `iap_status`
+  // gave up waiting for it and answered the free tier (CT-03).
+  it('brings the capped tabs back, with their state, when the limit lifts', async () => {
+    vi.useFakeTimers();
+    vi.mocked(listSessionTabs).mockResolvedValue({
+      tabs: [
+        sessionTab('/data/a.parquet'),
+        sessionTab('/data/b.parquet'),
+        sessionTab('/data/c.parquet'),
+        sessionTab('/data/d.parquet', { view_mode: 'query' }),
+        sessionTab('/data/e.parquet', { current_page: 3, active_filter: 'x > 1' }),
+      ],
+      active: '/data/b.parquet',
+    });
+    const { result, rerender } = renderWorkspace();
+    await settle();
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(result.current.restoreNotice).toEqual({ skipped: [], capped: ['/data/d.parquet', '/data/e.parquet'] });
+    vi.mocked(openParquetFile).mockClear();
+
+    license.tabLimit = null;
+    rerender();
+    await settle();
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet', 'd.parquet', 'e.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/b.parquet');
+    const [d, e] = result.current.tabs.slice(3);
+    expect(result.current.tabStates[d.id]).toEqual({ viewMode: 'query' });
+    expect(result.current.tabStates[e.id]).toEqual({ currentPage: 3, activeFilter: 'x > 1' });
+    // Opened as the restore opens tabs: through the backend, not into Recent Files.
+    expect(vi.mocked(openParquetFile).mock.calls.map(c => c[0])).toEqual(['/data/d.parquet', '/data/e.parquet']);
+    expect(rememberFile).not.toHaveBeenCalled();
+    expect(result.current.restoreNotice).toBeNull();
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    // The next save has all five again.
+    await settle();
+    expect(vi.mocked(saveSession).mock.lastCall?.[0].map(t => t.path)).toEqual(['/data/a.parquet', '/data/b.parquet', '/data/c.parquet', '/data/d.parquet', '/data/e.parquet']);
+    vi.useRealTimers();
+  });
+
+  it('names a capped tab that fails to open when it comes back, and leaves it out', async () => {
+    vi.useFakeTimers();
+    vi.mocked(listSessionTabs).mockResolvedValue({
+      tabs: ['a', 'b', 'c', 'd', 'e'].map(n => sessionTab(`/data/${n}.parquet`)),
+      active: null,
+    });
+    const { result, rerender } = renderWorkspace();
+    await settle();
+    expect(result.current.tabs).toHaveLength(3);
+    // d opens, e (the second to come back) fails.
+    vi.mocked(openParquetFile).mockResolvedValueOnce({ num_rows: 1, num_columns: 1, columns: [] } as never).mockRejectedValueOnce(new Error('gone'));
+
+    license.tabLimit = null;
+    rerender();
+    await settle();
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet', 'd.parquet']);
+    expect(result.current.restoreNotice).toEqual({ skipped: ['/data/e.parquet'], capped: [] });
+    vi.useRealTimers();
+  });
 });
 
 describe('WorkspaceProvider files handed over at launch', () => {

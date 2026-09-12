@@ -1,8 +1,11 @@
 import type { IapProduct, IapStatus } from '../../api';
 
-/** A status the store could report; the free tier with a store unless overridden. */
+/**
+ * A status the store could report; the free tier with a store, at revision
+ * 1 (the launch-time read), unless overridden.
+ */
 export const iapStatus = (partial: Partial<IapStatus> = {}): IapStatus =>
-    ({ state: 'free', store_error: null, has_store: true, ...partial });
+    ({ state: 'free', store_error: null, has_store: true, revision: 1, ...partial });
 
 export const FREE = iapStatus();
 export const UNLOCKED = iapStatus({ state: 'unlocked' });

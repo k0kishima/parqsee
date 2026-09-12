@@ -14,8 +14,11 @@ import { reduceLicense, INITIAL_LICENSE, LicenseAction } from '../features/licen
 
 export type { IapStatus, IapProduct, LicenseAction };
 
-/** What a build without a store answers, so the browser fallback behaves like one. */
-const UNLOCKED: IapStatus = { state: 'unlocked', store_error: null, has_store: false };
+/**
+ * What a build without a store answers, so the browser fallback behaves
+ * like one. Revision 0: derived from no read, like the fallbacks below.
+ */
+const UNLOCKED: IapStatus = { state: 'unlocked', store_error: null, has_store: false, revision: 0 };
 
 interface LicenseContextType {
     status: IapStatus;
@@ -66,22 +69,38 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             .catch(error => {
                 console.error('Failed to read the purchase state:', error);
                 // The free tier, with the reason: the app stays usable.
-                dispatch({ type: 'status', status: { state: 'free', store_error: toErrorMessage(error), has_store: true } });
+                // Revision 0: it fills in when nothing is known and never
+                // outranks a status the backend did deliver.
+                dispatch({ type: 'status', status: { state: 'free', store_error: toErrorMessage(error), has_store: true, revision: 0 } });
             });
     }, []);
 
+    // Listen first, ask second. Every change to the backend's state — the
+    // launch-time read, which may land after `iap_status` gave up waiting
+    // for it and answered the free tier; a purchase approved elsewhere; a
+    // refund — arrives as the `iap-status` event. With the listener up
+    // before the read is asked for, a change before the answer is in the
+    // answer and one after it is an event; when the two cross on the way
+    // here, the reducer keeps the newer by `revision`.
     useEffect(() => {
-        refresh();
-    }, [refresh]);
-
-    // A purchase approved elsewhere, or a refund, arrives from the store.
-    useEffect(() => {
-        if (!isTauri()) return;
-        const unlisten = onIapStatus(status => dispatch({ type: 'status', status }));
+        if (!isTauri()) {
+            refresh();
+            return;
+        }
+        let cancelled = false;
+        const listening = onIapStatus(status => {
+            if (!cancelled) dispatch({ type: 'status', status });
+        });
+        listening
+            .catch(error => console.error('Failed to listen for the purchase state:', error))
+            .then(() => {
+                if (!cancelled) refresh();
+            });
         return () => {
-            unlisten.then(fn => fn());
+            cancelled = true;
+            listening.then(fn => fn(), () => {});
         };
-    }, []);
+    }, [refresh]);
 
     const loadProducts = useCallback(() => {
         if (!isTauri()) {
