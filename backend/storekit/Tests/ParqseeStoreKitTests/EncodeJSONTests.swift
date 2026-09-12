@@ -1,8 +1,3 @@
-// The payload encoding of the bridge's callbacks, which nothing else can
-// reach: every C entry point only encodes a result when a real App Store
-// has answered it, and a test binary carries no provisioning profile, so
-// `cargo test --features app-store` always takes the error path there.
-//
 // Run with `swift test --package-path backend/storekit`.
 
 @testable import ParqseeStoreKit

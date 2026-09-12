@@ -146,7 +146,12 @@ exceptions and CSP violations. E2E results and screenshots are kept as the
 `e2e-results` artifact for seven days.
 
 The native checks run on macOS; signing, store uploads and the real StoreKit
-purchase sheet remain part of release QA. CI does not enforce `cargo fmt`
+purchase sheet remain part of release QA. CI checks the actual Rust/Swift ABI
+through invalid product input (no store request), callback payload ownership and
+parsing, and Swift JSON delivery. The three live StoreKit smoke tests are opt-in:
+`cd backend && cargo test --locked --lib --features app-store services::store::storekit::tests -- --ignored`.
+Run them in a working App Store environment; they still fail on timeout. An
+unsigned hosted runner can stall while reading `Transaction.currentEntitlements`. CI does not enforce `cargo fmt`
 yet because the existing Rust tree has formatting differences. Making these
 jobs required for merging is a separate repository ruleset setting; merely
 adding the workflow does not enable branch protection.

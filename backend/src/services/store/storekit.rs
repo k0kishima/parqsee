@@ -140,11 +140,48 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    /// The bridge round trip itself: the call reaches Swift, Swift calls
-    /// back from its own thread, the strings are copied out and parsed. An
-    /// unsigned test binary has no App Store, so the answer may be an
-    /// empty list or an error — either proves the ABI; a hang would not.
+    /// Exercise the real Swift entry point and detached-task callback without
+    /// asking StoreKit or requiring a signed app / App Store account.
     #[tokio::test]
+    async fn invalid_product_ids_round_trip_through_swift() {
+        for raw in ["not JSON", "{}", "[1]"] {
+            let ids = c_string(raw).unwrap();
+            let reply = tokio::time::timeout(
+                Duration::from_secs(5),
+                call(|ctx, cb| unsafe { sk_load_products(ids.as_ptr(), ctx, cb) }),
+            )
+            .await
+            .expect("Swift never called back");
+            assert_eq!(reply.unwrap_err(), "product ids must be a JSON array of strings");
+        }
+    }
+
+    /// Callback strings are borrowed only during the call. Parse after the
+    /// source CString is dropped to check that Rust owns the copied payload.
+    #[tokio::test]
+    async fn callback_copies_and_parses_entitlements() {
+        let reply = call(|ctx, cb| {
+            let json = c_string(r#"[{"product_id":"parqsee.full","original_purchase_date":123,"purchase_date":456}]"#).unwrap();
+            cb(ctx, json.as_ptr(), std::ptr::null());
+        }).await.unwrap();
+        let list: Vec<Entitlement> = parse(&reply).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].product_id, "parqsee.full");
+        assert_eq!(list[0].original_purchase_date, 123);
+        assert_eq!(list[0].purchase_date, 456);
+    }
+
+    #[tokio::test]
+    async fn callback_without_a_payload_is_an_error() {
+        let reply = call(|ctx, cb| cb(ctx, std::ptr::null(), std::ptr::null())).await;
+        assert_eq!(reply.unwrap_err(), "the App Store bridge returned nothing");
+    }
+
+    /// Live StoreKit smoke tests are opt-in: an unsigned hosted runner is
+    /// not guaranteed to receive a response from the App Store services.
+    /// They retain strict timeouts when explicitly run in a store environment.
+    #[tokio::test]
+    #[ignore = "requires a working App Store environment; run explicitly with --ignored"]
     async fn entitlements_round_trip_through_swift() {
         let reply = tokio::time::timeout(Duration::from_secs(30), SwiftStore.entitlements())
             .await
@@ -155,12 +192,8 @@ mod tests {
         }
     }
 
-    /// `sk_restore`'s ABI: the call reaches Swift and comes back. Without an
-    /// App Store `AppStore.sync()` fails, so this only ever sees the error
-    /// path — what the successful one *encodes* is covered in Swift, by
-    /// `ParqseeStoreKitTests` (`swift test --package-path storekit`), since
-    /// no test binary can make the store answer.
     #[tokio::test]
+    #[ignore = "requires a working App Store environment; run explicitly with --ignored"]
     async fn restore_round_trip_through_swift() {
         let reply = tokio::time::timeout(Duration::from_secs(30), SwiftStore.restore())
             .await
@@ -171,6 +204,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a working App Store environment; run explicitly with --ignored"]
     async fn products_of_an_unknown_store_come_back_as_a_list_or_an_error() {
         let reply = tokio::time::timeout(
             Duration::from_secs(30),
