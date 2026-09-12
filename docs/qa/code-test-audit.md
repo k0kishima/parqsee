@@ -3,7 +3,7 @@
 監査日: 2026-09-12。対象コミット: `9a10356d29e880661d8a3ce38d4be97b8291ecaf`。
 開始時に PR #29 がマージ済みであることを `gh pr view` で確認し、`git fetch origin` 後の HEAD と origin/main の一致を確認した。ローカルブランチは `qa/code-test-audit`。
 
-監査結果は5件（高1・中3・低1）。以下の「確認できた不具合」は、静的に確定した失敗経路と、診断で再現した状態をそれぞれ明記している。署名済みアプリでの発生頻度や OS 資源枯渇を測定したという意味ではない。アプリコードの修正、署名・配布、push・PR・マージは実施していない。最新のユーザー指示により、ローカルで報告と修正 spec を作成するところまでとした。
+監査結果は5件（高1・中3・低1）。以下の「確認できた不具合」は、静的に確定した失敗経路と、診断で再現した状態をそれぞれ明記している。署名済みアプリでの発生頻度や OS 資源枯渇を測定したという意味ではない。本監査の対象は実装経路とテストの照合、および問題の再現・報告であり、アプリコードの修正と署名済みアプリの実機検証は含まない。
 
 ## 範囲と証拠の取り方
 
@@ -97,7 +97,7 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 - **影響:** export がエラーになっても以前の出力は元に戻らず、完全な新出力である staging も失われる。ユーザーデータ破損のため高。rename 成功時や生成段階の失敗とは分ける。
 - **既存テストの穴:** `a_failed_export_leaves_an_existing_destination_untouched`（464行以降）の3失敗は copy 前。保存先の途中書込・置換失敗を注入していない。
 - **対応案:** 出力先の既存内容を壊さない確定処理にする。Sandbox で必要な権限を含めて設計し、安全な置換ができない場合は既存ファイルを変更せず失敗させる。copy failure を再現できる I/O 境界の回帰テストが必要。
-- **修正依頼:** `spec-fix-CT-01.md`。最優先、依存なし。
+- **着手順・依存関係:** 最優先、依存なし。
 
 ### CT-02 — 中 — 失敗した cache fill に grant の後始末がない
 
@@ -106,7 +106,7 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 - **影響:** オープンできずタブもないファイルの grant がプロセス終了まで残る。異なる失敗ファイルを開き続けると保持数が増える。OS の上限値・実際の枯渇は未測定。同じ path を繰り返すだけでは acquire が idempotent なので数は増えない。
 - **既存テストの穴:** grant 計数テストは正常 fill → evict だけで、エラー return を検査しない。E2E は NoopBookmarks。
 - **対応案:** fill の所有権を明確にし、失敗時にその操作が取った不要な grant を解放する。metadata と session が共有する grant を、片方の失敗で使用中に解放しない設計・テストを含める。
-- **修正依頼:** `spec-fix-CT-02.md`。CT-01 / CT-03 の次。依存なし。
+- **着手順・依存関係:** CT-01 / CT-03 の次。依存なし。
 
 ### CT-03 — 中 — 課金状態が最新の backend 状態へ収束しない
 
@@ -118,7 +118,7 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 - **影響:** 購入済みでも無料表示が残り、新規タブが制限される。起動時の誤った Free は復元を3件に制限し、次の保存で capped 分を session から除く。逆方向では返金後の無料制限が古い応答で解除される。現状は手動復元・再取得・次の update 等で回復し得る。
 - **既存テストの穴:** Rust の `status_before_init_reports_the_wait_instead_of_hanging` は init をすぐ実行し、実 timeout を通さない。frontend の refund test は応答保留中のイベント逆転を通さない。
 - **対応案:** 遅れて確定した初期状態も配送し、subscribe / 初回取得の隙間と古い応答の上書きを防ぐ。単純な「最後に返った値」ではなく新旧を判別できる契約を検討。restore 中の read と update の逆転も同じ観点で検証する。
-- **修正依頼:** `spec-fix-CT-03.md`。CT-01 の次、独立実施可。セッションへの影響も検証する。
+- **着手順・依存関係:** CT-01 の次、独立実施可。セッションへの影響も検証する。
 
 ### CT-04 — 中 — 無料枠へ同時に open すると、表示しないファイルが backend に残る
 
@@ -127,7 +127,7 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 - **影響:** タブに存在しない D の metadata / bookmark grant が残り、Recent Files にも記録される。ユーザーは表示されなかった理由を知らず、そのタブを閉じて解放することもできない。
 - **既存テストの穴:** `holds the limit when files open back to back without a render in between` はUIタブ数だけを検査。S14 の通常4件目は前のタブを描画した後で開く。
 - **対応案:** pending open を含む枠確保や open の直列化等で、拒否する path を backend で開かない。完了時に拒否する方式なら確実な後始末と通知が必要。同じ path の重複 open や成功タブの grant を誤って evict しないことも検証。
-- **修正依頼:** `spec-fix-CT-04.md`。CT-02 の後を推奨（同じ cache/grant の終端を扱う）が必須依存はない。
+- **着手順・依存関係:** CT-02 の後を推奨（同じ cache/grant の終端を扱う）が必須依存はない。
 
 ### CT-05 — 低 — Recent Files の初期応答が新しい操作を上書きする
 
@@ -136,7 +136,7 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 - **影響:** 起動直後に開いた履歴が一覧から消える等のUI不整合。backend の記録はこの古い応答では書き戻されず、データ破損ではない。
 - **既存テストの穴:** 一覧取得完了後の操作だけを検査し、取得中の操作を挟まない。
 - **対応案:** 初期取得と差分操作を順序付ける、または古い snapshot を無効化して authoritative な一覧を再取得する。clear / remove 済みの項目をmergeで復活させない。
-- **修正依頼:** `spec-fix-CT-05.md`。他の4件の後、依存なし。
+- **着手順・依存関係:** 他の4件の後、依存なし。
 
 ## 未検証経路
 
@@ -157,9 +157,9 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 | H-02・中 | WorkspaceContext 235–263行は保存成功前にlastSavedSessionを更新し、flush前にpendingを消す。reject後の同一snapshotは再試行せず、複数saveの完了を直列化しない | 保存失敗後pagehide / 同一状態、旧saveと新saveのbackend到達逆転を注入。実ディスクsnapshotの新旧とユーザーへの通知を観測。mutexは同時書込を防ぐが世代は判定しない |
 | H-03・中 | License.init は初回entitlements完了後にupdates購読を開始する。初回が返らないと購読も始まらない。one-shot call に本番timeoutがないため購入/復元busyが長時間残る可能性 | 実StoreKitの配送・応答保証を公式仕様と署名環境で確認し、遅い/返らない呼出しを注入。安易なtimeoutでcallback用Boxを先にfreeしない。CT-03の通知欠落とは区別 |
 
-仮説については修正 spec を作成していない。特にH-01の「タブを閉じれば確実にクラッシュする」、H-03の「実ストアが必ず返答を失う」といった断定はしない。
+仮説は表に示した診断で確定させてから修正対象とする。特にH-01の「タブを閉じれば確実にクラッシュする」、H-03の「実ストアが必ず返答を失う」といった断定はしない。
 
-## spec3 で優先する探索
+## 優先する探索的テスト
 
 | 順位 | 操作・入力 | 期待する観測 |
 |---|---|---|
@@ -171,4 +171,4 @@ Finder 起動のファイルは [PendingOpen](../../backend/src/services/opened.
 | 6 | U-02: 外部rootの削除、file移動・消失、cold Finder openとrestore | 権限保持と解放を確認。現在の仕様では移動fileはunavailable、移動rootは除去。Finder指定fileがrestore後にactive |
 | 7 | CT-05 / U-04: 起動時一覧遅延中のopen/clear、型不正settingsからfile open | 最新の操作を一覧が維持し、起動後もpage/filter/SQLを操作可能 |
 
-spec3 の探索には進める。ブラウザ部分でnative項目を代替して合格にはしない。リリース可否を保証する報告ではなく、CT-01の既存ファイル保全と実StoreKit成功経路は優先して解消・確認する。修正着手順は CT-01 → CT-03 → CT-02 → CT-04 → CT-05。各 `spec-fix-CT-*.md` はリポジトリ直下の独立した一時引継ぎであり、監査所見の恒久的な根拠は本書と再現パッチに残す。
+探索的テストでは、ブラウザでの結果をnative項目の合格根拠にしない。リリース可否を保証する報告ではなく、CT-01の既存ファイル保全と実StoreKit成功経路は優先して解消・確認する。修正着手順は CT-01 → CT-03 → CT-02 → CT-04 → CT-05。各修正では本書の再現条件と期待結果を回帰テストにし、実機でのみ確認できる部分は別途結果を記録する。
