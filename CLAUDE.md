@@ -290,13 +290,25 @@ store (a purchase approved elsewhere, a refund).
    same path unfiltered pages take); with one they are streamed out of
    DataFusion so the exported range matches what the grid shows.
    The rows go to a staging file in `std::env::temp_dir()` and are moved
-   into place at the end (rename, or a copy when the rename is refused), so
-   a failed export never destroys an existing file. The staging file must
+   into place at the end (`move_into_place`: a rename, or a copy when the
+   rename is refused — another volume, or the sandbox), so a failed export
+   never destroys an existing file. The staging file must
    not sit next to the destination: under the sandbox the save panel grants
    exactly the chosen file, and creating `<name>.partial` beside it fails
    with EPERM unless the folder is inside a workspace root (#21). The temp
    directory is the container's `Data/tmp` there — `libsecinit` rewrites
-   `TMPDIR` in-process — and is always writable.
+   `TMPDIR` in-process — and is always writable. The same grant is why the
+   copy fallback cannot be atomic (nowhere beside the file to stage a
+   replacement, and the file is truncated before the first byte lands):
+   it backs the previous contents up to the temp directory first and puts
+   them back when the copy fails partway (a full volume, an I/O error),
+   touches nothing when that backup cannot be made, and only when the
+   restore fails too keeps backup and export in the temp directory and
+   names both in the error. The filesystem calls sit behind `FinalizeFs`
+   so the tests can refuse the rename and fail a copy halfway; a real
+   cross-volume fill-up was reproduced on a 2 MiB RAM disk (`hdiutil
+   attach -nomount ram://4096`, `diskutil erasevolume HFS+ …`), which the
+   sandboxed release `.app` has not been checked against.
 9. Arrow's JSON writers reject decimals and write NaN/±Infinity as `null`, and
    the webview parses the IPC payload with JS number semantics.
    `batches_to_rows` (`services/parquet.rs`) is the one choke point that renders
