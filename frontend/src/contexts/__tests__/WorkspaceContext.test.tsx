@@ -602,6 +602,7 @@ describe('WorkspaceProvider on the free tier', () => {
     vi.mocked(openParquetFile).mockClear();
     vi.mocked(rememberFile).mockClear();
     vi.mocked(checkFileExists).mockClear();
+    vi.mocked(evictCacheQuietly).mockClear();
   });
 
   afterEach(() => {
@@ -640,6 +641,154 @@ describe('WorkspaceProvider on the free tier', () => {
       await result.current.openParquetFile('/data/d.parquet');
     });
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    // The fourth was refused before the backend heard of it, and told so.
+    expect(openParquetFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(rememberFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+  });
+
+  // Two files into one remaining slot, neither with a tab yet when the
+  // other starts (a two-file drop): the second must not be opened in the
+  // backend and then refused a tab, which would leave its cache and access
+  // grant where no close could reach them (CT-04).
+  it('reserves the last slot for the first of two files opened at once', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    await act(async () => {
+      await Promise.all([result.current.openParquetFile('/data/c.parquet'), result.current.openParquetFile('/data/d.parquet')]);
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(checkFileExists).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(openParquetFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(rememberFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a second request for a file being opened as activating its tab', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    await act(async () => {
+      await Promise.all([result.current.openParquetFile('/data/c.parquet'), result.current.openParquetFile('/data/c.parquet')]);
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/c.parquet');
+    expect(vi.mocked(openParquetFile).mock.calls.filter(c => c[0] === '/data/c.parquet')).toHaveLength(1);
+    expect(vi.mocked(rememberFile).mock.calls.filter(c => c[0] === '/data/c.parquet')).toHaveLength(1);
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    // The tab is a real one: opening it again, alone, only activates it.
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await act(() => result.current.openParquetFile('/data/c.parquet'));
+    expect(result.current.tabs).toHaveLength(3);
+    expect(result.current.activeTab?.path).toBe('/data/c.parquet');
+  });
+
+  it('gives the slot back when the open fails part way', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    vi.mocked(openParquetFile).mockRejectedValueOnce(new Error('corrupt'));
+    await act(() => result.current.openParquetFile('/data/c.parquet'));
+    expect(result.current.tabs).toHaveLength(2);
+    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet']);
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    alerted.mockRestore();
+    logged.mockRestore();
+  });
+
+  it('gives the slot back when the file turns out to be gone', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    vi.mocked(checkFileExists).mockResolvedValueOnce(false);
+    await act(() => result.current.openParquetFile('/data/c.parquet'));
+    expect(result.current.tabs).toHaveLength(2);
+    expect(alerted).toHaveBeenCalledWith('File not found: /data/c.parquet');
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet']);
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    alerted.mockRestore();
+  });
+
+  it('counts a tab closed while another file opens as room for one more', async () => {
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    let finishC!: () => void;
+    vi.mocked(openParquetFile).mockImplementationOnce(() => new Promise(resolve => {
+      finishC = () => resolve({ num_rows: 1, num_columns: 1, columns: [] } as never);
+    }));
+    let cOpened!: Promise<void>;
+    await act(async () => {
+      cOpened = result.current.openParquetFile('/data/c.parquet');
+      await Promise.resolve();
+    });
+    // c holds the last slot: d is refused, until a tab closes.
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+    expect(openParquetFile).not.toHaveBeenCalledWith('/data/d.parquet');
+    act(() => result.current.closeTab(result.current.tabs[0].id));
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    await act(async () => {
+      finishC();
+      await cOpened;
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['b.parquet', 'd.parquet', 'c.parquet']);
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
+    expect(evictCacheQuietly).toHaveBeenCalledTimes(1);
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/a.parquet');
+  });
+
+  it('opens a file the limit lifted for while it was opening', async () => {
+    const { result, rerender } = renderWorkspace();
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    await act(() => result.current.openParquetFile('/data/b.parquet'));
+    let finishC!: () => void;
+    vi.mocked(openParquetFile).mockImplementationOnce(() => new Promise(resolve => {
+      finishC = () => resolve({ num_rows: 1, num_columns: 1, columns: [] } as never);
+    }));
+    let cOpened!: Promise<void>;
+    await act(async () => {
+      cOpened = result.current.openParquetFile('/data/c.parquet');
+      await Promise.resolve();
+    });
+    license.tabLimit = null;
+    rerender();
+    await act(() => result.current.openParquetFile('/data/d.parquet'));
+    await act(async () => {
+      finishC();
+      await cOpened;
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet', 'c.parquet']);
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+  });
+
+  // The other direction — the limit comes back (a refund) with a fourth
+  // file half open — is the one case the reducer's backstop still decides.
+  // The file then has no tab, so its cache goes and the prompt says why.
+  it('drops what the backend holds for a file the limit came back for while it was opening', async () => {
+    license.tabLimit = null;
+    const { result, rerender } = renderWorkspace();
+    for (const n of ['a', 'b', 'c']) await act(() => result.current.openParquetFile(`/data/${n}.parquet`));
+    let finishD!: () => void;
+    vi.mocked(openParquetFile).mockImplementationOnce(() => new Promise(resolve => {
+      finishD = () => resolve({ num_rows: 1, num_columns: 1, columns: [] } as never);
+    }));
+    let dOpened!: Promise<void>;
+    await act(async () => {
+      dOpened = result.current.openParquetFile('/data/d.parquet');
+      await Promise.resolve();
+    });
+    license.tabLimit = 3;
+    rerender();
+    await act(async () => {
+      finishD();
+      await dOpened;
+    });
+    expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
+    expect(evictCacheQuietly).toHaveBeenCalledTimes(1);
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/d.parquet');
+    expect(license.showUpgrade).toHaveBeenCalledTimes(1);
   });
 
   it('restores the first tabs up to the limit and names the rest, without opening them', async () => {

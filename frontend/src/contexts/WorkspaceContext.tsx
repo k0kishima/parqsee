@@ -41,6 +41,7 @@ import {
     sessionSnapshot,
     restoredTabState,
     hasRoomForTab,
+    WorkspaceTabsAction,
 } from './workspace-tabs';
 
 export type { Tab, WorkspaceRoot };
@@ -136,19 +137,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // Every transition goes through the reducer, so files opened back to back
     // in one tick (a multi-file drop) and a closeTab captured by a memoized
     // child both act on the latest tabs rather than on a stale snapshot.
-    const [workspaceTabs, dispatch] = useReducer(reduceWorkspaceTabs, EMPTY_WORKSPACE_TABS);
+    const [workspaceTabs, dispatchTabs] = useReducer(reduceWorkspaceTabs, EMPTY_WORKSPACE_TABS);
     const { tabs, activeTabId, tabStates } = workspaceTabs;
     // The tabs closed in this session, newest last, capped: what ⇧⌘T and
     // the tab menu's Reopen give back. Not persisted — a relaunch restores
     // the tabs that were open, and undoing a close from before it would be
     // undoing something the user cannot see any more.
     const [closedTabs, setClosedTabs] = useState<readonly ClosedTab[]>([]);
-    // The last rendered tabs, for decisions made in stable callbacks.
-    // Written in an effect, not during render (react.dev/reference/react/useRef).
+    // The tabs as of the last dispatch, for decisions made in stable
+    // callbacks between renders. The reducer is pure, so applying each
+    // action here as it is dispatched gives exactly the state React will
+    // render for it — and gives it at once, where a copy of the rendered
+    // state would lag until the next render: two files opening in the same
+    // tick (a multi-file drop) would both count the tabs before either
+    // was added. Written from callbacks, never during render.
     const workspaceTabsRef = useRef(workspaceTabs);
-    useEffect(() => {
-        workspaceTabsRef.current = workspaceTabs;
-    }, [workspaceTabs]);
+    const dispatch = useCallback((action: WorkspaceTabsAction) => {
+        workspaceTabsRef.current = reduceWorkspaceTabs(workspaceTabsRef.current, action);
+        dispatchTabs(action);
+    }, []);
+    // The files being opened right now, by path: reserved against the free
+    // tier's limit until the open lands in the tabs or fails, so that two
+    // files opened into one remaining slot cannot both pass the check and
+    // both be opened in the backend (CT-04). A second request for a path in
+    // flight waits for the first and activates the tab it made.
+    const openingFiles = useRef(new Map<string, Promise<void>>());
     const [isPending, startTransition] = useTransition();
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
@@ -244,7 +257,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [dispatch]);
 
     // The limit lifted: the tabs it left out at launch come back, opened
     // as the restore opened the others (no `rememberFile`; a file that
@@ -282,7 +295,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return () => {
             cancelled = true;
         };
-    }, [tabLimit, sessionReady]);
+    }, [tabLimit, sessionReady, dispatch]);
 
     // Keep the latest unsaved snapshot until acknowledgement. Writes are
     // serialized so an older completion cannot replace a newer disk state.
@@ -359,7 +372,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 dispatch({ type: 'select', tabId });
             });
         });
-    }, []);
+    }, [dispatch]);
 
     /**
      * Push what a close removed onto the reopen history. A group closed at
@@ -373,16 +386,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const handleTabClose = useCallback((tabId: string) => {
-        // Whether the file is still shown elsewhere is read from the last
-        // render: closes come from user events, never in the same tick as
-        // the open that could make this one render stale.
         const { evictPath, closed } = closeTabTransition(workspaceTabsRef.current, tabId);
         dispatch({ type: 'close', tabId });
         rememberClosedTabs(closed);
         if (evictPath) {
             evictCacheQuietly(evictPath);
         }
-    }, [rememberClosedTabs]);
+    }, [dispatch, rememberClosedTabs]);
 
     /**
      * Close several tabs in one step — the tab bar's Close Others and Close
@@ -396,7 +406,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         for (const path of evictPaths) {
             evictCacheQuietly(path);
         }
-    }, [rememberClosedTabs]);
+    }, [dispatch, rememberClosedTabs]);
 
     /**
      * Open `path` in a tab: the free tier's limit first, then the backend.
@@ -404,52 +414,89 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * open does; the bundled sample is the one file that is not recorded
      * (the Welcome screen links to it, and its bundle path is not one of
      * the user's files).
+     *
+     * The limit is checked against the tabs as of the last dispatch plus
+     * the opens still in flight, and the file's slot is held for as long
+     * as its open runs: files handed over together (a multi-file drop)
+     * start before any of them has a tab, and without the reservation the
+     * ones past the limit would be opened in the backend — cache, access
+     * grant, Recent Files entry — and then refused a tab by the reducer,
+     * leaving them where nothing could close them. A request for a file
+     * whose open is in flight is the same request twice: it waits for the
+     * first and activates the tab that made.
      */
     const openFile = useCallback(async (path: string, { remember, state }: { remember: boolean; state?: TabState }) => {
-        try {
-            if (isTauri()) {
-                // The free tier's limit, before anything is asked of the
-                // backend: the tab is not opened, the prompt says why. A
-                // file already in a tab is only activated and needs no room.
-                const { tabs: openTabs } = workspaceTabsRef.current;
-                if (!openTabs.some(t => t.path === path) && !hasRoomForTab(openTabs.length, tabLimitRef.current)) {
-                    showUpgrade();
-                    return;
-                }
+        if (!isTauri()) return; // Browser fallback: there is no backend to open the file with.
 
-                const fileExists = await checkFileExists(path);
-                if (!fileExists) {
-                    removeRecentFile(path);
-                    alert(`File not found: ${path}`);
-                    return;
-                }
+        const inFlight = openingFiles.current.get(path);
+        if (inFlight) {
+            await inFlight;
+            const existing = workspaceTabsRef.current.tabs.find(t => t.path === path);
+            // No tab: the first request failed and said so; nothing to add.
+            if (existing) dispatch({ type: 'select', tabId: existing.id });
+            return;
+        }
 
-                await apiOpenParquetFile(path);
-
-                // Recorded now, while the app can read the file, so Recent
-                // Files can reopen it after a relaunch. A failure to record
-                // it is not a failure to open it.
-                const recent = remember
-                    ? await rememberFile(path).catch(error => {
-                        console.error('Failed to record the file in Recent Files:', error);
-                        return null;
-                    })
-                    : null;
-                if (recent) upsertRecentFile(recent);
-
-                dispatch({
-                    type: 'open',
-                    tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) },
-                    limit: tabLimitRef.current,
-                    state,
-                });
+        // The free tier's limit, before anything is asked of the backend:
+        // the tab is not opened, the prompt says why. A file already in a
+        // tab is only activated and needs no room, nor does an open in
+        // flight for one.
+        const { tabs: openTabs } = workspaceTabsRef.current;
+        const isOpen = (candidate: string) => openTabs.some(t => t.path === candidate);
+        if (!isOpen(path)) {
+            const reserved = [...openingFiles.current.keys()].filter(p => !isOpen(p)).length;
+            if (!hasRoomForTab(openTabs.length + reserved, tabLimitRef.current)) {
+                showUpgrade();
+                return;
             }
-            // Browser fallback: there is no backend to open the file with.
+        }
+
+        const opening = (async () => {
+            const fileExists = await checkFileExists(path);
+            if (!fileExists) {
+                removeRecentFile(path);
+                alert(`File not found: ${path}`);
+                return;
+            }
+
+            await apiOpenParquetFile(path);
+
+            // Recorded now, while the app can read the file, so Recent
+            // Files can reopen it after a relaunch. A failure to record
+            // it is not a failure to open it.
+            const recent = remember
+                ? await rememberFile(path).catch(error => {
+                    console.error('Failed to record the file in Recent Files:', error);
+                    return null;
+                })
+                : null;
+            if (recent) upsertRecentFile(recent);
+
+            dispatch({
+                type: 'open',
+                tab: { id: newTabId(), path, name: recent?.name ?? getFileName(path) },
+                limit: tabLimitRef.current,
+                state,
+            });
+            // The reducer's backstop refused the tab — the limit came back
+            // (a refund) while the file was opening. What the backend holds
+            // for a file no tab shows goes now, since no close will ever
+            // ask for it, and the prompt says why there is no tab.
+            if (!workspaceTabsRef.current.tabs.some(t => t.path === path)) {
+                evictCacheQuietly(path);
+                showUpgrade();
+            }
+        })();
+        openingFiles.current.set(path, opening);
+        try {
+            await opening;
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
+        } finally {
+            openingFiles.current.delete(path);
         }
-    }, [upsertRecentFile, removeRecentFile, showUpgrade]);
+    }, [dispatch, upsertRecentFile, removeRecentFile, showUpgrade]);
 
     const openParquetFile = useCallback((path: string) => openFile(path, { remember: true }), [openFile]);
 

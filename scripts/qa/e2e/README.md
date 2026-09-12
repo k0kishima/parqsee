@@ -38,7 +38,8 @@ purchase goes through, is cancelled, stays pending or is rejected
 is the `iap-status` event a refund or a purchase approved elsewhere
 raises). Like the backend it numbers its state (`revision`) and stamps
 every status it hands out, so the webview can tell an answer that
-crossed a newer event from a new one. S14 drives the limit, the prompt,
+crossed a newer event from a new one. S14 drives the limit (two files
+dropped into its last slot included), the prompt,
 the purchase, a refund and the capped restore — and the capped tabs
 coming back on Restore Purchases — with it; the real store is still checked by hand on the
 signed store build (`docs/MANUAL_QA.md`, MQ-12), which is the only place

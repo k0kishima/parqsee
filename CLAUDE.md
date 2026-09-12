@@ -409,7 +409,11 @@ command's answer carries the higher `revision`, since the two can cross.
     `store_error`) from it; there is no clock. **The backend enforces
     nothing**: it has no notion of a tab, so the limit lives in the
     webview (`FREE_TAB_LIMIT` in `features/license/lib/license.ts`,
-    checked by `WorkspaceContext` before a file is opened and when the
+    checked by `WorkspaceContext` before a file is opened — counting the
+    opens still in flight, and holding the file's slot until its open
+    lands or fails, so two files handed over at once into the last slot
+    do not both get opened in the backend and one of them refused a tab
+    with its cache and grant left behind — and when the
     session is restored — the first tabs up to the limit come back, the
     rest are named in the restore notice and kept in memory with their
     state until the limit lifts (a purchase, Restore Purchases, or the
@@ -572,9 +576,10 @@ session (S11: tabs back across a relaunch, a deleted file's tab skipped and
 named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
 warm start through the `file-drop` event), the bundled sample (S13: opened
 from the Welcome screen, not in Recent Files, back after a relaunch), the
-free tier (S14, over the harness's scripted store: the prompt at the
-fourth tab, cancelled and completed purchases, a refund, the capped
-restore and Restore Purchases) or the SQL view — see its README for setup (`cargo build --example bridge`,
+free tier (S14, over the harness's scripted store: two files dropped
+into the last slot, the prompt at the fourth tab, cancelled and
+completed purchases, a refund, the capped restore and Restore
+Purchases) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
