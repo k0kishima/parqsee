@@ -36,8 +36,11 @@ bridge — with the product and its price, what is owned, and whether a
 purchase goes through, is cancelled, stays pending or is rejected
 (`setStore(page, patch)` changes it mid-run; `pushIapStatus(page, status)`
 is the `iap-status` event a refund or a purchase approved elsewhere
-raises). S14 drives the limit, the prompt, the purchase, a refund and the
-capped restore with it; the real store is still checked by hand on the
+raises). Like the backend it numbers its state (`revision`) and stamps
+every status it hands out, so the webview can tell an answer that
+crossed a newer event from a new one. S14 drives the limit, the prompt,
+the purchase, a refund and the capped restore — and the capped tabs
+coming back on Restore Purchases — with it; the real store is still checked by hand on the
 signed store build (`docs/MANUAL_QA.md`, MQ-12), which is the only place
 the payment sheet exists.
 

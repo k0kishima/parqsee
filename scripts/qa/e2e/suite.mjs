@@ -1070,7 +1070,8 @@ await scenario('S14-free-tier', async ({ page, bridge }) => {
 
 // The relaunch on the free tier with five tabs saved: the first three come
 // back, the other two are named in the notice, whose Upgrade opens the
-// prompt. Restore Purchases, with the product owned, unlocks and clears it.
+// prompt. Restore Purchases, with the product owned, unlocks — and the two
+// tabs the limit left out come back, so the next save has all five again.
 await scenario('S14-free-restore', async ({ page, bridge }) => {
   await page.locator('[data-testid="restore-notice-capped"]').waitFor({ timeout: 15000 });
   await waitGrid(page);
@@ -1085,8 +1086,13 @@ await scenario('S14-free-restore', async ({ page, bridge }) => {
   await page.locator('[data-testid="upgrade-prompt"] button.btn-secondary').click();
   await page.locator('[data-testid="upgrade-prompt"]').waitFor({ state: 'detached', timeout: 5000 });
   check('S14r.restored', !(await badge(page).count()), `badge count=${await badge(page).count()}`);
-  // The next save drops the two tabs that did not come back.
+  // The limit lifted: the two tabs it left out come back, opened through
+  // the backend, with the notice gone; the next save has all five.
+  await page.locator('[data-testid="restore-notice-capped"]').waitFor({ state: 'detached', timeout: 5000 });
   await page.waitForTimeout(600);
+  check('S14r.cappedBack', (await tabNames(page)).join(',') === 'one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet' && (await activeTabName(page)) === 'one_row.parquet', `tabs=${await tabNames(page)} active=${await activeTabName(page)}`);
+  check('S14r.cappedOpened', bridge.log.some(l => l.cmd === 'open_parquet_file' && base(l.args.path) === 'nan.parquet') && !bridge.log.some(l => l.cmd === 'remember_file' && base(l.args.path) === 'nan.parquet'), `opened=${bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => base(l.args.path))} remembered=${bridge.log.filter(l => l.cmd === 'remember_file').map(l => base(l.args.path))}`);
+  check('S14r.session', sessionPaths(await bridge.call('list_session_tabs')).length === 5, `saved=${sessionPaths(await bridge.call('list_session_tabs'))}`);
   await screenshot(page, { path: `${OUT}/shots/S14r.png` });
 }, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
 
