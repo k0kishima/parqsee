@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Typecheck and production build
+        run: pnpm build
+        working-directory: frontend
+      - run: pnpm test
+        working-directory: frontend
+
+  macos:
+    name: macOS / Rust, Swift and E2E
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      # DataFusion's debug symbols exceed the hosted runner's disk budget.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      DEV_URL: http://localhost:1421/
+      BRIDGE_QUIET: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            scripts/qa/e2e/pnpm-lock.yaml
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component clippy
+          rustup default 1.91.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - uses: astral-sh/setup-uv@v7
+      - name: Install frontend and browser harness
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir scripts/qa/e2e install --frozen-lockfile
+          pnpm --dir scripts/qa/e2e exec playwright install webkit
+      - name: Rust static analysis (default and StoreKit)
+        working-directory: backend
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features app-store -- -D warnings
+      - name: Rust tests (default and StoreKit)
+        working-directory: backend
+        run: |
+          cargo test --locked --lib
+          cargo test --locked --lib --features app-store
+      - name: Check generated IPC bindings
+        run: |
+          git diff --exit-code -- frontend/src/bindings/ipc
+          test -z "$(git ls-files --others --exclude-standard frontend/src/bindings/ipc)"
+      - name: Swift payload tests
+        run: swift test --package-path backend/storekit
+      - name: Build E2E backend
+        working-directory: backend
+        run: cargo build --locked --example bridge
+      - name: Build production frontend
+        run: pnpm --dir frontend build
+      - name: Generate adversarial fixtures
+        run: uv run scripts/qa/gen_fixtures.py
+      - name: Browser error gate and regression suite under CSP
+        shell: bash
+        run: |
+          node scripts/qa/e2e/csp-server.mjs > "$RUNNER_TEMP/csp-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent "$DEV_URL" > /dev/null; then break; fi
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          curl --fail --silent "$DEV_URL" > /dev/null
+          pnpm --dir scripts/qa/e2e test
+          pnpm --dir scripts/qa/e2e suite
+      - name: E2E diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          retention-days: 7
+          path: |
+            scripts/qa/e2e/out/suite_results.json
+            scripts/qa/e2e/out/shots/
+            ${{ runner.temp }}/csp-server.log
