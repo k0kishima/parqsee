@@ -181,6 +181,7 @@ validated earlier is uploaded as the same bytes by calling
 cd frontend && pnpm test        # Vitest, single run
 cd frontend && pnpm test:watch  # Vitest, watch mode
 cd backend  && cargo test --lib # Rust unit tests
+cd backend/storekit && swift test  # The StoreKit bridge's Swift side
 ```
 
 ## Tauri Commands
@@ -515,8 +516,14 @@ URL-to-path conversion and the launch handover in
 macOS-only test), the menu's label tables in `services::menu_labels` (both
 languages carry every key, nothing is left untranslated, and a language tag
 is read down to its primary subtag), and the free / unlocked state in
-`services/store` (with a fake store; `cargo test --lib --features app-store` adds two round trips
-through the Swift bridge). `cargo test --lib export_bindings` regenerates the ts-rs
+`services/store` (with a fake store; `cargo test --lib --features app-store` adds three round trips
+through the Swift bridge). Those round trips prove the ABI and nothing more —
+a test binary has no provisioning profile, so the store never answers and every
+one of them takes the error path; what the bridge *encodes* on the way back is
+covered on the Swift side by `swift test --package-path backend/storekit`
+(`encodeJSON`: the shapes the entry points answer with, and the refusal of a
+top-level value `JSONSerialization` would raise on rather than throw — `null`
+there took the app down on Restore Purchases). `cargo test --lib export_bindings` regenerates the ts-rs
 bindings in `frontend/src/bindings/ipc/` after a change to `models/`.
 `python3 scripts/release/test_appstore.py` runs `scripts/release/appstore.sh`
 and `scripts/release/upload_pkg.sh` against a fake checkout with stubs of

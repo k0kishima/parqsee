@@ -14,6 +14,12 @@ let package = Package(
         .library(name: "ParqseeStoreKit", type: .static, targets: ["ParqseeStoreKit"])
     ],
     targets: [
-        .target(name: "ParqseeStoreKit", path: "Sources/ParqseeStoreKit")
+        .target(name: "ParqseeStoreKit", path: "Sources/ParqseeStoreKit"),
+        // `swift build` leaves test targets alone, so build.rs never sees this.
+        .testTarget(
+            name: "ParqseeStoreKitTests",
+            dependencies: ["ParqseeStoreKit"],
+            path: "Tests/ParqseeStoreKitTests"
+        ),
     ]
 )

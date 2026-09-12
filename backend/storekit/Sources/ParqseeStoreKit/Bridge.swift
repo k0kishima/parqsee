@@ -24,16 +24,47 @@ public typealias SKCallback = @convention(c) (
 
 // MARK: - Result delivery
 
-private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: Any) {
+/// Encode one callback payload, or say why it could not be encoded.
+///
+/// The shape is checked before `JSONSerialization` sees it, because a
+/// top-level value that is not an array or a dictionary — `NSNull`, a
+/// number, a string — makes `dataWithJSONObject:` *raise*
+/// `NSInvalidArgumentException` rather than throw, and an Objective-C
+/// exception crossing Swift aborts the process: no `catch` here can see it.
+/// A bridge answering with the wrong shape is a bug, but it must surface as
+/// an error like any other, never as a crash. (`sk_restore` answered `null`
+/// and took the whole app down with it.)
+///
+/// Not `private`: `ParqseeStoreKitTests` covers this directly, since the
+/// entry points only reach it when a real App Store answers them.
+func encodeJSON(_ value: Any) -> Encoded {
+    guard JSONSerialization.isValidJSONObject(value) else {
+        return .refused("the result is not a JSON array or object: \(type(of: value))")
+    }
     do {
-        let data = try JSONSerialization.data(withJSONObject: json, options: [])
+        let data = try JSONSerialization.data(withJSONObject: value, options: [])
         guard let text = String(data: data, encoding: .utf8) else {
-            deliver(ctx, cb, error: "the result was not valid UTF-8")
-            return
+            return .refused("the result was not valid UTF-8")
         }
-        text.withCString { cb(ctx, $0, nil) }
+        return .json(text)
     } catch {
-        deliver(ctx, cb, error: "could not encode the result: \(error.localizedDescription)")
+        return .refused("could not encode the result: \(error.localizedDescription)")
+    }
+}
+
+/// What `encodeJSON` made of a payload: the JSON text, or the error string
+/// the callback receives in its place.
+enum Encoded: Equatable {
+    case json(String)
+    case refused(String)
+}
+
+private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: Any) {
+    switch encodeJSON(json) {
+    case .json(let text):
+        text.withCString { cb(ctx, $0, nil) }
+    case .refused(let message):
+        deliver(ctx, cb, error: message)
     }
 }
 
@@ -163,14 +194,16 @@ public func sk_purchase(
 }
 
 /// Asks the App Store for the account's transactions again (Restore
-/// Purchases). Result: `null`. The entitlements are read separately.
+/// Purchases). Result: an empty object, which the caller discards — the
+/// entitlements are read separately. It must not be `null` — see
+/// `encodeJSON` for what that cost.
 @_cdecl("sk_restore")
 public func sk_restore(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback) {
     let sendableCtx = SendablePointer(ctx)
     Task.detached {
         do {
             try await AppStore.sync()
-            deliver(sendableCtx.pointer, cb, json: NSNull())
+            deliver(sendableCtx.pointer, cb, json: [String: Any]())
         } catch {
             deliver(sendableCtx.pointer, cb, error: describe(error))
         }

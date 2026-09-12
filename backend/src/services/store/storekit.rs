@@ -155,6 +155,21 @@ mod tests {
         }
     }
 
+    /// `sk_restore`'s ABI: the call reaches Swift and comes back. Without an
+    /// App Store `AppStore.sync()` fails, so this only ever sees the error
+    /// path — what the successful one *encodes* is covered in Swift, by
+    /// `ParqseeStoreKitTests` (`swift test --package-path storekit`), since
+    /// no test binary can make the store answer.
+    #[tokio::test]
+    async fn restore_round_trip_through_swift() {
+        let reply = tokio::time::timeout(Duration::from_secs(30), SwiftStore.restore())
+            .await
+            .expect("Swift never called back");
+        if let Err(e) = reply {
+            assert!(!e.is_empty());
+        }
+    }
+
     #[tokio::test]
     async fn products_of_an_unknown_store_come_back_as_a_list_or_an_error() {
         let reply = tokio::time::timeout(
