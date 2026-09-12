@@ -177,3 +177,27 @@ to the harness.
   usual reason a "fix" does not show up here.
 - `cargo test` / `pnpm tauri build` and the bridge build share the target
   directory lock; don't run them concurrently.
+
+### Exploratory regressions (S15–S18)
+
+`suite.mjs` also calls `exploratory.mjs`, so the regular CI suite runs these:
+late filtered response after closing its tab and opening another/reopening;
+filtered JSON export failure followed by retry in the same modal; pagehide
+flush verified on disk and a fresh browser/bridge relaunch; purchase failure,
+pending approval, refund, restore failure and retry at the tab limit.
+`ONLY=S15` through `ONLY=S18` select a group (S17 includes both launches).
+Tests wait for responses, visible results or persisted snapshots. Filesystem
+failures use a regular file as the destination parent, not host permissions.
+
+`exploratory-diagnostics.mjs` is an **opt-in defect reproducer**, outside CI:
+
+```sh
+DEV_URL=http://localhost:1421/ BRIDGE_QUIET=1 node exploratory-diagnostics.mjs
+```
+
+It records EX-01 (failed session save is not retried by pagehide) as OBSERVE;
+its zero exit code means the diagnostic completed, not that the application
+meets that requirement. See `docs/qa/exploratory-testing.md` for evidence and
+limits. Synthetic pagehide and scripted purchases do not verify native Quit,
+Sandbox grants or StoreKit. Use dedicated `FIXTURES` / `E2E_OUT` directories
+when retaining an exploratory run separately from the normal suite output.
