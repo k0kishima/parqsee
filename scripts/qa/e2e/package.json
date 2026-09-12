@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Playwright WebKit harness driving the Parqsee UI against the real Rust backend",
   "scripts": {
+    "test": "node --test runner.test.mjs",
     "smoke": "node smoke.mjs",
     "suite": "node suite.mjs",
     "large-file": "node large-file.mjs",
