@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
 import { dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
@@ -859,7 +860,61 @@ await scenario('S11-session-restore', async ({ page, bridge }) => {
   await screenshot(page, { path: `${OUT}/shots/S11.png` });
 }, { dataDir: S11_DATA });
 
-// With the setting off nothing is restored, and nothing is even asked for.
+// EX-01: retry the same failed snapshot and acknowledge only successful saves.
+await scenario('S11-session-save-retry', async ({ page, bridge, dataDir }) => {
+  const active = page.locator('div[style*="position: absolute"][style*="display: flex"]');
+  const storePath = path.join(dataDir, 'bookmarks.json');
+  await dropFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await active.getByText('Showing 1 to 50 of 100,000 entries', { exact: true }).waitFor();
+  const waitFor = async (predicate) => {
+    const end = Date.now() + 10000;
+    while (!predicate()) {
+      if (Date.now() > end) throw new Error('Session save condition timed out');
+      await pollDelay(20);
+    }
+  };
+  const diskPage = () => JSON.parse(fs.readFileSync(storePath, 'utf8')).session?.tabs[0]?.state.current_page;
+  await waitFor(() => diskPage() === 1);
+  const call = bridge.call.bind(bridge);
+  let attempts = 0;
+  bridge.call = async (cmd, args, delay) => {
+    if (cmd === 'save_session') {
+      attempts++;
+      if (attempts === 1) throw 'exploration save failure';
+    }
+    return call(cmd, args, delay);
+  };
+  await active.getByRole('button', { name: 'Next', exact: true }).click();
+  await active.getByText('Showing 51 to 100 of 100,000 entries', { exact: true }).waitFor();
+  await waitFor(() => page.__errors.includes('console: Failed to save the session: exploration save failure'));
+  expectConsoleError(page, 'Failed to save the session: exploration save failure');
+  await page.getByRole('status').filter({ hasText: 'Could not save your tabs' }).waitFor();
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await waitFor(() => attempts === 2 && diskPage() === 2);
+  await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'detached' });
+  check('S11.retry.pagehide', attempts === 2 && diskPage() === 2, `attempts=${attempts}, diskPage=${diskPage()}`);
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_session_tabs'));
+  check('S11.retry.dedup', attempts === 2, `successful snapshot is not resent: attempts=${attempts}`);
+  // A later failure can also be retried from the visible notice.
+  bridge.call = async (cmd, args, delay) => {
+    if (cmd === 'save_session') {
+      attempts++;
+      if (attempts === 3) throw 'explicit retry failure';
+    }
+    return call(cmd, args, delay);
+  };
+  await active.getByRole('button', { name: 'Next', exact: true }).click();
+  await active.getByText('Showing 101 to 150 of 100,000 entries', { exact: true }).waitFor();
+  await waitFor(() => page.__errors.includes('console: Failed to save the session: explicit retry failure'));
+  expectConsoleError(page, 'Failed to save the session: explicit retry failure');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await waitFor(() => diskPage() === 3);
+  await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'detached' });
+  check('S11.retry.button', attempts === 4 && diskPage() === 3, `attempts=${attempts}, diskPage=${diskPage()}`);
+});
+
+// With the setting off: the store is not even read.
 await scenario('S11-session-off', async ({ page, bridge }) => {
   await page.waitForTimeout(800);
   check('S11o.welcome', await page.locator('text=Drop your Parquet file here').isVisible() && (await tabNames(page)).length === 0, 'the welcome screen, no tabs');

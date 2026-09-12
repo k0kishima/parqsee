@@ -65,6 +65,20 @@ fixture generator の数値乱数 seed は `20250820`。UUID と破損用 bytes 
 
 **EX-01（中）: セッション保存失敗後、同じ状態を pagehide で再試行できない。**
 
+追記（修正後）: 成功応答後だけ保存済みと判定し、最新の未保存状態を保持するよう修正。
+保存を直列化し、pagehide・画面内の「再試行」・次の永続状態変更を再送契機とする。
+失敗自体による即時リトライは行わない。失敗通知は英日対応の非モーダル表示で、
+最新状態の保存成功時に消える。console.error も診断用に残す。
+通常 suite の `S11-session-save-retry` が同じ状態の再送・実ディスク保存・通知の解消を検証する。
+以下の診断結果は修正前の履歴であり、旧独立診断は修正後の合格判定には使用しない。
+実 macOS Quit 時の IPC 完了保証は引き続き手動検証の範囲。
+検証: `cargo build --locked --example bridge`、`pnpm --dir frontend build`、
+`pnpm --dir frontend test`（32 files / 281 tests）が成功。
+CSP サーバーに対して専用 E2E_OUT を使った `ONLY=S11 pnpm suite` は
+21 PASS / 0 FAIL・ERROR / 既知スクリーンショット CSP の 1 OBSERVE。
+修正前の独立診断で UI page2 / disk page1 / 保存試行1回を再現し、
+新規単体テストの失敗も確認してから修正した。
+
 `frontend/src/contexts/WorkspaceContext.tsx` の235–263行付近で、lastSavedSession は保存成功前に更新され、pendingSession は呼出し前に消される。失敗後の同じ状態では保存が予定されず、pagehide にも送るものがない。表示 page2 / disk page1 / attempts=1 を観測。状態を page3 に変えると disk page3 / attempts=2 になり、永続化サービス全体の停止とは区別できる。
 
 独立修正タスクはローカル `spec-fix-EX-01.md`。一時 spec がなくても、本節・保存済み診断から再開できる。修正時は成功済み snapshot と未保存 snapshot を区別し、最新状態の失敗後再試行を残すこと、古い成功・失敗が新しい pending を消さないこと、復元中の空 snapshot 保存抑止をテストする。無制限の即時リトライは避ける。診断の悪い現状を通常 CI の期待値にはせず、修正と正しい期待値の回帰テストを同じ修正ブランチで検証する。

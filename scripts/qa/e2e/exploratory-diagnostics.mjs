@@ -1,3 +1,5 @@
+// Historical pre-fix reproducer: expected to fail after EX-01 is fixed.
+// Current passing requirements live in suite.mjs / S11-session-save-retry.
 // Opt-in reproducer, deliberately outside the regression suite/CI.
 // OBSERVE describes a defect, never a passing product requirement.
 import fs from 'node:fs';
