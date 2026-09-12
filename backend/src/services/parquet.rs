@@ -18,6 +18,10 @@ use crate::services::access::FileAccess;
 /// (when it has one), and `evict` releases that grant. So a file stays
 /// readable exactly as long as some tab shows it — DataFusion reopens the
 /// file on every query, so the grant cannot end with the first read.
+/// A fill that fails gives the grant back itself (`release_unless_used`):
+/// the file gets no tab, so nothing would ever evict it, and each failed
+/// open of a different file would otherwise hold one more grant until the
+/// process ends.
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
@@ -129,7 +133,10 @@ impl ParquetCache {
             // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
             .with_information_schema(true);
         let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
-        register_file_as_t(&ctx, path).await?;
+        if let Err(e) = register_file_as_t(&ctx, path).await {
+            self.release_unless_used(path, &self.metadata_gates);
+            return Err(e);
+        }
 
         // Store in cache
         {
@@ -169,7 +176,13 @@ impl ParquetCache {
         }
 
         self.access.acquire(path)?;
-        let meta = compute()?;
+        let meta = match compute() {
+            Ok(meta) => meta,
+            Err(e) => {
+                self.release_unless_used(path, &self.session_gates);
+                return Err(e);
+            }
+        };
 
         // Store in cache
         {
@@ -178,6 +191,43 @@ impl ParquetCache {
         }
 
         Ok(meta)
+    }
+
+    /// Give back the grant a fill took when its compute / register failed,
+    /// unless the other half still relies on it. Called by the failed fill
+    /// while it holds its own gate; `other_gates` is the other half's.
+    ///
+    /// The grant is shared by the metadata and the session entry for a
+    /// path (`FileAccess::acquire` is idempotent), so a plain release here
+    /// would pull it from under a live entry or a fill in flight. Holding
+    /// this fill's gate and a `try_lock` of the other one makes the check
+    /// and the release one step: no fill of either kind can start in
+    /// between, and one that is waiting on its gate resolves the bookmark
+    /// again once it gets there. When the other gate is busy, its holder
+    /// owns the grant now — a fill that keeps it in its entry or gives it
+    /// back on its own failure, or an eviction that releases it anyway —
+    /// and `try_lock` rather than a wait is what keeps this from
+    /// deadlocking against `evict`, which takes the two gates in order.
+    fn release_unless_used(&self, path: &str, other_gates: &Mutex<HashMap<String, Weak<AsyncMutex<()>>>>) {
+        let Ok(other_gate) = Self::gate_for(other_gates, path) else {
+            return;
+        };
+        let Ok(_other_gate) = other_gate.try_lock() else {
+            return;
+        };
+        let used = self
+            .sessions
+            .lock()
+            .map(|sessions| sessions.contains_key(path))
+            .unwrap_or(true)
+            || self
+                .metadata
+                .lock()
+                .map(|metadata| metadata.contains_key(path))
+                .unwrap_or(true);
+        if !used {
+            self.access.release(path);
+        }
     }
 
     /// Remove cached entries for a given file path.
@@ -1599,6 +1649,161 @@ mod tests {
         cache.evict(&path).await.unwrap();
         assert!(fake.active().is_empty(), "eviction ends the grant");
         assert_eq!(fake.stops(), 2);
+    }
+
+    /// A cache over `FakeBookmarks`, with `path` recorded in an earlier
+    /// session and its grant released — the shape a Recent Files or session
+    /// entry has at launch, where a fill has to resolve the bookmark itself.
+    fn cache_over_recorded_file(path: &str) -> (ParquetCache, crate::services::access::fake::FakeBookmarks) {
+        use crate::services::access::fake::FakeBookmarks;
+        use crate::services::access::FileAccess;
+
+        let fake = FakeBookmarks::default();
+        let access = Arc::new(FileAccess::load(Box::new(fake.clone()), None));
+        access.remember_file(path).unwrap();
+        access.release(path);
+        assert!(fake.active().is_empty());
+        // `remember_file` resolved the bookmark once to hold it; every
+        // count below starts from that (1 start, 1 stop).
+        assert_eq!((fake.starts(), fake.stops()), (1, 1));
+        (ParquetCache::with_access(access), fake)
+    }
+
+    /// A recorded file whose contents are no longer a Parquet file.
+    fn corrupt_recorded_file(name: &str) -> String {
+        let path = temp_path(name);
+        std::fs::write(&path, b"not a parquet file at all").unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    /// A fill that fails leaves no grant behind: the file has no tab, so
+    /// nothing would ever evict it. Repeating the open must not pile up
+    /// resolves either.
+    #[tokio::test]
+    async fn a_failed_metadata_fill_gives_back_the_grant_it_took() {
+        let path = corrupt_recorded_file("broken-meta.parquet");
+        let (cache, fake) = cache_over_recorded_file(&path);
+
+        for attempt in 1..=2 {
+            cache.get_or_create_metadata(&path).await.unwrap_err();
+            assert!(fake.active().is_empty(), "attempt {attempt} left a grant behind");
+            assert_eq!(fake.starts(), 1 + attempt, "the fill resolved the bookmark");
+            assert_eq!(fake.stops(), 1 + attempt, "and gave it back when the decode failed");
+        }
+        assert!(cache.metadata.lock().unwrap().is_empty());
+        assert!(cache.sessions.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_session_fill_gives_back_the_grant_when_nothing_else_holds_it() {
+        let path = corrupt_recorded_file("broken-session.parquet");
+        let (cache, fake) = cache_over_recorded_file(&path);
+
+        assert!(cache.get_or_create_session(&path).await.is_err());
+        assert!(fake.active().is_empty());
+        assert_eq!((fake.starts(), fake.stops()), (2, 2));
+        assert!(cache.sessions.lock().unwrap().is_empty());
+    }
+
+    /// The metadata entry (a tab) still needs the grant when the session
+    /// half fails, so that failure must not take it away.
+    #[tokio::test]
+    async fn a_failed_session_fill_keeps_the_grant_the_metadata_entry_holds() {
+        let path = corrupt_recorded_file("meta-ok-session-broken.parquet");
+        let (cache, fake) = cache_over_recorded_file(&path);
+
+        cache
+            .get_or_create_metadata_with(&path, || Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] }))
+            .await
+            .unwrap();
+        assert_eq!(fake.active(), std::slice::from_ref(&path));
+
+        assert!(cache.get_or_create_session(&path).await.is_err());
+        assert_eq!(fake.active(), std::slice::from_ref(&path), "the tab's grant survives the session failure");
+        assert_eq!((fake.starts(), fake.stops()), (2, 1));
+
+        cache.evict(&path).await.unwrap();
+        assert!(fake.active().is_empty());
+        assert_eq!((fake.starts(), fake.stops()), (2, 2));
+    }
+
+    /// Both halves fill under separate gates, so one can fail while the
+    /// other is still creating its entry. The failure must leave the grant
+    /// to the fill in flight, whichever side it is on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_fill_failing_beside_an_in_flight_fill_leaves_the_grant_to_it() {
+        // The session fill fails while the metadata fill is still computing.
+        let path = corrupt_recorded_file("session-fails-first.parquet");
+        let (cache, fake) = cache_over_recorded_file(&path);
+        let cache = Arc::new(cache);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<Result<(), String>>();
+        let creation = {
+            let cache = Arc::clone(&cache);
+            let path = path.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_create_metadata_with(&path, move || {
+                        started_tx.send(()).unwrap();
+                        release_rx.recv().unwrap()?;
+                        Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] })
+                    })
+                    .await
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(1)).expect("metadata creation must begin");
+        assert_eq!(fake.active(), std::slice::from_ref(&path), "the metadata fill holds the grant");
+
+        assert!(cache.get_or_create_session(&path).await.is_err());
+        assert_eq!(fake.active(), std::slice::from_ref(&path), "the in-flight metadata fill still needs it");
+        assert_eq!((fake.starts(), fake.stops()), (2, 1));
+
+        release_tx.send(Ok(())).unwrap();
+        creation.await.unwrap().unwrap();
+        assert_eq!(fake.active(), std::slice::from_ref(&path));
+        cache.evict(&path).await.unwrap();
+        assert!(fake.active().is_empty());
+        assert_eq!((fake.starts(), fake.stops()), (2, 2));
+
+        // The metadata fill fails after the session fill completed beside it.
+        let path = temp_path("meta-fails-last.parquet");
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)])),
+            vec![Arc::new(Int32Array::from(vec![1])) as ArrayRef],
+        )
+        .unwrap();
+        write_parquet(&path, &batch, None);
+        let path = path.to_string_lossy().into_owned();
+        let (cache, fake) = cache_over_recorded_file(&path);
+        let cache = Arc::new(cache);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<Result<(), String>>();
+        let creation = {
+            let cache = Arc::clone(&cache);
+            let path = path.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_create_metadata_with(&path, move || {
+                        started_tx.send(()).unwrap();
+                        release_rx.recv().unwrap()?;
+                        Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] })
+                    })
+                    .await
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(1)).expect("metadata creation must begin");
+        cache.get_or_create_session(&path).await.unwrap();
+        assert_eq!(fake.active(), std::slice::from_ref(&path));
+
+        release_tx.send(Err("decode failed".into())).unwrap();
+        creation.await.unwrap().unwrap_err();
+        assert_eq!(fake.active(), std::slice::from_ref(&path), "the session entry still holds the grant");
+        assert_eq!((fake.starts(), fake.stops()), (2, 1));
+        assert!(cache.metadata.lock().unwrap().is_empty());
+
+        cache.evict(&path).await.unwrap();
+        assert!(fake.active().is_empty());
+        assert_eq!((fake.starts(), fake.stops()), (2, 2));
     }
 
     #[tokio::test]
