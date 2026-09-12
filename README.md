@@ -128,13 +128,33 @@ certificate, for a look at what the store gets.
 ### Tests
 
 ```bash
-cd frontend && pnpm test        # Vitest
-cd backend  && cargo test --lib # Rust unit tests
+pnpm --dir frontend test                   # Vitest (run these from repo root)
+(cd backend && cargo test --lib)           # Rust unit tests
+swift test --package-path backend/storekit # Swift payload tests
 ```
 
 `scripts/qa/e2e/` drives the real backend through Playwright WebKit (see its
 README), `docs/MANUAL_QA.md` holds what only the macOS shell can show, and
 `site/` is the product page published to GitHub Pages.
+
+Pull requests and pushes to `main` run [CI](.github/workflows/ci.yml):
+the frontend's typecheck, production build and tests; Rust Clippy and tests
+with and without `app-store`; Swift payload tests; generated IPC binding
+drift detection; and the WebKit regression suite against the built frontend
+under the release CSP. The browser error gate is itself tested by injecting
+exceptions and CSP violations. E2E results and screenshots are kept as the
+`e2e-results` artifact for seven days.
+
+The native checks run on macOS; signing, store uploads and the real StoreKit
+purchase sheet remain part of release QA. CI checks the actual Rust/Swift ABI
+through invalid product input (no store request), callback payload ownership and
+parsing, and Swift JSON delivery. The three live StoreKit smoke tests are opt-in:
+`cd backend && cargo test --locked --lib --features app-store services::store::storekit::tests -- --ignored`.
+Run them in a working App Store environment; they still fail on timeout. An
+unsigned hosted runner can stall while reading `Transaction.currentEntitlements`. CI does not enforce `cargo fmt`
+yet because the existing Rust tree has formatting differences. Making these
+jobs required for merging is a separate repository ruleset setting; merely
+adding the workflow does not enable branch protection.
 
 ## How it is put together
 

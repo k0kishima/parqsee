@@ -59,7 +59,7 @@ enum Encoded: Equatable {
     case refused(String)
 }
 
-private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: Any) {
+func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: Any) {
     switch encodeJSON(json) {
     case .json(let text):
         text.withCString { cb(ctx, $0, nil) }
@@ -68,7 +68,7 @@ private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, json: An
     }
 }
 
-private func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, error: String) {
+func deliver(_ ctx: UnsafeMutableRawPointer?, _ cb: SKCallback, error: String) {
     error.withCString { cb(ctx, nil, $0) }
 }
 
