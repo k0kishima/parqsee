@@ -51,10 +51,10 @@ describe('RecentFilesProvider', () => {
     expect(result.current.recentFiles[0].name).toBe('new.parquet');
   });
 
-  // CT-05: the first listing is a snapshot of the store from when it was
-  // asked for. Anything the session did in the meantime is newer, so the
-  // snapshot is dropped and the authoritative list asked for again — merging
-  // the two would resurrect what a clear or a remove took out.
+  // The first listing is a snapshot of the store from when it was asked
+  // for. Anything the session did in the meantime is newer, so the snapshot
+  // is dropped and the authoritative list asked for again — merging the two
+  // would resurrect what a clear or a remove took out (CT-05).
   describe('while the first listing is in flight', () => {
     /** Holds the first listing open; the call returns its `resolve`. */
     const pendingListing = () => {

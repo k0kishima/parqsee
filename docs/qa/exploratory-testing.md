@@ -59,7 +59,7 @@ fixture generator の数値乱数 seed は `20250820`。UUID と破損用 bytes 
 
 通常ファイルを親にする ENOTDIR は root/host権限に依存しない。遅延は実応答を保留する gate で順序を固定し、IPCの到着・DOM状態・disk保存に待機する。S9 の5つの folder 名 assertion は `fixtures` 固定から `base(FIX)` に変更し、専用 FIXTURES override で同じ機能を検証できるようにした。
 
-[exploratory-diagnostics.mjs](../../scripts/qa/e2e/exploratory-diagnostics.mjs) は EX-01 の独立再現コード。通常 CI には含めない。期待した console.error を exact message 1件だけ照合し、追加エラーは既存 runner の FAIL 対象のまま。スクリーンショットには runner wrapper を使い、既知の Playwright CSP 警告1件だけを OBSERVE に記録する。
+`exploratory-diagnostics.mjs`（`9c37727` 時点、EX-01 修正の merge 後に削除）は EX-01 の独立再現コード。通常 CI には含めない。期待した console.error を exact message 1件だけ照合し、追加エラーは既存 runner の FAIL 対象のまま。スクリーンショットには runner wrapper を使い、既知の Playwright CSP 警告1件だけを OBSERVE に記録する。
 
 ## 新規所見と対応
 
@@ -81,9 +81,9 @@ CSP サーバーに対して専用 E2E_OUT を使った `ONLY=S11 pnpm suite` �
 
 `frontend/src/contexts/WorkspaceContext.tsx` の235–263行付近で、lastSavedSession は保存成功前に更新され、pendingSession は呼出し前に消される。失敗後の同じ状態では保存が予定されず、pagehide にも送るものがない。表示 page2 / disk page1 / attempts=1 を観測。状態を page3 に変えると disk page3 / attempts=2 になり、永続化サービス全体の停止とは区別できる。
 
-独立修正タスクはローカル `spec-fix-EX-01.md`。一時 spec がなくても、本節・保存済み診断から再開できる。修正時は成功済み snapshot と未保存 snapshot を区別し、最新状態の失敗後再試行を残すこと、古い成功・失敗が新しい pending を消さないこと、復元中の空 snapshot 保存抑止をテストする。無制限の即時リトライは避ける。診断の悪い現状を通常 CI の期待値にはせず、修正と正しい期待値の回帰テストを同じ修正ブランチで検証する。
+修正は本節と保存済み診断だけから再開できる。修正時は成功済み snapshot と未保存 snapshot を区別し、最新状態の失敗後再試行を残すこと、古い成功・失敗が新しい pending を消さないこと、復元中の空 snapshot 保存抑止をテストする。無制限の即時リトライは避ける。診断の悪い現状を通常 CI の期待値にはせず、修正と正しい期待値の回帰テストを同じ修正ブランチで検証する。
 
-既存 CT-01〜CT-05 は未修正で、開始時のローカル修正 spec を保全した。着手優先順位は監査の CT-01 → CT-03 → CT-02 → CT-04 → CT-05 を基準とし、EX-01 は中優先の保存修正として独立実施できる。詳細は [code-test-audit.md](code-test-audit.md)。
+監査時点で CT-01〜CT-05 は未修正だった。着手優先順位は監査の CT-01 → CT-03 → CT-02 → CT-04 → CT-05 を基準とし、EX-01 は中優先の保存修正として独立実施できる。詳細は [code-test-audit.md](code-test-audit.md)。
 
 ## 未検証範囲
 

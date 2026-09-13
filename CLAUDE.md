@@ -518,6 +518,58 @@ command's answer carries the higher `revision`, since the two can cross.
     macOS the app has Japanese at all — without it those parts stay
     English on a Japanese Mac and `navigator.language` reads `en`.
 
+## Comments explain; external references only cite
+
+A comment must make its point without the reader opening anything else.
+What a comment is tempted to point at decays faster than the code it
+annotates: a GitHub issue is closed and its context collapses to a title;
+an audit id (`CT-04`) or a manual-QA item (`MQ-12`) is renumbered; a
+numbered note in this file shifts when one is added above it; a local
+`spec-*.md` is gitignored and never existed for anyone but its author. An
+explanation that lives at the far end of such a link goes silent when the
+link does, and it goes silent invisibly — the comment still reads fine.
+
+What matters is the job the reference is doing:
+
+- **Citation — allowed, and worth having.** The comment explains the
+  mechanism in full, and the reference is appended as the source for the
+  one claim the code cannot re-derive: that this was decided, reproduced
+  or asked for. It comes after the explanation, never at its head — a
+  leading id makes the tracker the subject of the sentence. The shape to
+  copy is `FREE_TAB_LIMIT`'s TSDoc in `features/license/lib/license.ts`:
+  the rationale, then `(#22)`.
+- **Forward pointer — allowed.** "The upload becomes its own stage once
+  CI (#6) exists" names where the remaining work lives. Nothing is being
+  explained, so nothing is lost if the issue disappears — the pointer *is*
+  the content.
+- **Delegation — never.** "See #22 for why", "see spec-fix-CT-01.md",
+  "CLAUDE.md note 12". Move the reasoning into the comment. If it is too
+  long to sit inline, it belongs in the rustdoc / TSDoc of the declaration
+  it constrains — still in this repository, still versioned with the code
+  it describes.
+
+Pointers into this repository — `see range_reader`, `docs/MANUAL_QA.md`,
+the e2e README — are fine: they are versioned with the code. Point at a
+name that survives renumbering (a function, a file, a heading), never at
+a note number or a line number.
+
+The same test applies to names. A test or a constant named after an
+audit item or a ticket means nothing to a reader without the tracker
+open; name it for the behaviour and append the id if it is worth citing.
+
+### Specs are scaffolding, not artifacts
+
+A `spec-*.md` at the repository root (gitignored) is a thinking aid for
+one fix, not a record of it. Before the branch that finishes the fix is
+merged: move what cannot be re-derived from the code — external platform
+behaviour, options deliberately not taken — into rustdoc / TSDoc beside
+the code it constrains; move anything still unimplemented into a GitHub
+issue that stands on its own; leave no comment or document pointing at
+the spec. Then delete it. Build steps, deliverable lists, acceptance
+checklists and "where the parts live" tables go with it: the code, its
+tests and git history are the source of truth, and a table of file paths
+rots silently.
+
 ## Testing
 
 Vitest + Testing Library cover the file-explorer feature, the Welcome
