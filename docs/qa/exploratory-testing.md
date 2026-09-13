@@ -81,9 +81,9 @@ CSP サーバーに対して専用 E2E_OUT を使った `ONLY=S11 pnpm suite` �
 
 `frontend/src/contexts/WorkspaceContext.tsx` の235–263行付近で、lastSavedSession は保存成功前に更新され、pendingSession は呼出し前に消される。失敗後の同じ状態では保存が予定されず、pagehide にも送るものがない。表示 page2 / disk page1 / attempts=1 を観測。状態を page3 に変えると disk page3 / attempts=2 になり、永続化サービス全体の停止とは区別できる。
 
-独立修正タスクはローカル `spec-fix-EX-01.md`。一時 spec がなくても、本節・保存済み診断から再開できる。修正時は成功済み snapshot と未保存 snapshot を区別し、最新状態の失敗後再試行を残すこと、古い成功・失敗が新しい pending を消さないこと、復元中の空 snapshot 保存抑止をテストする。無制限の即時リトライは避ける。診断の悪い現状を通常 CI の期待値にはせず、修正と正しい期待値の回帰テストを同じ修正ブランチで検証する。
+修正は本節と保存済み診断だけから再開できる。修正時は成功済み snapshot と未保存 snapshot を区別し、最新状態の失敗後再試行を残すこと、古い成功・失敗が新しい pending を消さないこと、復元中の空 snapshot 保存抑止をテストする。無制限の即時リトライは避ける。診断の悪い現状を通常 CI の期待値にはせず、修正と正しい期待値の回帰テストを同じ修正ブランチで検証する。
 
-既存 CT-01〜CT-05 は未修正で、開始時のローカル修正 spec を保全した。着手優先順位は監査の CT-01 → CT-03 → CT-02 → CT-04 → CT-05 を基準とし、EX-01 は中優先の保存修正として独立実施できる。詳細は [code-test-audit.md](code-test-audit.md)。
+監査時点で CT-01〜CT-05 は未修正だった。着手優先順位は監査の CT-01 → CT-03 → CT-02 → CT-04 → CT-05 を基準とし、EX-01 は中優先の保存修正として独立実施できる。詳細は [code-test-audit.md](code-test-audit.md)。
 
 ## 未検証範囲
 
