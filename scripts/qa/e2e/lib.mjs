@@ -94,6 +94,15 @@ window.__alerts = [];
 // destructive action (lib/dialog.ts); the real plugin shows a sheet.
 window.__dialog = { save: null, open: null, confirm: true };
 window.__delays = {};
+// \`__delays\` holds a command back before it runs, so it reads the store as
+// it is when it finally does. \`__holds\` is the other half: the command runs
+// at once and its *answer* waits, which is the only way to hand the app a
+// listing of the store from before something changed it. \`__hold(cmd)\` gates
+// every answer for \`cmd\`; \`__release(cmd)\` lets them through and stops
+// gating, so a re-listing the app sends afterwards is answered normally.
+window.__holds = {};
+window.__hold = (cmd) => { let open; const gate = new Promise(r => { open = r; }); window.__holds[cmd] = { gate, open }; };
+window.__release = (cmd) => { const h = window.__holds[cmd]; if (h) { delete window.__holds[cmd]; h.open(); } };
 // The App Store, scripted. \`null\` hands the \`iap_*\` commands to the bridge,
 // whose store is \`AlwaysUnlocked\`: no limit, no prompt, no badge. A launch
 // with \`iap\` set answers them here instead — see \`FREE_STORE\` and
@@ -158,7 +167,9 @@ window.__TAURI_INTERNALS__ = {
       }
     }
     if (window.__iap && cmd.startsWith('iap_')) return window.__iapInvoke(cmd, args ?? {});
+    const held = window.__holds[cmd];
     const r = await window.__bridgeInvoke(cmd, args ?? {}, window.__delays[cmd] || 0);
+    if (held) await held.gate;
     if (r && r.__err !== undefined) throw r.__err;
     return r.__ok;
   },
@@ -193,12 +204,17 @@ let launches = 0;
  * `iap` puts a scripted App Store in front of the `iap_*` commands (start
  * from `FREE_STORE`); without it the bridge answers them and the app owns
  * the full version.
+ * `hold` gates the answers to those commands from the very first call —
+ * they run against the store as it is at launch and the app is handed the
+ * result only once `release(page, cmd)` says so, which is how S7b acts out
+ * a listing overtaken by an open (`delays`, by contrast, holds a command
+ * back *before* it runs, so it reads the store as it is when it does).
  * `locale` is the browser's, which is what the app starts in when no
  * language is saved (`systemLanguage` reads `navigator.language`): pinned
  * to English so the suite's selectors hold on a Japanese Mac. A saved
  * language in `localStorage` wins over it, as in the app.
  */
-export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1, iap = null, locale = 'en-US' } = {}) {
+export async function launch({ browser = 'webkit', headless = true, localStorage: ls = {}, dataDir, pendingFiles = [], viewport = { width: 1280, height: 800 }, deviceScaleFactor = 1, iap = null, hold = [], locale = 'en-US' } = {}) {
   await assertDevServer();
   if (!dataDir) {
     dataDir = path.join(OUT, 'data', `launch-${process.pid}-${++launches}`);
@@ -223,6 +239,7 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
     await page.addInitScript(v => { window.__appVersion = v; }, APP_VERSION);
     await page.addInitScript((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ls);
     if (iap) await page.addInitScript((store) => { window.__iap = { revision: 1, ...store }; }, iap);
+    if (hold.length) await page.addInitScript((cmds) => { for (const c of cmds) window.__hold(c); }, hold);
     await page.goto(DEV_URL);
     await page.waitForSelector('text=/Parqsee|Drop/i', { timeout: 10000 }).catch(() => {});
     const close = async () => { try { await b.close(); } finally { bridge.close(); } };
@@ -231,6 +248,11 @@ export async function launch({ browser = 'webkit', headless = true, localStorage
     try { await b?.close(); } finally { bridge.close(); }
     throw error;
   }
+}
+
+/** Let the answers to a command held by `launch({ hold })` through. */
+export async function release(page, cmd) {
+  await page.evaluate((c) => window.__release(c), cmd);
 }
 
 /** Deliver a file-drop the way lib.rs's drag-drop handler does. */

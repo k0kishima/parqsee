@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../lib/tauri';
 import {
@@ -31,6 +31,54 @@ const LEGACY_STORAGE_KEY = 'parqsee-recent-files';
  */
 export function RecentFilesProvider({ children }: { children: ReactNode }) {
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  // Bumped by every local change to the mirror. A listing asked for before
+  // one of them describes the store from before it, so applying it would
+  // undo the change; see `adoptLatestListing`.
+  const generationRef = useRef(0);
+  // Resolves when every backend write this context has sent so far has
+  // settled. A re-listing waits on it, or it could read the store before a
+  // Clear all / Remove has landed and bring the entries back.
+  const writesRef = useRef<Promise<void>>(Promise.resolve());
+
+  /** Send a change to the store, and keep it in `writesRef` until it settles. */
+  const trackWrite = useCallback((write: Promise<unknown>, message: string) => {
+    const settled = write.then(
+      () => undefined,
+      error => {
+        console.error(message, error);
+      },
+    );
+    writesRef.current = Promise.all([writesRef.current, settled]).then(() => undefined);
+  }, []);
+
+  // The mirror starts from the backend's list, but the store can change
+  // while that listing is in flight — a file opened from Finder or the
+  // Welcome screen, Clear all, Remove, File › Open Recent › Clear Menu. A
+  // listing describes the store as it was when it was asked for, so it is
+  // adopted only when nothing has touched the mirror since; otherwise the
+  // snapshot is from before the change and the authoritative list is asked
+  // for again. Merging the two instead would resurrect exactly what a clear
+  // or a remove took out.
+  const adoptLatestListing = useCallback(async (cancelled: () => boolean) => {
+    // The first listing goes out with the mount. A retry waits for the
+    // writes this context has sent, or it would read the store before the
+    // clear or the remove that made it necessary has landed. Nothing can
+    // change the mirror between that wait and the call that follows it:
+    // both run in one turn.
+    let listing = listRecentFiles();
+    for (;;) {
+      const generation = generationRef.current;
+      const files = await listing;
+      if (cancelled()) return;
+      if (generationRef.current === generation) {
+        setRecentFiles(files);
+        return;
+      }
+      await writesRef.current;
+      if (cancelled()) return;
+      listing = listRecentFiles();
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -39,17 +87,26 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
       // Storage may be unavailable; there is nothing to migrate anyway.
     }
     if (!isTauri()) return;
-    listRecentFiles()
-      .then(setRecentFiles)
-      .catch(error => console.error('Failed to list recent files:', error));
-  }, []);
+    let cancelled = false;
+    // A listing that never arrives leaves the mirror on what the session
+    // itself did; the changes below keep working either way.
+    adoptLatestListing(() => cancelled).catch(error =>
+      console.error('Failed to list recent files:', error),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [adoptLatestListing]);
 
   // File › Open Recent › Clear Menu clears the store in Rust (see menu.rs)
   // and says so; the mirror follows. A pick from that menu needs nothing
   // here: it arrives as `file-drop` and is an ordinary open.
   useEffect(() => {
     if (!isTauri()) return;
-    const unlisten = listen('recent-files-cleared', () => setRecentFiles([]));
+    const unlisten = listen('recent-files-cleared', () => {
+      generationRef.current += 1;
+      setRecentFiles([]);
+    });
     return () => {
       unlisten.then(fn => fn());
     };
@@ -60,22 +117,30 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
   // a copy of the number here only made the mirror disagree with the store
   // until the next launch whenever the two drifted apart.
   const upsertRecentFile = useCallback((file: RecentFile) => {
+    // No write to track: the caller has `rememberFile`'s answer in hand, so
+    // the store already holds the entry.
+    generationRef.current += 1;
     setRecentFiles(prev => [file, ...prev.filter(f => f.path !== file.path)]);
   }, []);
 
   const clearRecentFiles = useCallback(() => {
+    generationRef.current += 1;
     setRecentFiles([]);
     if (isTauri()) {
-      apiClearRecentFiles().catch(error => console.error('Failed to clear recent files:', error));
+      trackWrite(apiClearRecentFiles(), 'Failed to clear recent files:');
     }
-  }, []);
+  }, [trackWrite]);
 
-  const removeRecentFile = useCallback((path: string) => {
-    setRecentFiles(prev => prev.filter(f => f.path !== path));
-    if (isTauri()) {
-      apiRemoveRecentFile(path).catch(error => console.error('Failed to remove recent file:', error));
-    }
-  }, []);
+  const removeRecentFile = useCallback(
+    (path: string) => {
+      generationRef.current += 1;
+      setRecentFiles(prev => prev.filter(f => f.path !== path));
+      if (isTauri()) {
+        trackWrite(apiRemoveRecentFile(path), 'Failed to remove recent file:');
+      }
+    },
+    [trackWrite],
+  );
 
   return (
     <RecentFilesContext.Provider value={{ recentFiles, upsertRecentFile, clearRecentFiles, removeRecentFile }}>

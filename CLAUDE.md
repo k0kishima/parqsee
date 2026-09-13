@@ -571,7 +571,7 @@ drives the Vite dev server against the real backend through
 service functions the commands call, over an unsandboxed store under
 `PARQSEE_DATA_DIR`). Run it after backend or frontend changes that touch
 paging, filters, export, the explorer, workspace roots, recent files (S7,
-the top row's panel included), the
+the top row's panel included; S7b, a launch listing overtaken by an open), the
 session (S11: tabs back across a relaunch, a deleted file's tab skipped and
 named), opening from Finder (S12: cold start through `PARQSEE_PENDING_FILES`,
 warm start through the `file-drop` event), the bundled sample (S13: opened

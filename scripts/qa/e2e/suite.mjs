@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { dropFile, finderOpen, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
 import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
@@ -582,6 +582,39 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await page.click(`span[title="${FIX}/multi_rowgroup.parquet"]`); await page.waitForTimeout(300);
   check('S7.tabStateKept', (await act(page).locator('text=/Showing .* entries/').first().textContent()).includes('14,286'), 'filter kept when returning');
 });
+
+// ------------------------------------------------- S7b recent files vs. a slow listing
+// The mirror starts from `list_recent_files`, which describes the store as
+// it was when it was asked for. A file opened while that listing is still
+// in flight — a double-click in Finder on a cold start is the real case —
+// is newer than the answer, so the answer must not put the list back to
+// what it was without it.
+const S7B_DATA = path.join(OUT, 'data', 's7b');
+fs.rmSync(S7B_DATA, { recursive: true, force: true });
+
+await scenario('S7b-recent-seed', async ({ page }) => {
+  await openFile(page, `${FIX}/one_row.parquet`);
+  await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(400);
+}, { dataDir: S7B_DATA });
+
+await scenario('S7b-recent-listing-race', async ({ page, bridge }) => {
+  // The launch's listing ran against the store as it was — one_row.parquet
+  // only — and its answer is held while the file arrives.
+  await dropFile(page, `${FIX}/dict.parquet`); await waitGrid(page);
+  await page.locator('[title^="Close tab"]').first().click();
+  await page.waitForSelector('text=Recent Files', { timeout: 15000 });
+  await release(page, 'list_recent_files');
+  const names = () => page.locator('button.flex-1.text-left').evaluateAll(els => els.map(e => e.querySelector('p').textContent.trim()));
+  await page.waitForFunction(() => document.querySelectorAll('button.flex-1.text-left').length === 2, null, { timeout: 10000 }).catch(() => {});
+  check('S7b.keepsTheNewFile', (await names())[0] === 'dict.parquet', `recent files shown: ${await names()}`);
+  const stored = (await bridge.call('list_recent_files')).map(f => f.name);
+  check('S7b.matchesTheStore', (await names()).join(',') === stored.join(','), `shown=${await names()} stored=${stored}`);
+  // How many listings it took to get there is a dev-mode detail (StrictMode
+  // runs the provider's effect more than once); what is asserted above is
+  // the list the app settled on.
+  const cmds = bridge.log.map(l => l.cmd).filter(c => c === 'list_recent_files' || c === 'remember_file');
+  report('S7b.listings', 'OBSERVE', `bridge calls: ${cmds}`);
+}, { dataDir: S7B_DATA, hold: ['list_recent_files'] });
 
 // ---------------------------------------------------------------- S8 settings
 // The dialog applies every change at once and closes on Escape / ✕ / the
