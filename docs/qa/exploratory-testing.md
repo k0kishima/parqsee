@@ -59,7 +59,7 @@ fixture generator の数値乱数 seed は `20250820`。UUID と破損用 bytes 
 
 通常ファイルを親にする ENOTDIR は root/host権限に依存しない。遅延は実応答を保留する gate で順序を固定し、IPCの到着・DOM状態・disk保存に待機する。S9 の5つの folder 名 assertion は `fixtures` 固定から `base(FIX)` に変更し、専用 FIXTURES override で同じ機能を検証できるようにした。
 
-[exploratory-diagnostics.mjs](../../scripts/qa/e2e/exploratory-diagnostics.mjs) は EX-01 の独立再現コード。通常 CI には含めない。期待した console.error を exact message 1件だけ照合し、追加エラーは既存 runner の FAIL 対象のまま。スクリーンショットには runner wrapper を使い、既知の Playwright CSP 警告1件だけを OBSERVE に記録する。
+`exploratory-diagnostics.mjs`（`9c37727` 時点、EX-01 修正の merge 後に削除）は EX-01 の独立再現コード。通常 CI には含めない。期待した console.error を exact message 1件だけ照合し、追加エラーは既存 runner の FAIL 対象のまま。スクリーンショットには runner wrapper を使い、既知の Playwright CSP 警告1件だけを OBSERVE に記録する。
 
 ## 新規所見と対応
 

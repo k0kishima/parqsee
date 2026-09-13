@@ -204,16 +204,11 @@ visible Retry button, disk persistence, and successful-save deduplication.
 The notification is nonmodal, localized in English/Japanese, remains until
 the latest state is saved, and does not claim native Quit completion.
 
-`exploratory-diagnostics.mjs` is a **historical defect reproducer**, outside CI.
-Run it on the pre-fix revision; it intentionally fails once EX-01 is fixed:
-
-```sh
-DEV_URL=http://localhost:1421/ BRIDGE_QUIET=1 node exploratory-diagnostics.mjs
-```
-
-It records EX-01 (failed session save is not retried by pagehide) as OBSERVE;
-its zero exit code means the diagnostic completed, not that the application
-meets that requirement. See `docs/qa/exploratory-testing.md` for evidence and
-limits. Synthetic pagehide and scripted purchases do not verify native Quit,
+The pre-fix reproducer of EX-01 (`exploratory-diagnostics.mjs`, which
+asserted that a failed session save was *not* retried by pagehide) was
+removed with the fix: it could only fail on a revision that has it, and
+`git show 9c37727` has the script together with the revision it ran on.
+`docs/qa/exploratory-testing.md` keeps the evidence and the limits.
+Synthetic pagehide and scripted purchases do not verify native Quit,
 Sandbox grants or StoreKit. Use dedicated `FIXTURES` / `E2E_OUT` directories
 when retaining an exploratory run separately from the normal suite output.
