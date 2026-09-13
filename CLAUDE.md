@@ -536,8 +536,8 @@ What matters is the job the reference is doing:
   one claim the code cannot re-derive: that this was decided, reproduced
   or asked for. It comes after the explanation, never at its head — a
   leading id makes the tracker the subject of the sentence. The shape to
-  copy is `FREE_TAB_LIMIT`'s rustdoc-style comment in
-  `features/license/lib/license.ts`: the rationale, then `(#22)`.
+  copy is `FREE_TAB_LIMIT`'s TSDoc in `features/license/lib/license.ts`:
+  the rationale, then `(#22)`.
 - **Forward pointer — allowed.** "The upload becomes its own stage once
   CI (#6) exists" names where the remaining work lives. Nothing is being
   explained, so nothing is lost if the issue disappears — the pointer *is*
