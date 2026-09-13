@@ -30,3 +30,8 @@ scripts/qa/fixtures/
 # repository; scripts/release/appstore.sh and scripts/qa/sign_for_storekit.sh
 # take their path as an argument.
 *.provisionprofile
+
+# Per-fix planning notes at the repository root: scaffolding for one
+# branch, never committed. CLAUDE.md says what to do with their contents
+# before the branch merges.
+/spec-*.md
