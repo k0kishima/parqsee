@@ -893,7 +893,8 @@ await scenario('S11-session-restore', async ({ page, bridge }) => {
   await screenshot(page, { path: `${OUT}/shots/S11.png` });
 }, { dataDir: S11_DATA });
 
-// EX-01: retry the same failed snapshot and acknowledge only successful saves.
+// A save that failed is retried with the same snapshot, and only a save that
+// succeeded is acknowledged as the last saved state (EX-01).
 await scenario('S11-session-save-retry', async ({ page, bridge, dataDir }) => {
   const active = page.locator('div[style*="position: absolute"][style*="display: flex"]');
   const storePath = path.join(dataDir, 'bookmarks.json');
@@ -1044,7 +1045,8 @@ await scenario('S13-sample-restore', async ({ page }) => {
 // ---------------------------------------------------------------- S14 the free tier
 // The App Store is the scripted one in lib.mjs (`launch({ iap })`): the
 // bridge owns the full version and would never show any of this. The limit
-// itself is the webview's (FREE_TAB_LIMIT, CLAUDE.md note 12): the fourth
+// itself is the webview's (FREE_TAB_LIMIT in features/license/lib/license.ts;
+// the backend has no notion of a tab): the fourth
 // file brings the prompt and no tab, an open tab is still reachable, a
 // purchase lifts it at once, a refund puts it back.
 const S14_DATA = path.join(OUT, 'data', 's14');

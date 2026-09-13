@@ -2,7 +2,7 @@
 //!
 //! The Mac App Store build is free to download and always usable; the free
 //! tier is limited by feature, and a non-consumable in-app purchase unlocks
-//! it for good (decisions in #5 / #22, the model TablePlus uses). There is
+//! it for good — the model TablePlus uses (#5, #22). There is
 //! no trial and no clock: the state is "does the account own
 //! [`PRODUCT_FULL`]".
 //!
