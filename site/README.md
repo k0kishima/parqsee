@@ -13,6 +13,7 @@ site/
 ├── support.html        en: support + FAQ    (App Store Connect: Support URL)
 ├── ja/                 the same three in Japanese
 ├── style.css           one stylesheet, light and dark
+├── year.js             turns the footer's "© 2026" into "© 2026–<this year>" from 2027 on
 └── img/
     ├── icon.png            from backend/icons/icon.png
     └── screenshot-*.png    from `pnpm shots` (see below)

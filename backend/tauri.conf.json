@@ -25,6 +25,7 @@
     "active": true,
     "targets": ["app"],
     "category": "DeveloperTool",
+    "copyright": "2026 Fuji Enterprise",
     "resources": {
       "resources/sample.parquet": "sample.parquet"
     },
