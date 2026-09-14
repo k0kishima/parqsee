@@ -28,7 +28,8 @@ cluster and no upload.
 - **Opens from Finder** — double-click a `.parquet` file, or drop it on the
   window or the Dock icon.
 - **Dark mode, English and Japanese**, following the system appearance.
-- **Offline by construction** — no network requests, no account, no telemetry.
+- **Offline by construction** — no server of ours, no account, no telemetry;
+  the only network traffic is Apple's, for the App Store purchase.
 
 ## Install
 
