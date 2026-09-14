@@ -7,9 +7,10 @@
       in tauri.conf.json). Keys App Store Connect asks about that Tauri
       has no config for.
 
-      The app makes no network requests and uses no encryption of its own,
-      so it is exempt from export compliance; declaring it here answers
-      the question App Store Connect would otherwise ask on every upload.
+      The app uses no encryption of its own — its only network traffic is
+      StoreKit's, over Apple's own TLS — so it is exempt from export
+      compliance; declaring it here answers the question App Store Connect
+      would otherwise ask on every upload.
     -->
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
