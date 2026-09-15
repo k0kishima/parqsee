@@ -1,0 +1,9 @@
+[
+  { "path": "/data/2024q1/report.parquet", "folder": "2024q1" },
+  { "path": "/data/report.parquet", "folder": "data" },
+  { "path": "/report.parquet", "folder": "/" },
+  { "path": "/data/my reports/report.parquet", "folder": "my reports" },
+  { "path": "/data/v1.0/report.parquet", "folder": "v1.0" },
+  { "path": "/データ/売上/report.parquet", "folder": "売上" },
+  { "path": "/data/.hidden/report.parquet", "folder": ".hidden" }
+]
