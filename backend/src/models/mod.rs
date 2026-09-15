@@ -194,3 +194,28 @@ pub struct IapPurchaseResult {
     /// The status after the purchase was accounted for.
     pub status: IapStatus,
 }
+
+/// One column of a SQL result: the name the query gave it and its Arrow type
+/// rendered for display. Not `ColumnInfo` — that describes a column of the
+/// parquet file itself, and a query's columns can be computed, joined or
+/// aggregated, where a physical or logical parquet type means nothing.
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct QueryColumn {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct QueryResult {
+    pub columns: Vec<QueryColumn>,
+    /// One JSON object per row, already rendered webview-safe by
+    /// `batches_to_rows` (decimals and big integers as strings).
+    #[ts(type = "Record<string, unknown>[]")]
+    pub rows: Vec<serde_json::Value>,
+    pub execution_time_ms: u128,
+    /// True when the result was cut at `max_rows`.
+    pub truncated: bool,
+    pub max_rows: usize,
+}
