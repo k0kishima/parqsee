@@ -178,7 +178,7 @@ to the harness.
 
 ## Writing checks
 
-- Scope every locator to the active tab: `div[style*="position: absolute"][style*="display: flex"]`.
+- Scope every locator to the active tab with `activePanel(page)` from `lib.mjs` (`ACTIVE_PANEL` when you need the selector as a string).
   Hidden tabs keep their DOM (h1, footer, Export button, search input), so an
   unscoped `text=` locator matches the wrong tab.
 - Use the fixtures by name from `FIX`; regenerate rather than hand-edit them.

@@ -2,15 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesPopover } from '../recent-files-popover';
+import type { RecentFile } from '../../../../bindings/ipc/RecentFile';
+import { makeRecentFile } from '../../../../test/factories';
 
 const mockClear = vi.fn();
 const mockRemove = vi.fn();
-let files: { path: string; name: string; size: number; last_accessed: number; available: boolean }[] = [];
+let files: RecentFile[] = [];
 vi.mock('../../../../contexts/RecentFilesContext', () => ({
   useRecentFiles: () => ({ recentFiles: files, removeRecentFile: mockRemove, clearRecentFiles: mockClear }),
 }));
 
-const file = (name: string, available = true) => ({ path: `/data/${name}`, name, size: 2048, last_accessed: 1_757_116_800_000, available });
+const file = (name: string, available = true) =>
+  makeRecentFile({ name, size: 2048, last_accessed: 1_757_116_800_000, available });
 
 /** The panel under a wrapper standing in for the header's button + anchor. */
 const renderPopover = (onFileSelect = vi.fn(), onClose = vi.fn()) => {

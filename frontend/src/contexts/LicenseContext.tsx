@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useReducer, useCallback, useRef, ReactNode } from 'react';
+import { useEffect, useReducer, useCallback, useRef, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import { useTranslation } from 'react-i18next';
 import { isTauri, toErrorMessage } from '../lib/tauri';
 import {
@@ -47,7 +48,7 @@ interface LicenseContextType {
     refresh: () => void;
 }
 
-const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
+const [LicenseContext, useLicense] = createRequiredContext<LicenseContextType>('License');
 
 /**
  * Mirrors the backend's purchase state (see `services::store` in Rust,
@@ -184,10 +185,4 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     );
 }
 
-export function useLicense() {
-    const context = useContext(LicenseContext);
-    if (context === undefined) {
-        throw new Error('useLicense must be used within a LicenseProvider');
-    }
-    return context;
-}
+export { useLicense };

@@ -3,8 +3,9 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HeaderActions } from '../header-controls';
 import { LicenseProvider } from '../../../../contexts/LicenseContext';
+import { makeRecentFile } from '../../../../test/factories';
 
-let files = [{ path: '/data/a.parquet', name: 'a.parquet', size: 1, last_accessed: 0, available: true }];
+let files = [makeRecentFile({ name: 'a.parquet' })];
 vi.mock('../../../../contexts/RecentFilesContext', () => ({
   useRecentFiles: () => ({ recentFiles: files, removeRecentFile: vi.fn(), clearRecentFiles: vi.fn() }),
 }));

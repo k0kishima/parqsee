@@ -162,6 +162,11 @@ class AppstoreScriptTests(unittest.TestCase):
     def bundle_dir(self, target="universal-apple-darwin"):
         return self.root / "backend" / "target" / target / "release" / "bundle" / "macos"
 
+    def make_key_file(self, name="AuthKey.p8"):
+        key = self.tmp / name
+        key.write_text("-----BEGIN PRIVATE KEY-----\nnot really\n-----END PRIVATE KEY-----\n")
+        return key
+
     # -- the dry run -------------------------------------------------------
 
     def test_unsigned_builds_universal_and_packages_without_any_signature(self):
@@ -419,8 +424,7 @@ class AppstoreScriptTests(unittest.TestCase):
         self.assertEqual(run.key_files, [])
 
     def test_upload_validates_then_uploads_with_the_key_file(self):
-        key = self.tmp / "AuthKey.p8"
-        key.write_text("-----BEGIN PRIVATE KEY-----\nnot really\n-----END PRIVATE KEY-----\n")
+        key = self.make_key_file()
         env = dict(
             self.signing_env(), APPLE_API_KEY="KEY1", APPLE_API_ISSUER="issuer-1", APPLE_API_KEY_PATH=str(key)
         )
@@ -527,8 +531,7 @@ class AppstoreScriptTests(unittest.TestCase):
 
     def test_upload_pkg_validates_then_uploads_with_the_key_file(self):
         pkg = self.make_pkg()
-        key = self.tmp / "AuthKey.p8"
-        key.write_text("-----BEGIN PRIVATE KEY-----\nnot really\n-----END PRIVATE KEY-----\n")
+        key = self.make_key_file()
 
         run = self.run_upload(str(pkg), env=self.api_env(APPLE_API_KEY_PATH=str(key)))
 

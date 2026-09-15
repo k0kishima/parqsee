@@ -9,6 +9,7 @@ import {
   removeRecentFile,
   clearRecentFiles,
 } from '../../features/welcome/api';
+import { makeRecentFile } from '../../test/factories';
 
 vi.mock('../../lib/tauri', () => ({ isTauri: () => true }));
 vi.mock('../../features/welcome/api', () => ({
@@ -17,7 +18,7 @@ vi.mock('../../features/welcome/api', () => ({
   clearRecentFiles: vi.fn(async () => undefined),
 }));
 
-const file = (name: string) => ({ path: `/data/${name}`, name, size: 1, last_accessed: 0, available: true });
+const file = (name: string) => makeRecentFile({ name });
 const wrapper = ({ children }: { children: ReactNode }) => <RecentFilesProvider>{children}</RecentFilesProvider>;
 
 describe('RecentFilesProvider', () => {

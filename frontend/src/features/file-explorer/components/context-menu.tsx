@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, FolderOpen, ExternalLink } from 'lucide-react';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { copyPath, revealInFinder } from '../../../lib/reveal';
 import { FileEntry } from '../api';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 
@@ -37,20 +37,12 @@ export function ContextMenu({ x, y, entry, onClose, onFileSelect }: ContextMenuP
   );
 
   const handleCopyPath = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(entry.path);
-    } catch (error) {
-      console.error('Failed to copy path:', error);
-    }
+    await copyPath(entry.path);
     onClose();
   }, [entry.path, onClose]);
 
   const handleRevealInFinder = useCallback(async () => {
-    try {
-      await revealItemInDir(entry.path);
-    } catch (error) {
-      console.error('Failed to reveal in Finder:', error);
-    }
+    await revealInFinder(entry.path);
     onClose();
   }, [entry.path, onClose]);
 

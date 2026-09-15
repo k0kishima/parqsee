@@ -1,35 +1,13 @@
-use serde::{Deserialize, Serialize};
 use tauri::command;
-use ts_rs::TS;
 
 use crate::commands::guarded;
+use crate::models::{QueryColumn, QueryResult};
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
 /// the JSON round trip both scale with rows x columns; beyond this the UI
 /// asks the user to narrow the query instead.
 pub const MAX_QUERY_ROWS: usize = 10_000;
-
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "ipc/")]
-pub struct QueryColumn {
-    pub name: String,
-    pub data_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "ipc/")]
-pub struct QueryResult {
-    pub columns: Vec<QueryColumn>,
-    /// One JSON object per row, already rendered webview-safe by
-    /// `batches_to_rows` (decimals and big integers as strings).
-    #[ts(type = "Record<string, unknown>[]")]
-    pub rows: Vec<serde_json::Value>,
-    pub execution_time_ms: u128,
-    /// True when the result was cut at `max_rows`.
-    pub truncated: bool,
-    pub max_rows: usize,
-}
 
 #[command]
 pub async fn execute_sql(

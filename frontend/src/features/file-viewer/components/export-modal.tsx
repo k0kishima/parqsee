@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { copyPath, revealInFinder } from "../../../lib/reveal";
 import { useTranslation } from "react-i18next";
 import { exportData, exportDefaultDir } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
@@ -155,15 +155,9 @@ export function ExportModal({
     }
   };
 
-  // Same approach as the explorer context menu (context-menu.tsx).
   const handleCopyPath = async () => {
     if (!done) return;
-    try {
-      await navigator.clipboard.writeText(done.path);
-      setCopied(true);
-    } catch (err) {
-      console.error('Failed to copy path:', err);
-    }
+    if (await copyPath(done.path)) setCopied(true);
   };
 
   if (done) {
@@ -181,7 +175,7 @@ export function ExportModal({
             {copied ? t('export.success.copied') : t('fileExplorer.contextMenu.copyPath')}
           </button>
           <button
-            onClick={() => revealItemInDir(done.path).catch((err) => console.error('Failed to reveal in Finder:', err))}
+            onClick={() => revealInFinder(done.path)}
             className="btn-secondary"
           >
             {t('fileExplorer.contextMenu.revealInFinder')}

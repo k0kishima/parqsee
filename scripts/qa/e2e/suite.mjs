@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, FIX, OUT, ROOT } from './lib.mjs';
 import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
@@ -14,7 +14,7 @@ async function openFile(page, path, { expectTab = true } = {}) {
   await page.waitForFunction((n) => [...document.querySelectorAll('h1')].some(h => h.textContent === n && h.offsetParent !== null), base(path), { timeout: 15000 });
   await waitGrid(page);
 }
-const act = (page) => page.locator('div[style*="position: absolute"][style*="display: flex"]');
+const act = activePanel;
 const footer = (page) => act(page).locator('text=/Showing .* entries/').first().textContent().catch(() => null);
 const summary = (page) => act(page).locator('text=/^[\\d,]+ rows × \\d+ columns$/').first().textContent().catch(() => null);
 const dataError = (page) => act(page).locator('text=The condition could not be run').isVisible().catch(() => false);
@@ -929,7 +929,7 @@ await scenario('S11-session-restore', async ({ page, bridge }) => {
 // A save that failed is retried with the same snapshot, and only a save that
 // succeeded is acknowledged as the last saved state (EX-01).
 await scenario('S11-session-save-retry', async ({ page, bridge, dataDir }) => {
-  const active = page.locator('div[style*="position: absolute"][style*="display: flex"]');
+  const active = activePanel(page);
   const storePath = path.join(dataDir, 'bookmarks.json');
   await dropFile(page, `${FIX}/multi_rowgroup.parquet`);
   await active.getByText('Showing 1 to 50 of 100,000 entries', { exact: true }).waitFor();

@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import { isTauri } from '../lib/tauri';
+import { useTauriEvent } from '../hooks/useTauriEvent';
 import {
   RecentFile,
   listRecentFiles,
@@ -18,7 +19,7 @@ interface RecentFilesContextType {
   removeRecentFile: (path: string) => void;
 }
 
-const RecentFilesContext = createContext<RecentFilesContextType | undefined>(undefined);
+const [RecentFilesContext, useRecentFiles] = createRequiredContext<RecentFilesContextType>('RecentFiles');
 /** Where the list lived before it moved into the backend's store. */
 const LEGACY_STORAGE_KEY = 'parqsee-recent-files';
 
@@ -101,16 +102,10 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
   // File › Open Recent › Clear Menu clears the store in Rust (see menu.rs)
   // and says so; the mirror follows. A pick from that menu needs nothing
   // here: it arrives as `file-drop` and is an ordinary open.
-  useEffect(() => {
-    if (!isTauri()) return;
-    const unlisten = listen('recent-files-cleared', () => {
-      generationRef.current += 1;
-      setRecentFiles([]);
-    });
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, []);
+  useTauriEvent('recent-files-cleared', () => {
+    generationRef.current += 1;
+    setRecentFiles([]);
+  });
 
   // The cap is the backend's (`MAX_RECENT` in services/access/store.rs):
   // the entry it drops is the one the next listing leaves out, and holding
@@ -149,10 +144,4 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useRecentFiles() {
-  const context = useContext(RecentFilesContext);
-  if (!context) {
-    throw new Error('useRecentFiles must be used within a RecentFilesProvider');
-  }
-  return context;
-}
+export { useRecentFiles };

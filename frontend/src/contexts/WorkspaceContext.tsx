@@ -1,10 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { useSettings } from './SettingsContext';
 import { useLicense } from './LicenseContext';
 import { isTauri } from '../lib/tauri';
+import { useTauriEvent } from '../hooks/useTauriEvent';
 import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import i18n from '../lib/i18n';
@@ -117,7 +118,7 @@ interface WorkspaceContextType {
     retrySessionSave: () => void;
 }
 
-const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
+const [WorkspaceContext, useWorkspace] = createRequiredContext<WorkspaceContextType>('Workspace');
 
 /** How many closed tabs ⇧⌘T can walk back through. */
 const CLOSED_TAB_HISTORY = 10;
@@ -129,6 +130,29 @@ const SUPPORT_URL_JA = 'https://parqsee.fuji.llc/ja/support.html';
 let nextTabSerial = 0;
 /** Unique per tab; Date.now() alone collided when two files opened in one tick. */
 const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
+
+/**
+ * Open one tab of the saved session and turn it into the entry the restore
+ * dispatches, or null when the file will not open any more.
+ *
+ * The open goes through the same command a manual open uses, so the cache
+ * and the access grants behave as usual, and `rememberFile` is deliberately
+ * not called — Recent Files keeps the order it had. A file that fails here
+ * is named in the restore notice like one that was already gone, and the
+ * next save drops it from the store.
+ */
+async function openRestoredTab(tab: SessionTab): Promise<RestoredTab | null> {
+    try {
+        await apiOpenParquetFile(tab.path);
+    } catch (error) {
+        console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+        return null;
+    }
+    return {
+        tab: { id: newTabId(), path: tab.path, name: tab.name },
+        state: restoredTabState(tab.state),
+    };
+}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -200,15 +224,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             .finally(() => setRootsReady(true));
     }, []);
 
-    // The tabs of the last session. Each available one is opened through the
-    // same command a manual open uses, so the cache and the access grants
-    // behave as usual; `rememberFile` is not called, so Recent Files keeps
-    // its order. A file that is gone, or fails to open, is skipped and named
-    // in the notice; the next save drops it from the store. On the free tier
-    // the first tabs up to the limit come back and the rest are named too
-    // (and never opened in the backend, so no grant or cache for them) —
-    // restoring them all would make "never close a tab" a way around the
-    // limit.
+    // The tabs of the last session, each opened by `openRestoredTab`. A file
+    // that is gone is skipped and named in the notice without being opened
+    // at all. On the free tier the first tabs up to the limit come back and
+    // the rest are named too (and never opened in the backend, so no grant
+    // or cache for them) — restoring them all would make "never close a tab"
+    // a way around the limit.
     useEffect(() => {
         if (!isTauri()) return;
         // StrictMode runs this effect twice in development; only the run
@@ -231,17 +252,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                             capped.push(tab);
                             continue;
                         }
-                        try {
-                            await apiOpenParquetFile(tab.path);
-                        } catch (error) {
-                            console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                        const opened = await openRestoredTab(tab);
+                        if (!opened) {
                             skipped.push(tab.path);
                             continue;
                         }
-                        restored.push({
-                            tab: { id: newTabId(), path: tab.path, name: tab.name },
-                            state: restoredTabState(tab.state),
-                        });
+                        restored.push(opened);
                     }
                     if (cancelled) return;
                     dispatch({ type: 'restore', tabs: restored, activePath: session.active, limit });
@@ -259,10 +275,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
     }, [dispatch]);
 
-    // The limit lifted: the tabs it left out at launch come back, opened
-    // as the restore opened the others (no `rememberFile`; a file that
-    // fails to open is named in the notice like a skipped one). The active
-    // tab stays; the capped part of the notice goes.
+    // The limit lifted: the tabs it left out at launch come back, opened as
+    // the restore opened the others. The active tab stays; the capped part
+    // of the notice goes.
     useEffect(() => {
         if (tabLimit !== null || !sessionReady || cappedTabs.current.length === 0) return;
         const leftOut = cappedTabs.current;
@@ -272,17 +287,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const restored: RestoredTab[] = [];
             const skipped: string[] = [];
             for (const tab of leftOut) {
-                try {
-                    await apiOpenParquetFile(tab.path);
-                } catch (error) {
-                    console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                const opened = await openRestoredTab(tab);
+                if (!opened) {
                     skipped.push(tab.path);
                     continue;
                 }
-                restored.push({
-                    tab: { id: newTabId(), path: tab.path, name: tab.name },
-                    state: restoredTabState(tab.state),
-                });
+                restored.push(opened);
             }
             if (cancelled) return;
             dispatch({ type: 'restore', tabs: restored, activePath: null });
@@ -640,23 +650,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [workspaceTabs, handleTabSelect, runCommand]));
 
     // Native menu items (see build_menu in lib.rs).
-    //
-    // Registered once and kept: `runCommand` is new whenever the tabs are,
-    // and re-registering on every change left the old and the new listener
-    // overlapping — `listen` resolves before the previous `unlisten` does —
-    // so a menu item picked in that window would have run twice.
-    const command = useRef(runCommand);
-    useEffect(() => {
-        command.current = runCommand;
-    }, [runCommand]);
-
-    useEffect(() => {
-        if (!isTauri()) return;
-        const unlisten = listen<string>('menu', (event) => command.current(event.payload));
-        return () => {
-            unlisten.then(fn => fn());
-        };
-    }, []);
+    useTauriEvent<string>('menu', runCommand);
 
     /**
      * Files the app is handed from outside the window: dropped on it, and
@@ -679,26 +673,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             await openParquetFile(file);
         }
     }, [openParquetFile]);
-    // Read by the listener below, which is registered once: re-registering
-    // it whenever the callback changes would reopen a window in which a file
-    // handed over by Finder is lost.
+    // Drops and files opened from Finder while the app runs.
+    const dropListenerReady = useTauriEvent<string[] | null>('file-drop', paths => {
+        openExternalFiles(paths ?? []);
+    });
+
+    // The launch handover below fires once and then awaits the backend, so
+    // it reads the callback through a ref: the tabs it opens against are the
+    // ones the finished restore left, not the ones of the render that armed
+    // the effect.
     const openExternalFilesRef = useRef(openExternalFiles);
     useEffect(() => {
         openExternalFilesRef.current = openExternalFiles;
     }, [openExternalFiles]);
-
-    // Drops and files opened from Finder while the app runs.
-    const [dropListenerReady, setDropListenerReady] = useState(!isTauri());
-    useEffect(() => {
-        if (!isTauri()) return;
-        const listening = listen<string[] | null>('file-drop', event => {
-            openExternalFilesRef.current(event.payload ?? []);
-        });
-        listening.then(() => setDropListenerReady(true));
-        return () => {
-            listening.then(fn => fn());
-        };
-    }, []);
 
     // The files Finder handed the app at launch, before the listener above
     // existed. Asked for once, and only after two things: the listener is
@@ -757,10 +744,4 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     );
 }
 
-export function useWorkspace() {
-    const context = useContext(WorkspaceContext);
-    if (context === undefined) {
-        throw new Error('useWorkspace must be used within a WorkspaceProvider');
-    }
-    return context;
-}
+export { useWorkspace };

@@ -2,15 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesList } from '../recent-files-list';
+import type { RecentFile } from '../../../../bindings/ipc/RecentFile';
+import { makeRecentFile } from '../../../../test/factories';
 
 const mockClear = vi.fn();
 const mockRemove = vi.fn();
-let files: { path: string; name: string; size: number; last_accessed: string; available: boolean }[] = [];
+let files: RecentFile[] = [];
 vi.mock('../../../../contexts/RecentFilesContext', () => ({
   useRecentFiles: () => ({ recentFiles: files, removeRecentFile: mockRemove, clearRecentFiles: mockClear }),
 }));
 
-const file = (name: string) => ({ path: `/data/${name}`, name, size: 10, last_accessed: '2026-09-06T00:00:00Z', available: true });
+const file = (name: string) => makeRecentFile({ name, size: 10 });
 
 describe('RecentFilesList', () => {
   beforeEach(() => {
