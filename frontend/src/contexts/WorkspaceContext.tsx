@@ -131,6 +131,29 @@ let nextTabSerial = 0;
 /** Unique per tab; Date.now() alone collided when two files opened in one tick. */
 const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
 
+/**
+ * Open one tab of the saved session and turn it into the entry the restore
+ * dispatches, or null when the file will not open any more.
+ *
+ * The open goes through the same command a manual open uses, so the cache
+ * and the access grants behave as usual, and `rememberFile` is deliberately
+ * not called — Recent Files keeps the order it had. A file that fails here
+ * is named in the restore notice like one that was already gone, and the
+ * next save drops it from the store.
+ */
+async function openRestoredTab(tab: SessionTab): Promise<RestoredTab | null> {
+    try {
+        await apiOpenParquetFile(tab.path);
+    } catch (error) {
+        console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+        return null;
+    }
+    return {
+        tab: { id: newTabId(), path: tab.path, name: tab.name },
+        state: restoredTabState(tab.state),
+    };
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -201,15 +224,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             .finally(() => setRootsReady(true));
     }, []);
 
-    // The tabs of the last session. Each available one is opened through the
-    // same command a manual open uses, so the cache and the access grants
-    // behave as usual; `rememberFile` is not called, so Recent Files keeps
-    // its order. A file that is gone, or fails to open, is skipped and named
-    // in the notice; the next save drops it from the store. On the free tier
-    // the first tabs up to the limit come back and the rest are named too
-    // (and never opened in the backend, so no grant or cache for them) —
-    // restoring them all would make "never close a tab" a way around the
-    // limit.
+    // The tabs of the last session, each opened by `openRestoredTab`. A file
+    // that is gone is skipped and named in the notice without being opened
+    // at all. On the free tier the first tabs up to the limit come back and
+    // the rest are named too (and never opened in the backend, so no grant
+    // or cache for them) — restoring them all would make "never close a tab"
+    // a way around the limit.
     useEffect(() => {
         if (!isTauri()) return;
         // StrictMode runs this effect twice in development; only the run
@@ -232,17 +252,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                             capped.push(tab);
                             continue;
                         }
-                        try {
-                            await apiOpenParquetFile(tab.path);
-                        } catch (error) {
-                            console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                        const opened = await openRestoredTab(tab);
+                        if (!opened) {
                             skipped.push(tab.path);
                             continue;
                         }
-                        restored.push({
-                            tab: { id: newTabId(), path: tab.path, name: tab.name },
-                            state: restoredTabState(tab.state),
-                        });
+                        restored.push(opened);
                     }
                     if (cancelled) return;
                     dispatch({ type: 'restore', tabs: restored, activePath: session.active, limit });
@@ -260,10 +275,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
     }, [dispatch]);
 
-    // The limit lifted: the tabs it left out at launch come back, opened
-    // as the restore opened the others (no `rememberFile`; a file that
-    // fails to open is named in the notice like a skipped one). The active
-    // tab stays; the capped part of the notice goes.
+    // The limit lifted: the tabs it left out at launch come back, opened as
+    // the restore opened the others. The active tab stays; the capped part
+    // of the notice goes.
     useEffect(() => {
         if (tabLimit !== null || !sessionReady || cappedTabs.current.length === 0) return;
         const leftOut = cappedTabs.current;
@@ -273,17 +287,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const restored: RestoredTab[] = [];
             const skipped: string[] = [];
             for (const tab of leftOut) {
-                try {
-                    await apiOpenParquetFile(tab.path);
-                } catch (error) {
-                    console.error(`Failed to reopen ${tab.path} from the last session:`, error);
+                const opened = await openRestoredTab(tab);
+                if (!opened) {
                     skipped.push(tab.path);
                     continue;
                 }
-                restored.push({
-                    tab: { id: newTabId(), path: tab.path, name: tab.name },
-                    state: restoredTabState(tab.state),
-                });
+                restored.push(opened);
             }
             if (cancelled) return;
             dispatch({ type: 'restore', tabs: restored, activePath: null });
