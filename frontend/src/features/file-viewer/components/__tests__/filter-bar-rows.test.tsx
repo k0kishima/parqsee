@@ -37,6 +37,22 @@ describe('FilterBar rows', () => {
     expect(valueInputs()[0]).toHaveValue('kept');
   });
 
+  it('tells rows added within one millisecond apart', () => {
+    // A frozen clock: ids taken from Date.now() would all be the same.
+    vi.useFakeTimers();
+    try {
+      renderBar();
+      fireEvent.click(addButton());
+      fireEvent.click(addButton());
+      expect(removeButtons()).toHaveLength(3);
+
+      fireEvent.click(removeButtons()[1]);
+      expect(removeButtons()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps one empty row when the last one goes, and clears the filter', () => {
     const onFilterChange = renderBar();
     fireEvent.change(valueInputs()[0], { target: { value: '5' } });

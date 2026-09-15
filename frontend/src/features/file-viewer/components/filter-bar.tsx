@@ -46,6 +46,17 @@ export interface FilterRow {
     value: string;
 }
 
+let nextFilterRowSerial = 0;
+/**
+ * An empty condition on `column` (the first column, or none). The id is a
+ * serial and only has to be unique among the rows of one bar; `Date.now()`
+ * gave two rows added within a millisecond the same id, and one − then
+ * removed both.
+ */
+function newFilterRow(column: string | undefined): FilterRow {
+    return { id: nextFilterRowSerial++, column: column ?? "", operator: "=", value: "" };
+}
+
 /**
  * How a typed value becomes the literal a column of this kind is compared
  * with. Numbers and booleans go in bare; text keeps the value verbatim
@@ -172,11 +183,9 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
 export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
     const { t } = useTranslation();
 
-    // Initialize with one row. A lazy initializer: Date.now() is impure and
-    // must not run on every render (react.dev/reference/rules).
-    const [filters, setFilters] = useState<FilterRow[]>(() => [
-        { id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }
-    ]);
+    // Initialize with one row. A lazy initializer: taking a serial is impure
+    // and must not run on every render (react.dev/reference/rules).
+    const [filters, setFilters] = useState<FilterRow[]>(() => [newFilterRow(columns[0]?.name)]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
 
     // Point rows at the first column when the columns change and theirs is
@@ -196,17 +205,14 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     }
 
     const handleAddRow = () => {
-        setFilters([
-            ...filters,
-            { id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }
-        ]);
+        setFilters([...filters, newFilterRow(columns[0]?.name)]);
     };
 
     const handleRemoveRow = (id: number) => {
         const newFilters = filters.filter(f => f.id !== id);
         // Always keep at least one row
         if (newFilters.length === 0) {
-            setFilters([{ id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }]);
+            setFilters([newFilterRow(columns[0]?.name)]);
             // Also clear the filter
             onFilterChange("");
         } else {
@@ -221,7 +227,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     };
 
     const handleClear = () => {
-        setFilters([{ id: Date.now(), column: columns[0]?.name || "", operator: "=", value: "" }]);
+        setFilters([newFilterRow(columns[0]?.name)]);
         setInvalid(null);
         onFilterChange("");
     };
