@@ -535,7 +535,7 @@ fn metadata_from_schema(
 }
 
 use arrow::array::{Array, ArrayRef, FixedSizeListArray, GenericListArray, MapArray, StructArray};
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, FieldRef, Schema};
 use arrow::json::LineDelimitedWriter;
 
 /// True for types whose values JSON cannot carry faithfully: decimals (the
@@ -719,8 +719,39 @@ pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String
 /// instead of rendering the whole column as strings; see
 /// `restore_non_finite_floats`.
 fn convert_batch(batch: &RecordBatch, keep_top_level_floats: bool) -> Result<RecordBatch, String> {
+    rebuild_columns(batch, contains_json_unsafe, |field, column| {
+        let column = if keep_top_level_floats && is_float(column.data_type()) {
+            column.clone()
+        } else {
+            json_unsafe_as_strings(column)?
+        };
+        Ok((
+            Arc::new(Field::new(
+                field.name(),
+                column.data_type().clone(),
+                field.is_nullable(),
+            )),
+            column,
+        ))
+    })
+}
+
+/// Rebuild `batch` a column at a time, handing every field and column to
+/// `convert`, and hand the batch straight back when no field answers
+/// `needs_rebuild`.
+///
+/// That early return is the reason this is worth a function rather than a
+/// loop at each call site: most files carry none of the types these
+/// conversions exist for, and returning the batch is a refcount bump, where
+/// rebuilding it allocates a schema and a column vector for every page read
+/// and every exported batch.
+fn rebuild_columns(
+    batch: &RecordBatch,
+    needs_rebuild: impl Fn(&DataType) -> bool,
+    convert: impl Fn(&FieldRef, &ArrayRef) -> Result<(FieldRef, ArrayRef), String>,
+) -> Result<RecordBatch, String> {
     let schema = batch.schema();
-    if !schema.fields().iter().any(|f| contains_json_unsafe(f.data_type())) {
+    if !schema.fields().iter().any(|f| needs_rebuild(f.data_type())) {
         return Ok(batch.clone());
     }
 
@@ -728,21 +759,7 @@ fn convert_batch(batch: &RecordBatch, keep_top_level_floats: bool) -> Result<Rec
         .fields()
         .iter()
         .zip(batch.columns())
-        .map(|(field, column)| {
-            let column = if keep_top_level_floats && is_float(column.data_type()) {
-                column.clone()
-            } else {
-                json_unsafe_as_strings(column)?
-            };
-            Ok((
-                Arc::new(Field::new(
-                    field.name(),
-                    column.data_type().clone(),
-                    field.is_nullable(),
-                )),
-                column,
-            ))
-        })
+        .map(|(field, column)| convert(field, column))
         .collect::<Result<Vec<_>, String>>()?;
     let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
@@ -785,29 +802,16 @@ fn nested_column_as_json(name: &str, column: &ArrayRef) -> Result<ArrayRef, Stri
 /// supported in CSV"). Serialize them as JSON text so a file with an array or
 /// a struct column still exports.
 pub fn nested_to_json_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
-    let schema = batch.schema();
-    if !schema.fields().iter().any(|f| is_nested(f.data_type())) {
-        return Ok(batch.clone());
-    }
-
-    let converted = schema
-        .fields()
-        .iter()
-        .zip(batch.columns())
-        .map(|(field, column)| {
-            if is_nested(field.data_type()) {
-                Ok((
-                    Arc::new(Field::new(field.name(), DataType::Utf8, true)),
-                    nested_column_as_json(field.name(), column)?,
-                ))
-            } else {
-                Ok((field.clone(), column.clone()))
-            }
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let (fields, columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
-
-    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(|e| e.to_string())
+    rebuild_columns(batch, is_nested, |field, column| {
+        if is_nested(field.data_type()) {
+            Ok((
+                Arc::new(Field::new(field.name(), DataType::Utf8, true)),
+                nested_column_as_json(field.name(), column)?,
+            ))
+        } else {
+            Ok((field.clone(), column.clone()))
+        }
+    })
 }
 
 fn batches_to_json_bytes(batches: &[RecordBatch]) -> Result<Vec<u8>, String> {
