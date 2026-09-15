@@ -8,7 +8,8 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::services::parquet::{
-    build_page_query, json_unsafe_to_strings, nested_to_json_strings, range_reader, where_clause, ParquetCache,
+    build_page_query, json_unsafe_to_strings, nested_to_json_strings, plan_query_checked,
+    range_reader, where_clause, ParquetCache,
 };
 
 /// Rows are decoded and written one batch at a time, so exports run in
@@ -338,10 +339,13 @@ async fn export_filtered(
 ) -> Result<usize, String> {
     let query = build_page_query(Some(filter), offset, limit);
 
-    // Planning rejects a bad filter here, before any file is created.
+    // Planning rejects a bad filter here, before any file is created, and
+    // refuses a filter that would change the session the browse grid shares
+    // (see `plan_query_checked`) rather than only failing to parse.
     let ctx = cache.get_or_create_session(source_path).await?;
+    let plan = plan_query_checked(&ctx, &query).await?;
     let df = ctx
-        .sql(&query)
+        .execute_logical_plan(plan)
         .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 

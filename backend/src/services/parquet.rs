@@ -1066,18 +1066,7 @@ pub async fn execute_sql_limited(
 ) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, bool), String> {
     let ctx = cache.get_or_create_session(file_path).await?;
 
-    // Plan first and execute second: `SessionContext::sql` would run DDL and
-    // SET statements while planning, and this session is shared with the
-    // browse grid — a `DROP TABLE t` took paging down with it, and a `SET
-    // target_partitions` silently voided the single-partition ordering
-    // guarantee. The viewer only ever reads, so anything that would change
-    // the session or touch the filesystem is rejected before it runs.
-    let plan = ctx
-        .state()
-        .create_logical_plan(query)
-        .await
-        .map_err(|e| format!("SQL execution failed: {}", e))?;
-    reject_non_query(&plan)?;
+    let plan = plan_query_checked(&ctx, query).await?;
     let is_explain = matches!(
         plan,
         datafusion::logical_expr::LogicalPlan::Explain(_)
@@ -1111,6 +1100,29 @@ pub async fn execute_sql_limited(
     };
 
     Ok((batches, schema, truncated))
+}
+
+/// Plan a query against the shared session and refuse anything that is not a
+/// read. Every path that hands user-written SQL to a session — the SQL view,
+/// and the filter a paged read or an export carries — goes through here
+/// rather than through `SessionContext::sql`, which runs DDL and SET
+/// statements while it plans. The session is shared with the browse grid: a
+/// `DROP TABLE t` took paging down with it, and a `SET target_partitions`
+/// silently voided the single-partition ordering guarantee that keeps a
+/// filtered page's row order deterministic. The viewer only ever reads, so
+/// anything that would change the session or touch the filesystem is
+/// rejected before it runs.
+pub async fn plan_query_checked(
+    ctx: &datafusion::execution::context::SessionContext,
+    query: &str,
+) -> Result<datafusion::logical_expr::LogicalPlan, String> {
+    let plan = ctx
+        .state()
+        .create_logical_plan(query)
+        .await
+        .map_err(|e| format!("SQL execution failed: {}", e))?;
+    reject_non_query(&plan)?;
+    Ok(plan)
 }
 
 /// The SQL view is read-only. DDL (`CREATE`/`DROP TABLE`), `SET`, DML and
