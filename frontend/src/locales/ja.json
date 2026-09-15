@@ -189,6 +189,7 @@
     "price": "買い切り価格: {{price}}",
     "priceLoading": "App Store から価格を取得しています…",
     "priceUnavailable": "App Store から Parqsee の価格を取得できませんでした。",
+    "noProduct": "App Store に Parqsee の商品がありません。",
     "priceError": "価格を取得できませんでした: {{reason}}",
     "retry": "再試行",
     "buy": "購入",

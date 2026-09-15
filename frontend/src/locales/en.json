@@ -189,6 +189,7 @@
         "price": "One-time purchase: {{price}}",
         "priceLoading": "Loading the price from the App Store…",
         "priceUnavailable": "The App Store did not return a price for Parqsee.",
+        "noProduct": "The App Store has no product for Parqsee.",
         "priceError": "The price could not be loaded: {{reason}}",
         "retry": "Retry",
         "buy": "Buy",

@@ -83,6 +83,15 @@ describe('LicenseProvider', () => {
         expect(result.current.unlocked).toBe(true);
     });
 
+    it('a store without the product refuses the purchase in the UI language, without calling the store', async () => {
+        backend(FREE);
+        vi.mocked(listIapProducts).mockResolvedValue([]);
+        const { result } = await renderLicense();
+        await act(() => result.current.buy());
+        expect([result.current.unlocked, result.current.error]).toEqual([false, 'license.noProduct']);
+        expect(purchaseProduct).not.toHaveBeenCalled();
+    });
+
     it('a cancelled purchase and a failed one leave the free tier, the failure with its reason', async () => {
         backend(FREE);
         vi.mocked(purchaseProduct).mockResolvedValueOnce({ outcome: 'cancelled', status: FREE });
