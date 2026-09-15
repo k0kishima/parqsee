@@ -26,10 +26,20 @@ export function useTauriEvent<T>(event: string, handler: (payload: T) => void): 
     const [ready, setReady] = useState(!isTauri());
     useEffect(() => {
         if (!isTauri()) return;
-        const listening = listen<T>(event, e => current.current(e.payload));
-        listening.then(() => setReady(true));
+        // The rejection is caught here, not at each use of `listening`: the
+        // promise is awaited twice — once to report the subscription ready,
+        // once to undo it — and a `listen` that fails would otherwise raise
+        // an unhandled rejection at each, saying nothing about which event
+        // went unheard. Nothing is marked ready, so a caller waiting on the
+        // subscription keeps waiting rather than letting the backend emit
+        // into a listener that does not exist.
+        const listening = listen<T>(event, e => current.current(e.payload)).catch(error => {
+            console.error(`Failed to listen for ${event}:`, error);
+            return null;
+        });
+        listening.then(unlisten => unlisten && setReady(true));
         return () => {
-            listening.then(fn => fn());
+            listening.then(unlisten => unlisten?.());
         };
     }, [event]);
 
