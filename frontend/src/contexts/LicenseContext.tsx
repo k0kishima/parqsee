@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, useCallback, useRef, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isTauri, toErrorMessage } from '../lib/tauri';
 import {
     IapStatus,
@@ -57,6 +58,7 @@ const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
  * has arrived, so the session restore at mount knows the limit.
  */
 export function LicenseProvider({ children }: { children: ReactNode }) {
+    const { t } = useTranslation();
     const [model, dispatch] = useReducer(reduceLicense, INITIAL_LICENSE);
 
     const refresh = useCallback(() => {
@@ -139,12 +141,12 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
             }
             const product = fullProduct(products);
             if (!product) {
-                throw new Error('The App Store has no product for Parqsee');
+                throw new Error(t('license.noProduct'));
             }
             const result = await purchaseProduct(product.id);
             return { status: result.status, outcome: result.outcome };
         });
-    }, [run]);
+    }, [run, t]);
 
     const restore = useCallback(() => {
         return run('restore', async () => ({ status: await restorePurchases() }));
