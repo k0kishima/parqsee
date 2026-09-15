@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
 import { createRequiredContext } from '../lib/required-context';
-import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
 import { useSettings } from './SettingsContext';
 import { useLicense } from './LicenseContext';
 import { isTauri } from '../lib/tauri';
+import { useTauriEvent } from '../hooks/useTauriEvent';
 import { getFileName, isParquetPath, PARQUET_EXTENSION } from '../lib/path';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import i18n from '../lib/i18n';
@@ -641,23 +641,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, [workspaceTabs, handleTabSelect, runCommand]));
 
     // Native menu items (see build_menu in lib.rs).
-    //
-    // Registered once and kept: `runCommand` is new whenever the tabs are,
-    // and re-registering on every change left the old and the new listener
-    // overlapping — `listen` resolves before the previous `unlisten` does —
-    // so a menu item picked in that window would have run twice.
-    const command = useRef(runCommand);
-    useEffect(() => {
-        command.current = runCommand;
-    }, [runCommand]);
-
-    useEffect(() => {
-        if (!isTauri()) return;
-        const unlisten = listen<string>('menu', (event) => command.current(event.payload));
-        return () => {
-            unlisten.then(fn => fn());
-        };
-    }, []);
+    useTauriEvent<string>('menu', runCommand);
 
     /**
      * Files the app is handed from outside the window: dropped on it, and
@@ -680,26 +664,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             await openParquetFile(file);
         }
     }, [openParquetFile]);
-    // Read by the listener below, which is registered once: re-registering
-    // it whenever the callback changes would reopen a window in which a file
-    // handed over by Finder is lost.
+    // Drops and files opened from Finder while the app runs.
+    const dropListenerReady = useTauriEvent<string[] | null>('file-drop', paths => {
+        openExternalFiles(paths ?? []);
+    });
+
+    // The launch handover below fires once and then awaits the backend, so
+    // it reads the callback through a ref: the tabs it opens against are the
+    // ones the finished restore left, not the ones of the render that armed
+    // the effect.
     const openExternalFilesRef = useRef(openExternalFiles);
     useEffect(() => {
         openExternalFilesRef.current = openExternalFiles;
     }, [openExternalFiles]);
-
-    // Drops and files opened from Finder while the app runs.
-    const [dropListenerReady, setDropListenerReady] = useState(!isTauri());
-    useEffect(() => {
-        if (!isTauri()) return;
-        const listening = listen<string[] | null>('file-drop', event => {
-            openExternalFilesRef.current(event.payload ?? []);
-        });
-        listening.then(() => setDropListenerReady(true));
-        return () => {
-            listening.then(fn => fn());
-        };
-    }, []);
 
     // The files Finder handed the app at launch, before the listener above
     // existed. Asked for once, and only after two things: the listener is
