@@ -723,11 +723,35 @@ mod tests {
         path.to_string_lossy().into_owned()
     }
 
-    #[test]
-    fn a_remembered_file_is_bookmarked_held_and_listed() {
-        let (dir, file) = fixture("remember");
+    /// A `FileAccess` over a fresh fixture and a `FakeBookmarks` the test can
+    /// inspect — the three lines every test here opened with.
+    fn access_over(name: &str) -> (PathBuf, String, FileAccess, FakeBookmarks) {
+        let (dir, file) = fixture(name);
         let fake = FakeBookmarks::default();
         let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        (dir, file, access, fake)
+    }
+
+    /// `access_over` with the file already recorded and its grant given back:
+    /// the shape a Recent Files entry has at launch, where whatever needs the
+    /// file next has to resolve its bookmark itself.
+    fn remembered_and_released(name: &str) -> (PathBuf, String, FileAccess, FakeBookmarks) {
+        let (dir, file, access, fake) = access_over(name);
+        access.remember_file(&file).unwrap();
+        access.release(&file);
+        (dir, file, access, fake)
+    }
+
+    /// A second file beside the fixture's own, for the tests that need two.
+    fn second_file(dir: &Path) -> String {
+        let other = s(&dir.join("data").join("b.parquet"));
+        std::fs::write(&other, b"parquet").unwrap();
+        other
+    }
+
+    #[test]
+    fn a_remembered_file_is_bookmarked_held_and_listed() {
+        let (_dir, file, access, fake) = access_over("remember");
 
         let recent = access.remember_file(&file).unwrap();
         assert_eq!(recent.name, "a.parquet");
@@ -795,9 +819,7 @@ mod tests {
 
     #[test]
     fn a_path_without_a_bookmark_is_left_to_the_filesystem() {
-        let (dir, file) = fixture("no-bookmark");
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        let (_dir, file, access, fake) = access_over("no-bookmark");
         access.acquire(&file).unwrap();
         assert!(fake.active().is_empty());
         assert!(access.file_exists(&file));
@@ -807,11 +829,7 @@ mod tests {
 
     #[test]
     fn a_stale_bookmark_is_recreated_and_saved() {
-        let (dir, file) = fixture("stale");
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
-        access.remember_file(&file).unwrap();
-        access.release(&file);
+        let (dir, file, access, fake) = remembered_and_released("stale");
 
         fake.mark_stale(&file);
         access.acquire(&file).unwrap();
@@ -854,8 +872,7 @@ mod tests {
     #[test]
     fn a_listing_does_not_hold_the_lock_while_a_bookmark_resolves() {
         let (dir, file) = fixture("slow-resolve");
-        let other = s(&dir.join("data").join("b.parquet"));
-        std::fs::write(&other, b"parquet").unwrap();
+        let other = second_file(&dir);
         let fake = FakeBookmarks::default();
         let gate = Arc::new((Mutex::new(true), Condvar::new()));
         let (entered, reached) = std::sync::mpsc::channel();
@@ -907,11 +924,7 @@ mod tests {
 
     #[test]
     fn an_unresolvable_recent_file_is_listed_as_unavailable_and_a_missing_one_too() {
-        let (dir, file) = fixture("revoked");
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
-        access.remember_file(&file).unwrap();
-        access.release(&file);
+        let (dir, file, access, fake) = remembered_and_released("revoked");
 
         fake.revoke(&file);
         let listed = access.recent_files();
@@ -949,10 +962,8 @@ mod tests {
 
     #[test]
     fn roots_are_held_until_removed_and_restored_on_launch() {
-        let (dir, _file) = fixture("roots");
+        let (dir, _file, access, fake) = access_over("roots");
         let data = s(&dir.join("data"));
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
 
         let root = access.add_root(&data).unwrap();
         assert_eq!(
@@ -1019,12 +1030,10 @@ mod tests {
 
     #[test]
     fn export_default_dir_prefers_the_source_folder_inside_a_root() {
-        let (dir, file) = fixture("export-in-root");
+        let (dir, file, access, fake) = access_over("export-in-root");
         let data = s(&dir.join("data"));
         std::fs::create_dir_all(dir.join("data/sub")).unwrap();
         std::fs::create_dir_all(dir.join("out")).unwrap();
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
         access.add_root(&data).unwrap();
         access.remember_export(&s(&dir.join("out/x.csv")));
 
@@ -1048,11 +1057,9 @@ mod tests {
 
     #[test]
     fn export_default_dir_falls_back_to_the_last_export_folder_then_to_none() {
-        let (dir, file) = fixture("export-fallback");
+        let (dir, file, access, fake) = access_over("export-fallback");
         let out = dir.join("out");
         std::fs::create_dir_all(&out).unwrap();
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
 
         assert_eq!(access.export_default_dir(&file), None, "nothing to go on");
         access.remember_export(&s(&out.join("x.csv")));
@@ -1079,11 +1086,9 @@ mod tests {
 
     #[test]
     fn the_last_export_folder_is_bookmarked_best_effort_and_survives_a_relaunch() {
-        let (dir, file) = fixture("export-relaunch");
+        let (dir, file, access, fake) = access_over("export-relaunch");
         let out = dir.join("out");
         std::fs::create_dir_all(&out).unwrap();
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
         access.remember_export(&s(&out.join("x.csv")));
         assert_eq!(fake.created(), [s(&out)]);
         let saved = BookmarkStore::load_from(&dir.join("bookmarks.json"));
@@ -1117,11 +1122,9 @@ mod tests {
 
     #[test]
     fn a_stale_export_bookmark_is_recreated_and_saved() {
-        let (dir, file) = fixture("export-stale");
+        let (dir, file, access, fake) = access_over("export-stale");
         let out = dir.join("out");
         std::fs::create_dir_all(&out).unwrap();
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
         access.remember_export(&s(&out.join("x.csv")));
 
         fake.mark_stale(&s(&out));
@@ -1168,9 +1171,7 @@ mod tests {
 
     #[test]
     fn a_saved_session_reuses_the_recent_bookmark_and_comes_back_after_a_relaunch() {
-        let (dir, file) = fixture("session");
-        let fake = FakeBookmarks::default();
-        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        let (dir, file, access, fake) = access_over("session");
         access.remember_file(&file).unwrap();
         access
             .save_session(vec![(file.clone(), tab_state(3))], Some(file.clone()))
@@ -1203,8 +1204,7 @@ mod tests {
     #[test]
     fn a_tab_forgotten_by_recent_files_reopens_from_its_own_bookmark() {
         let (dir, file) = fixture("session-own-bookmark");
-        let other = s(&dir.join("data").join("b.parquet"));
-        std::fs::write(&other, b"parquet").unwrap();
+        let other = second_file(&dir);
         let fake = FakeBookmarks::default();
         let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
         access.remember_file(&file).unwrap();
@@ -1248,8 +1248,7 @@ mod tests {
     #[test]
     fn a_session_tab_whose_bookmark_is_dead_or_whose_file_is_gone_is_unavailable() {
         let (dir, file) = fixture("session-missing");
-        let other = s(&dir.join("data").join("b.parquet"));
-        std::fs::write(&other, b"parquet").unwrap();
+        let other = second_file(&dir);
         let fake = FakeBookmarks::default();
         let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
         access.remember_file(&file).unwrap();
