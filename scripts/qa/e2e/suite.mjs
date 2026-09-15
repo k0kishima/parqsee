@@ -683,6 +683,39 @@ await scenario('S8-settings', async ({ page, bridge }) => {
   check('S8.corruptStorage', await page.locator('text=Drop your Parquet file here').isVisible(), `app survives corrupt localStorage; errors=${JSON.stringify(page.__errors.slice(0, 2)).slice(0, 200)}`);
 });
 
+// Invalid settings must recover when a real saved tab renders, not only on
+// the Welcome screen. Each restore launches a fresh browser and bridge.
+const SETTINGS_DATA = path.join(OUT, 'data', 's8-settings');
+fs.rmSync(SETTINGS_DATA, { recursive: true, force: true });
+await scenario('S8-settings-seed', async ({ page }) => {
+  await openFile(page, `${FIX}/one_row.parquet`);
+  const deadline = Date.now() + 5000;
+  let saved;
+  while (Date.now() < deadline) {
+    saved = JSON.parse(fs.readFileSync(path.join(SETTINGS_DATA, 'bookmarks.json'), 'utf8')).session;
+    if (saved?.tabs?.length === 1) break;
+    await pollDelay(25);
+  }
+  check('S8.settingsSession', saved?.tabs?.[0]?.path === `${FIX}/one_row.parquet`, 'Real tab persisted before restart');
+}, { dataDir: SETTINGS_DATA });
+
+for (const [index, rowDensity, rowsPerPage] of [[0, null, 0], [1, 'dense', -1], [2, 'constructor', '50']]) {
+  await scenario(`S8-settings-restore-${index}`, async ({ page }) => {
+    await act(page).getByRole('button', { name: 'Content', exact: true }).click();
+    await page.waitForSelector('tbody');
+    await waitGrid(page);
+    check(`S8.settingsGrid.${index}`, (await visibleGrid(page))[0]?.[0] === 'x', 'Saved tab displays after invalid settings are normalized');
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('parqsee-settings')));
+    check(`S8.settingsRepaired.${index}`, saved.rowDensity === 'comfortable' && saved.rowsPerPage === 50 && saved.theme === 'dark', JSON.stringify(saved));
+    await act(page).getByRole('button', { name: 'Query', exact: true }).click();
+    await act(page).locator('textarea').fill('SELECT 42 AS recovered');
+    await act(page).getByRole('button', { name: /^Run/ }).click();
+    await act(page).locator('tbody:visible').waitFor();
+    await waitGrid(page);
+    check(`S8.settingsQuery.${index}`, (await visibleGrid(page))[0]?.[0] === '42', 'Query grid also renders with recovered settings');
+  }, { dataDir: SETTINGS_DATA, localStorage: { 'parqsee-settings': JSON.stringify({ rowDensity, rowsPerPage, theme: 'dark' }) } });
+}
+
 // A corrupt store on disk must not keep the app from starting.
 const CORRUPT_DATA = path.join(OUT, 'data', 's8-corrupt');
 fs.rmSync(CORRUPT_DATA, { recursive: true, force: true }); fs.mkdirSync(CORRUPT_DATA, { recursive: true });

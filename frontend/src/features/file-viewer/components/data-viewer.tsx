@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
+import { ROWS_PER_PAGE_OPTIONS } from "../../../lib/settings-storage";
 import { SearchBar } from "./search-bar";
 import { FilterBar } from "./filter-bar";
 import { ExportModal } from "./export-modal";
@@ -478,7 +479,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                     }}
                     className="px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-slate-300 text-slate-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                   >
-                    {[25, 50, 100, 200, 500].map((value) => (
+                    {ROWS_PER_PAGE_OPTIONS.map((value) => (
                       <option key={value} value={value}>{value}</option>
                     ))}
                   </select>

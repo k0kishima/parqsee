@@ -1,0 +1,80 @@
+
+### S8-settings
+[PASS] S8.ja applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ
+[PASS] S8.persist {"theme":"system","rowsPerPage":50,"typeDisplay":"logical","language":"ja","restoreTabs":true,"rowDensity":"comfortable"}
+[PASS] S8.escapeCloses Escape closes the dialog and keeps the change
+[PASS] S8.reloadJa language survives reload
+[PASS] S8.dark html.dark applied at once
+[PASS] S8.noViewerSettings the grid's own settings are not in the dialog
+[PASS] S8.purchaseHidden no purchase section in a build without a store (has_store false)
+[PASS] S8.closeButton ✕ closes the dialog
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+[PASS] S8.viewOptions {"rowDensity":"compact","typeDisplay":"physical"}
+[PASS] S8.physicalTypes header labels switch to the physical types
+[PASS] S8.viewOptionsEscape Escape closes the popover
+[PASS] S8.viewOptionsOutside a click elsewhere closes the popover
+[OBSERVE] S8.rppInQueryView query view visible before=true after rows/page change=true
+[PASS] S8.recentBefore a recent entry to clear
+[PASS] S8.clearRecentNoConfirm no confirmation: Clear all matches File › Open Recent › Clear Menu
+[PASS] S8.clearRecent recent cleared in the store, the button gone with the list
+[PASS] S8.corruptStorage app survives corrupt localStorage; errors=[]
+
+### S8-settings-seed
+[PASS] S8.settingsSession Real tab persisted before restart
+
+### S8-settings-restore-0
+[PASS] S8.settingsGrid.0 Saved tab displays after invalid settings are normalized
+[PASS] S8.settingsRepaired.0 {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+[PASS] S8.settingsQuery.0 Query grid also renders with recovered settings
+
+### S8-settings-restore-1
+[PASS] S8.settingsGrid.1 Saved tab displays after invalid settings are normalized
+[PASS] S8.settingsRepaired.1 {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+[PASS] S8.settingsQuery.1 Query grid also renders with recovered settings
+
+### S8-settings-restore-2
+[PASS] S8.settingsGrid.2 Saved tab displays after invalid settings are normalized
+[PASS] S8.settingsRepaired.2 {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+[PASS] S8.settingsQuery.2 Query grid also renders with recovered settings
+
+### S8-corrupt-store
+could not parse /private/tmp/parqsee-settings-fix-e2e/data/s8-corrupt/bookmarks.json: key must be a string at line 1 column 2; starting with an empty store
+[PASS] S8.corruptStore errors=[]
+[PASS] S8.corruptStoreOverwritten the next change rewrites the store
+
+
+===== SUMMARY =====
+PASS    S8.ja  applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ
+PASS    S8.persist  {"theme":"system","rowsPerPage":50,"typeDisplay":"logical","language":"ja","restoreTabs":true,"rowDensity":"comfortable"}
+PASS    S8.escapeCloses  Escape closes the dialog and keeps the change
+PASS    S8.reloadJa  language survives reload
+PASS    S8.dark  html.dark applied at once
+PASS    S8.noViewerSettings  the grid's own settings are not in the dialog
+PASS    S8.purchaseHidden  no purchase section in a build without a store (has_store false)
+PASS    S8.closeButton  ✕ closes the dialog
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S8.viewOptions  {"rowDensity":"compact","typeDisplay":"physical"}
+PASS    S8.physicalTypes  header labels switch to the physical types
+PASS    S8.viewOptionsEscape  Escape closes the popover
+PASS    S8.viewOptionsOutside  a click elsewhere closes the popover
+OBSERVE S8.rppInQueryView  query view visible before=true after rows/page change=true
+PASS    S8.recentBefore  a recent entry to clear
+PASS    S8.clearRecentNoConfirm  no confirmation: Clear all matches File › Open Recent › Clear Menu
+PASS    S8.clearRecent  recent cleared in the store, the button gone with the list
+PASS    S8.corruptStorage  app survives corrupt localStorage; errors=[]
+PASS    S8.settingsSession  Real tab persisted before restart
+PASS    S8.settingsGrid.0  Saved tab displays after invalid settings are normalized
+PASS    S8.settingsRepaired.0  {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+PASS    S8.settingsQuery.0  Query grid also renders with recovered settings
+PASS    S8.settingsGrid.1  Saved tab displays after invalid settings are normalized
+PASS    S8.settingsRepaired.1  {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+PASS    S8.settingsQuery.1  Query grid also renders with recovered settings
+PASS    S8.settingsGrid.2  Saved tab displays after invalid settings are normalized
+PASS    S8.settingsRepaired.2  {"theme":"dark","rowsPerPage":50,"typeDisplay":"logical","language":"en","restoreTabs":true,"rowDensity":"comfortable"}
+PASS    S8.settingsQuery.2  Query grid also renders with recovered settings
+PASS    S8.corruptStore  errors=[]
+PASS    S8.corruptStoreOverwritten  the next change rewrites the store
+
+28 PASS, 0 FAIL/ERROR, 3 OBSERVE

@@ -1,0 +1,1608 @@
+[
+  {
+    "id": "S1.upper",
+    "status": "PASS",
+    "note": "summary=3 rows × 2 columns rows=3 footer=Showing 1 to 3 of 3 entries"
+  },
+  {
+    "id": "S1.glob",
+    "status": "PASS",
+    "note": "rows=3 dataError=false"
+  },
+  {
+    "id": "S1.nan",
+    "status": "PASS",
+    "note": "x column renders as [\"NaN\",\"Infinity\",\"-Infinity\",\"1\"]"
+  },
+  {
+    "id": "S1.bigints",
+    "status": "PASS",
+    "note": "[\"9007199254740993\",\"18446744073709551615\"]"
+  },
+  {
+    "id": "S1.numeric",
+    "status": "PASS",
+    "note": "d128=12345.67 u64=18446744073709551615 f64=0.30000000000000004 f32row1=0 i64min=-9223372036854775808"
+  },
+  {
+    "id": "S1.numeric.types",
+    "status": "OBSERVE",
+    "note": "header type labels: BOOLEAN, INT8, INT16, INT32, INT64, INT8_UNSIGNED, INT16_UNSIGNED, INT32_UNSIGNED, INT64_UNSIGNED, FLOAT, DOUBLE, DECIMAL(10,2), DECIMAL(50,1), "
+  },
+  {
+    "id": "S1.temporal",
+    "status": "OBSERVE",
+    "note": "d32=2024-02-29 d64=2024-02-29 t32ms=01:02:03.004 ts_us=2024-01-02T03:04:05.678901 ts_utc=2024-01-02T03:04:05.678901Z ts_tokyo=2024-01-02T03:04:05.678901+09:00 dur=PT86405S types=DATE,DATE,TIME(MILLIS, UTC:false),TIME(MICROS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MICROS, UTC:false),TIMESTAMP(NANOS, UTC:false),TIMESTAMP(MICROS, UTC:true),TIMESTAMP(MICROS, UTC:true),INT64,"
+  },
+  {
+    "id": "S1.temporal.date64",
+    "status": "PASS",
+    "note": "Date64 renders as 2024-02-29"
+  },
+  {
+    "id": "S1.text",
+    "status": "OBSERVE",
+    "note": "empty string row -> \"\", null row -> \"NULL\", newline row -> \"line\\nbreak\\ttab\", bin=0001ff, uuid=b90aff0a908e48adabd64721d380fbb4"
+  },
+  {
+    "id": "S1.text.emptyVsNull",
+    "status": "PASS",
+    "note": "empty string and NULL distinguishable: \"\" vs \"NULL\""
+  },
+  {
+    "id": "S1.nested",
+    "status": "OBSERVE",
+    "note": "li=[1,2] st={\"x\":1,\"y\":\"a\"} mp={\"k\":1} deep=[{\"v\":[1,2]}] st_big={\"big\":\"9007199254740993\"} st_dec={\"amt\":\"1.50\"} emptyList=[] nullList=NULL"
+  },
+  {
+    "id": "S1.dup",
+    "status": "PASS",
+    "note": "dup column names refused: [\"Failed to open file: This file has more than one column named \\\"id\\\"; Parqsee cannot open files with duplicate column names.\"]"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to open parquet file: This file has more than one column named \"id\"; Parqsee cannot open files with duplicate column names."
+  },
+  {
+    "id": "S1.allnull",
+    "status": "OBSERVE",
+    "note": "row0=[\"1\",\"NULL\",\"NULL\",\"NULL\"] types=INT64,STRING,INT64,UNKNOWN,"
+  },
+  {
+    "id": "S1.empty",
+    "status": "OBSERVE",
+    "note": "summary=0 rows × 2 columns footer=Showing 0 to 0 of 0 entries pageOf=of 1"
+  },
+  {
+    "id": "S1.empty.export",
+    "status": "PASS",
+    "note": "export disabled on empty file: true; message: true"
+  },
+  {
+    "id": "S1.longtext",
+    "status": "OBSERVE",
+    "note": "200KB cell rendered length=200000 title attr set=true"
+  },
+  {
+    "id": "S1.broken.corrupt.parquet",
+    "status": "PASS",
+    "note": "alerts=[\"Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer\"]"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer"
+  },
+  {
+    "id": "S1.broken.notparquet.parquet",
+    "status": "PASS",
+    "note": "alerts=[\"Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer\"]"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer"
+  },
+  {
+    "id": "S1.broken.empty_file.parquet",
+    "status": "PASS",
+    "note": "alerts=[\"Failed to open file: EOF: Parquet file too small. Size is 0 but need 8\"]"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to open parquet file: EOF: Parquet file too small. Size is 0 but need 8"
+  },
+  {
+    "id": "S1.broken.truncated.parquet",
+    "status": "PASS",
+    "note": "alerts=[\"Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer\"]"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer"
+  },
+  {
+    "id": "S1.badpage",
+    "status": "PASS",
+    "note": "errorScreen=true dataError=false"
+  },
+  {
+    "id": "S1.wide.virtual",
+    "status": "PASS",
+    "note": "first=col_000,col_001 after scroll=col_598,col_599 rendered=33"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S2.first",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 100,000 entries"
+  },
+  {
+    "id": "S2.prevDisabled",
+    "status": "PASS"
+  },
+  {
+    "id": "S2.next",
+    "status": "PASS",
+    "note": "first id 50"
+  },
+  {
+    "id": "S2.jump",
+    "status": "PASS",
+    "note": "first id 74950 footer=Showing 74951 to 75000 of 100,000 entries"
+  },
+  {
+    "id": "S2.badInput",
+    "status": "PASS",
+    "note": "input reverted to 1500"
+  },
+  {
+    "id": "S2.zeroInput",
+    "status": "PASS",
+    "note": "input now 1500"
+  },
+  {
+    "id": "S2.tooBig",
+    "status": "PASS",
+    "note": "input now 1500"
+  },
+  {
+    "id": "S2.spaceInput",
+    "status": "OBSERVE",
+    "note": "' 7 ' -> page 7, first id 300"
+  },
+  {
+    "id": "S2.last",
+    "status": "PASS",
+    "note": "first id 99950 footer=Showing 99951 to 100000 of 100,000 entries"
+  },
+  {
+    "id": "S2.rpp25",
+    "status": "PASS",
+    "note": "rows=25 ids=0,1,2 page=1 footer=Showing 1 to 25 of 100,000 entries"
+  },
+  {
+    "id": "S2.rpp500",
+    "status": "PASS",
+    "note": "rows=500"
+  },
+  {
+    "id": "S2.race.filterThenClear",
+    "status": "PASS",
+    "note": "after clear: ids=0,1,2 footer=Showing 1 to 50 of 100,000 entries filterInput=\"\" clearBtnVisible=false"
+  },
+  {
+    "id": "S2.race.doubleNext",
+    "status": "PASS",
+    "note": "page=3 first id=100"
+  },
+  {
+    "id": "S2.refresh",
+    "status": "OBSERVE",
+    "note": "after refresh page=1 first id=0"
+  },
+  {
+    "id": "S3.eqText",
+    "status": "PASS",
+    "note": "Showing 1 to 1 of 1 entries"
+  },
+  {
+    "id": "S3.summaryFollowsFilter",
+    "status": "PASS",
+    "note": "summary=1 rows × 4 columns"
+  },
+  {
+    "id": "S3.like",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 1,111 entries"
+  },
+  {
+    "id": "S3.gtInt",
+    "status": "PASS",
+    "note": "Showing 1 to 9 of 9 entries"
+  },
+  {
+    "id": "S3.intGarbage",
+    "status": "OBSERVE",
+    "note": "id = 'abc' -> dataError=false footer=Showing 1 to 9 of 9 entries"
+  },
+  {
+    "id": "S3.floatTrim",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 49,804 entries"
+  },
+  {
+    "id": "S3.apostrophe",
+    "status": "PASS",
+    "note": "footer=Showing 0 to 0 of 0 entries err=false"
+  },
+  {
+    "id": "S3.emptyValue",
+    "status": "OBSERVE",
+    "note": "empty value apply -> footer=Showing 1 to 50 of 100,000 entries (filter treated as none?)"
+  },
+  {
+    "id": "S3.bigLiteral",
+    "status": "PASS",
+    "note": "footer=Showing 0 to 0 of 0 entries err=false"
+  },
+  {
+    "id": "S3.and",
+    "status": "PASS",
+    "note": "Showing 1 to 14 of 14 entries"
+  },
+  {
+    "id": "S3.removeNeedsApply",
+    "status": "OBSERVE",
+    "note": "after removing 2nd condition without Apply footer=Showing 1 to 14 of 14 entries"
+  },
+  {
+    "id": "S3.afterRemove",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 14,286 entries"
+  },
+  {
+    "id": "S3.pageInFilter",
+    "status": "PASS",
+    "note": "second page of grp=3 starts at id 353"
+  },
+  {
+    "id": "S3.exportModal",
+    "status": "OBSERVE",
+    "note": "modal: All rows (14,286 rows) | Current page (rows 51-100) | notice=true"
+  },
+  {
+    "id": "S3.clear",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 100,000 entries"
+  },
+  {
+    "id": "S3.nestedError",
+    "status": "PASS",
+    "note": "dataError=true rows=3 text=Failed to collect results: type_coercion\ncaused by\nError during planning: Cannot infer common argument type for comparison operation Struct(\"x\": Int64, \"y\": Utf8) = Utf8"
+  },
+  {
+    "id": "S3.nestedLike",
+    "status": "OBSERVE",
+    "note": "LIKE on struct: dataError=true footer=Showing 1 to 3 of 3 entries"
+  },
+  {
+    "id": "S3.isNull",
+    "status": "PASS",
+    "note": "IS NULL on list: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.binaryNotNull",
+    "status": "PASS",
+    "note": "Showing 1 to 6 of 6 entries"
+  },
+  {
+    "id": "S3.binaryEqHex",
+    "status": "OBSERVE",
+    "note": "bin = '0001ff' (as displayed) -> footer=Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.emoji",
+    "status": "PASS",
+    "note": "Showing 1 to 1 of 1 entries"
+  },
+  {
+    "id": "S3.date",
+    "status": "PASS",
+    "note": "d32 > '2000-01-01': Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.timestamp",
+    "status": "PASS",
+    "note": "ts_us < '2000-01-01 00:00:00': Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.tsTokyoEqDisplayed",
+    "status": "PASS",
+    "note": "ts_tokyo = displayed value: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.dateEq",
+    "status": "PASS",
+    "note": "d32 = '2024-02-29': Showing 1 to 1 of 1 entries"
+  },
+  {
+    "id": "S3.date64Eq",
+    "status": "PASS",
+    "note": "d64 = '2024-02-29': Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.duration",
+    "status": "OBSERVE",
+    "note": "dur > 0: Showing 1 to 1 of 1 entries err=true"
+  },
+  {
+    "id": "S3.bool",
+    "status": "PASS",
+    "note": "b = true: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.boolGarbage",
+    "status": "OBSERVE",
+    "note": "b = 'yes': Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.decimal",
+    "status": "PASS",
+    "note": "d128 > 0: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.decimalEq",
+    "status": "PASS",
+    "note": "d128 = 12345.67: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.decimal256Eq",
+    "status": "PASS",
+    "note": "d256 = 0: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.u64max",
+    "status": "PASS",
+    "note": "u64 = max: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.f64sci",
+    "status": "PASS",
+    "note": "f64 = 1e300: Showing 1 to 1 of 1 entries"
+  },
+  {
+    "id": "S3.quoteName",
+    "status": "PASS",
+    "note": "\"qu\\\"ote\" = 1: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.mixedCase",
+    "status": "PASS",
+    "note": "MixedCase = 1: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.emptyName",
+    "status": "OBSERVE",
+    "note": "\"\" = 1: Showing 1 to 3 of 3 entries err=false"
+  },
+  {
+    "id": "S3.reservedName",
+    "status": "PASS",
+    "note": "select = 1: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S3.dotName",
+    "status": "PASS",
+    "note": "\"a.b\" = 1: Showing 1 to 1 of 1 entries err=false"
+  },
+  {
+    "id": "S4.cmdF",
+    "status": "PASS",
+    "note": "search bar opens with Cmd+F"
+  },
+  {
+    "id": "S4.count",
+    "status": "OBSERVE",
+    "note": "counter after \"row-1\": 1 / 11"
+  },
+  {
+    "id": "S4.highlight",
+    "status": "PASS",
+    "note": "highlighted cells=11"
+  },
+  {
+    "id": "S4.nextMatch",
+    "status": "PASS",
+    "note": "1 / 11 -> 2 / 11"
+  },
+  {
+    "id": "S4.headerMatch",
+    "status": "PASS",
+    "note": "header matches for \"GRP\" (case-insensitive)=1"
+  },
+  {
+    "id": "S4.scope",
+    "status": "OBSERVE",
+    "note": "\"row-99999\" (on last page only) counter=none"
+  },
+  {
+    "id": "S4.escape",
+    "status": "PASS",
+    "note": "Esc closes search and clears highlights"
+  },
+  {
+    "id": "S4.wideScroll",
+    "status": "PASS",
+    "note": "scrollLeft=51469 header has col_599=true"
+  },
+  {
+    "id": "S4.cmdFinQuery",
+    "status": "OBSERVE",
+    "note": "Cmd+F in query view: search bar visible=false query editor still visible=true"
+  },
+  {
+    "id": "S5.default",
+    "status": "PASS",
+    "note": "default query: 100 rows"
+  },
+  {
+    "id": "S5.truncated",
+    "status": "PASS",
+    "note": "10000 rowsShowing the first 10,000 rows — add a LIMIT clause to narrow the result"
+  },
+  {
+    "id": "S5.rowVirt",
+    "status": "OBSERVE",
+    "note": "rendered rows for 10000-row result: 24"
+  },
+  {
+    "id": "S5.scrollBottom",
+    "status": "PASS",
+    "note": "last rendered id=9999"
+  },
+  {
+    "id": "S5.error",
+    "status": "PASS",
+    "note": "SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val."
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val."
+  },
+  {
+    "id": "S5.emptyQuery",
+    "status": "OBSERVE",
+    "note": "empty query -> SQL execution failed: Error during planning: No SQL statements were provided in the query string"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "SQL execution failed: Error during planning: No SQL statements were provided in the query string"
+  },
+  {
+    "id": "S5.aliases",
+    "status": "PASS",
+    "note": "a b|日本語|c [\"0\",\"0\",\"100000\"]"
+  },
+  {
+    "id": "S5.derivedTypes",
+    "status": "OBSERVE",
+    "note": "d|big|s -> [\"9999.0000\",\"9999000000000000\",\"9999\"]"
+  },
+  {
+    "id": "S5.specialTypes",
+    "status": "OBSERVE",
+    "note": "[\"2026-09-15T02:30:35.316380\",\"2026-09-15\",\"1 days\",\"[1,2]\",\"{\\\"a\\\":1}\"]"
+  },
+  {
+    "id": "S5.cmdEnter",
+    "status": "PASS",
+    "note": "Cmd+Enter result [\"42\"]"
+  },
+  {
+    "id": "S5.persistToggle",
+    "status": "PASS",
+    "note": "result kept after toggling Content/Query"
+  },
+  {
+    "id": "S5.persistTab",
+    "status": "PASS",
+    "note": "query view restored on tab switch: textarea visible=true value=SELECT 42 AS answer"
+  },
+  {
+    "id": "S5.drop",
+    "status": "OBSERVE",
+    "note": "DROP TABLE t -> status=null err=The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t."
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t."
+  },
+  {
+    "id": "S5.dropBreaksBrowse",
+    "status": "PASS",
+    "note": "after DROP TABLE t in SQL view, paging: dataError=false msg="
+  },
+  {
+    "id": "S5.refreshRecovers",
+    "status": "PASS",
+    "note": "refresh after drop: rows=50"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "The SQL view is read-only: SET and transaction statements are not allowed. Use SELECT queries against table t."
+  },
+  {
+    "id": "S5.setPartitions",
+    "status": "OBSERVE",
+    "note": "after SET target_partitions=8, page 1234 first ids over 4 loads: 61650"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 100,000 rows to all.csv"
+  },
+  {
+    "id": "S6.defaultPath.none",
+    "status": "PASS",
+    "note": "no root, no earlier export: defaultPath=multi_rowgroup.csv"
+  },
+  {
+    "id": "S6.all",
+    "status": "PASS",
+    "note": "lines=100001 notif=[{\"title\":\"Export Complete\",\"body\":\"Successfully exported 100,000 rows to all.csv\",\"icon\":\"done\"}]"
+  },
+  {
+    "id": "S6.currentLabel",
+    "status": "OBSERVE",
+    "note": "Current page (rows 101-150)"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 50 rows to page3.csv"
+  },
+  {
+    "id": "S6.defaultPath.lastExport",
+    "status": "PASS",
+    "note": "after an export to /private/tmp/parqsee-crash-0915/full/e2e_exports: defaultPath=/private/tmp/parqsee-crash-0915/full/e2e_exports/multi_rowgroup.csv"
+  },
+  {
+    "id": "S6.currentPage",
+    "status": "PASS",
+    "note": "rows=50 first=100,2,row- last=149,2,row-"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 11 rows to custom.csv"
+  },
+  {
+    "id": "S6.custom",
+    "status": "PASS",
+    "note": "rows=11 first=9,2,row-"
+  },
+  {
+    "id": "S6.invalidRange",
+    "status": "PASS",
+    "note": "export disabled with message"
+  },
+  {
+    "id": "S6.clearStart",
+    "status": "OBSERVE",
+    "note": "after clearing Start Row the field shows \"\"; typing 5 now gives \"5\""
+  },
+  {
+    "id": "S6.clearEnd",
+    "status": "OBSERVE",
+    "note": "after clearing End Row the field shows \"\""
+  },
+  {
+    "id": "S6.startOverMax",
+    "status": "OBSERVE",
+    "note": "start=100001 -> value \"100001\" disabled=true"
+  },
+  {
+    "id": "S6.cancelDialog",
+    "status": "PASS",
+    "note": "modal stays open after cancelled save dialog"
+  },
+  {
+    "id": "S6.unwritable",
+    "status": "PASS",
+    "note": "error shown: Failed to move the export into place at /nonexistent/dir/out.csv: No such file or directory (os error 2); nothing was left there"
+  },
+  {
+    "id": "S6.defaultPath.failedExportNotRecorded",
+    "status": "PASS",
+    "note": "after a failed export: /private/tmp/parqsee-crash-0915/full/e2e_exports"
+  },
+  {
+    "id": "S6.filteredLabel",
+    "status": "OBSERVE",
+    "note": "All rows (14,285 rows) notice=true"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 14,285 rows to filtered.json"
+  },
+  {
+    "id": "S6.filteredJson",
+    "status": "PASS",
+    "note": "rows=14285"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to nested.parquet.csv"
+  },
+  {
+    "id": "S6.nested.parquet.csv",
+    "status": "PASS",
+    "note": "﻿id,li,lls,fsl,st,mp,deep,st_big,st_dec\\n1,\"[1,2]\",\"[\"\"a\"\"]\",\"[1.0,2.0]\",\"{\"\"x\"\":1,\"\"y\"\":\"\"a\"\"}\",\"{\"\"k\"\":1}\",\"[{\"\"v\"\":[1,2]}]\",\"{\"\"big\"\":9007199254740993}\",\"{\"\"a"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to nested.parquet.json"
+  },
+  {
+    "id": "S6.nested.parquet.json",
+    "status": "PASS",
+    "note": "[{\"id\":1,\"li\":[1,2],\"lls\":[\"a\"],\"fsl\":[1.0,2.0],\"st\":{\"x\":1,\"y\":\"a\"},\"mp\":{\"k\":1},\"deep\":[{\"v\":[1,2]}],\"st_big\":{\"big\":9007199254740993},\"st_dec\":{\"amt\":\"1.50\"}"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to numeric.parquet.csv"
+  },
+  {
+    "id": "S6.numeric.parquet.csv",
+    "status": "PASS",
+    "note": "﻿b,i8,i16,i32,i64,u8,u16,u32,u64,f32,f64,d128,d256\\ntrue,-128,-32768,-2147483648,-9223372036854775808,0,0,0,0,1.5,0.30000000000000004,12345.67,111111111111111111"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to numeric.parquet.json"
+  },
+  {
+    "id": "S6.numeric.parquet.json",
+    "status": "PASS",
+    "note": "[{\"b\":true,\"i8\":-128,\"i16\":-32768,\"i32\":-2147483648,\"i64\":-9223372036854775808,\"u8\":0,\"u16\":0,\"u32\":0,\"u64\":0,\"f32\":1.5,\"f64\":0.30000000000000004,\"d128\":\"12345."
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 7 rows to text_binary.parquet.csv"
+  },
+  {
+    "id": "S6.text_binary.parquet.csv",
+    "status": "PASS",
+    "note": "﻿s,ls,bin,lbin,uuid\\nplain,large,0001ff,4c,b90aff0a908e48adabd64721d380fbb4\\n日本語 and emoji 🎉,large,,4c,303c924b77ee4293bc4b29cf3c9427a2\\n,large,,4c,ce69c1e89f5e48"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 7 rows to text_binary.parquet.json"
+  },
+  {
+    "id": "S6.text_binary.parquet.json",
+    "status": "PASS",
+    "note": "[{\"s\":\"plain\",\"ls\":\"large\",\"bin\":\"0001ff\",\"lbin\":\"4c\",\"uuid\":\"b90aff0a908e48adabd64721d380fbb4\"},{\"s\":\"日本語 and emoji 🎉\",\"ls\":\"large\",\"bin\":\"\",\"lbin\":\"4c\",\"uuid"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 4 rows to nan.parquet.csv"
+  },
+  {
+    "id": "S6.nan.parquet.csv",
+    "status": "PASS",
+    "note": "﻿id,x,y\\n1,NaN,NaN\\n2,inf,2.0\\n3,-inf,\\n4,1.0,4.0\\n"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 4 rows to nan.parquet.json"
+  },
+  {
+    "id": "S6.nan.parquet.json",
+    "status": "PASS",
+    "note": "[{\"id\":1,\"x\":\"NaN\",\"y\":\"NaN\"},{\"id\":2,\"x\":\"Infinity\",\"y\":\"2\"},{\"id\":3,\"x\":\"-Infinity\"},{\"id\":4,\"x\":\"1\",\"y\":\"4\"}]"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to temporal.parquet.csv"
+  },
+  {
+    "id": "S6.temporal.parquet.csv",
+    "status": "PASS",
+    "note": "﻿d32,d64,t32ms,t64us,ts_s,ts_ms,ts_us,ts_ns,ts_utc,ts_tokyo,dur\\n2024-02-29,2024-02-29T00:00:00,01:02:03.004,01:02:03.000004,2024-01-02 03:04:05.000000,2024-01-0"
+  },
+  {
+    "id": "S6.doneState",
+    "status": "OBSERVE",
+    "note": "Successfully exported 3 rows to temporal.parquet.json"
+  },
+  {
+    "id": "S6.temporal.parquet.json",
+    "status": "PASS",
+    "note": "[{\"d32\":\"2024-02-29\",\"d64\":\"2024-02-29\",\"t32ms\":\"01:02:03.004\",\"t64us\":\"01:02:03.000004\",\"ts_s\":\"2024-01-02T03:04:05\",\"ts_ms\":\"2024-01-02T03:04:05.678\",\"ts_us\":"
+  },
+  {
+    "id": "S6.defaultPath.sourceInRoot",
+    "status": "PASS",
+    "note": "save dialog default for UPPER.PARQUET under the root: /private/tmp/parqsee-crash-0915-fixtures/paths/UPPER.csv"
+  },
+  {
+    "id": "S6r.stored",
+    "status": "PASS",
+    "note": "bookmarks.json last_export={\"path\":\"/private/tmp/parqsee-crash-0915/full/e2e_exports\",\"bookmark\":null,\"exported_at\":1789439838574}"
+  },
+  {
+    "id": "S6r.lastExportRestored",
+    "status": "PASS",
+    "note": "a file outside every root starts in the last export folder"
+  },
+  {
+    "id": "S6r.sourceInRootRestored",
+    "status": "PASS",
+    "note": "a file under the restored root starts in its own folder"
+  },
+  {
+    "id": "S6r.deletedFolderSkipped",
+    "status": "PASS",
+    "note": "a deleted last export folder is not offered"
+  },
+  {
+    "id": "S7.three",
+    "status": "PASS",
+    "note": "one_row.parquet,nan.parquet,dict.parquet active=dict.parquet"
+  },
+  {
+    "id": "S7.select",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.cmdW",
+    "status": "PASS",
+    "note": "nan.parquet,dict.parquet active=nan.parquet"
+  },
+  {
+    "id": "S7.evict",
+    "status": "PASS",
+    "note": "evict calls: one_row.parquet"
+  },
+  {
+    "id": "S7.reopenExisting",
+    "status": "PASS",
+    "note": "reopen already-open file: tabs=nan.parquet,dict.parquet"
+  },
+  {
+    "id": "S7.reopenClosed",
+    "status": "PASS",
+    "note": "reopen closed file works: rows=1"
+  },
+  {
+    "id": "S7.cmd1",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.cycle",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.pathsWithSpace",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.recentPanel",
+    "status": "PASS",
+    "note": "panel=inner.parquet,one_row.parquet,nan.parquet,dict.parquet"
+  },
+  {
+    "id": "S7.recentPanelSearch",
+    "status": "PASS",
+    "note": "rows=1"
+  },
+  {
+    "id": "S7.recentPanelNoMatch",
+    "status": "PASS",
+    "note": "no rows, a note instead"
+  },
+  {
+    "id": "S7.recentPanelEscape",
+    "status": "PASS",
+    "note": "Escape closes the panel"
+  },
+  {
+    "id": "S7.recentPanelEnter",
+    "status": "PASS",
+    "note": "active=inner.parquet"
+  },
+  {
+    "id": "S7.recentPanelPick",
+    "status": "PASS",
+    "note": "tabs=nan.parquet,dict.parquet,one_row.parquet,inner.parquet active=inner.parquet"
+  },
+  {
+    "id": "S7.welcome",
+    "status": "PASS",
+    "note": "welcome after closing all tabs"
+  },
+  {
+    "id": "S7.recent",
+    "status": "PASS",
+    "note": "recent=inner.parquet,one_row.parquet,nan.parquet,dict.parquet"
+  },
+  {
+    "id": "S7.recentNoLocalStorage",
+    "status": "PASS",
+    "note": "legacy key cleared"
+  },
+  {
+    "id": "S7.recentUi",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.recentClick",
+    "status": "PASS"
+  },
+  {
+    "id": "S7.unavailableRecent",
+    "status": "PASS",
+    "note": "deleted file marked unavailable after reload"
+  },
+  {
+    "id": "S7.missingRecent",
+    "status": "PASS",
+    "note": "alerts=File not found: /private/tmp/parqsee-crash-0915/full/gone/missing.parquet stillListed=false"
+  },
+  {
+    "id": "S7.missingRecentForgotten",
+    "status": "PASS",
+    "note": "removed from the store too"
+  },
+  {
+    "id": "S7.dropOther",
+    "status": "PASS",
+    "note": "alert for non-parquet drop"
+  },
+  {
+    "id": "S7.dropTwo",
+    "status": "OBSERVE",
+    "note": "dropping 2 files opened tabs: one_row.parquet,nan.parquet"
+  },
+  {
+    "id": "S7.browse",
+    "status": "PASS",
+    "note": "browse dialog opens file: dict.parquet"
+  },
+  {
+    "id": "S7.cmdOInWorkspace",
+    "status": "OBSERVE",
+    "note": "Cmd+O with a tab open -> tabs=2"
+  },
+  {
+    "id": "S7.settingsInWorkspace",
+    "status": "OBSERVE",
+    "note": "settings button in workspace: 1"
+  },
+  {
+    "id": "S7.tabIsolation",
+    "status": "PASS",
+    "note": "dict tab footer=Showing 1 to 5 of 5 entries"
+  },
+  {
+    "id": "S7.tabStateKept",
+    "status": "PASS",
+    "note": "filter kept when returning"
+  },
+  {
+    "id": "S7b.keepsTheNewFile",
+    "status": "PASS",
+    "note": "recent files shown: dict.parquet,one_row.parquet"
+  },
+  {
+    "id": "S7b.matchesTheStore",
+    "status": "PASS",
+    "note": "shown=dict.parquet,one_row.parquet stored=dict.parquet,one_row.parquet"
+  },
+  {
+    "id": "S7b.listings",
+    "status": "OBSERVE",
+    "note": "bridge calls: list_recent_files,remember_file,list_recent_files,list_recent_files"
+  },
+  {
+    "id": "S8.ja",
+    "status": "PASS",
+    "note": "applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ"
+  },
+  {
+    "id": "S8.persist",
+    "status": "PASS",
+    "note": "{\"theme\":\"system\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"ja\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}"
+  },
+  {
+    "id": "S8.escapeCloses",
+    "status": "PASS",
+    "note": "Escape closes the dialog and keeps the change"
+  },
+  {
+    "id": "S8.reloadJa",
+    "status": "PASS",
+    "note": "language survives reload"
+  },
+  {
+    "id": "S8.dark",
+    "status": "PASS",
+    "note": "html.dark applied at once"
+  },
+  {
+    "id": "S8.noViewerSettings",
+    "status": "PASS",
+    "note": "the grid's own settings are not in the dialog"
+  },
+  {
+    "id": "S8.purchaseHidden",
+    "status": "PASS",
+    "note": "no purchase section in a build without a store (has_store false)"
+  },
+  {
+    "id": "S8.closeButton",
+    "status": "PASS",
+    "note": "✕ closes the dialog"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S8.viewOptions",
+    "status": "PASS",
+    "note": "{\"rowDensity\":\"compact\",\"typeDisplay\":\"physical\"}"
+  },
+  {
+    "id": "S8.physicalTypes",
+    "status": "PASS",
+    "note": "header labels switch to the physical types"
+  },
+  {
+    "id": "S8.viewOptionsEscape",
+    "status": "PASS",
+    "note": "Escape closes the popover"
+  },
+  {
+    "id": "S8.viewOptionsOutside",
+    "status": "PASS",
+    "note": "a click elsewhere closes the popover"
+  },
+  {
+    "id": "S8.rppInQueryView",
+    "status": "OBSERVE",
+    "note": "query view visible before=true after rows/page change=true"
+  },
+  {
+    "id": "S8.recentBefore",
+    "status": "PASS",
+    "note": "a recent entry to clear"
+  },
+  {
+    "id": "S8.clearRecentNoConfirm",
+    "status": "PASS",
+    "note": "no confirmation: Clear all matches File › Open Recent › Clear Menu"
+  },
+  {
+    "id": "S8.clearRecent",
+    "status": "PASS",
+    "note": "recent cleared in the store, the button gone with the list"
+  },
+  {
+    "id": "S8.corruptStorage",
+    "status": "PASS",
+    "note": "app survives corrupt localStorage; errors=[]"
+  },
+  {
+    "id": "S8.corruptStore",
+    "status": "PASS",
+    "note": "errors=[]"
+  },
+  {
+    "id": "S8.corruptStoreOverwritten",
+    "status": "PASS",
+    "note": "the next change rewrites the store"
+  },
+  {
+    "id": "S9.emptyState",
+    "status": "PASS",
+    "note": "sidebar empty state with a file open but no folder"
+  },
+  {
+    "id": "S9.noListingOutsideRoots",
+    "status": "PASS",
+    "note": "list_directory calls: 0"
+  },
+  {
+    "id": "S9.welcomeOpenFolder",
+    "status": "PASS",
+    "note": "welcome screen has Open Folder"
+  },
+  {
+    "id": "S9.rootStored",
+    "status": "PASS",
+    "note": "[{\"name\":\"parqsee-crash-0915-fixtures\",\"path\":\"/private/tmp/parqsee-crash-0915-fixtures\"}]"
+  },
+  {
+    "id": "S9.workspaceWithoutTabs",
+    "status": "PASS",
+    "note": "tree next to the welcome content, no tab yet"
+  },
+  {
+    "id": "S9.list",
+    "status": "PASS",
+    "note": "explorer entries: parqsee-crash-0915-fixtures,paths,.parqsee-fixtures,all_null.parquet1.0 KB,bad_page.parquet2.1 MB,big_ints.parquet784.0 B… (25)"
+  },
+  {
+    "id": "S9.dirsFirst",
+    "status": "PASS",
+    "note": "first entry under the root paths"
+  },
+  {
+    "id": "S9.expand",
+    "status": "PASS",
+    "note": "expanded: contains glob[1]? true"
+  },
+  {
+    "id": "S9.folderParquet",
+    "status": "OBSERVE",
+    "note": "folder.parquet rendered as: <div><div class=\"\n          group flex items-center px-2 py-1\n          cursor-pointer\n          hover:bg-tertiary\n        \" style=\"padding-left: 40px;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\""
+  },
+  {
+    "id": "S9.noperm",
+    "status": "OBSERVE",
+    "note": "clicking noperm dir: errors=[\"console: Failed to load directory: Permission denied (os error 13)\"] any UI error=1"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to load directory: Permission denied (os error 13)"
+  },
+  {
+    "id": "S9.openUpper",
+    "status": "PASS",
+    "note": "active=UPPER.PARQUET"
+  },
+  {
+    "id": "S9.brokenLink",
+    "status": "PASS",
+    "note": "alerts=File not found: /private/tmp/parqsee-crash-0915-fixtures/paths/broken_link.parquet"
+  },
+  {
+    "id": "S9.crumbBounded",
+    "status": "PASS",
+    "note": "crumbs=parqsee-crash-0915-fixtures,paths"
+  },
+  {
+    "id": "S9.collapse",
+    "status": "PASS"
+  },
+  {
+    "id": "S9.crumbReveal",
+    "status": "PASS",
+    "note": "tree after crumb click: parqsee-crash-0915-fixtures,paths,dir with space,folder.parquet"
+  },
+  {
+    "id": "S9.search",
+    "status": "PASS",
+    "note": "parqsee-crash-0915-fixtures,nan.parquet1.0 KB"
+  },
+  {
+    "id": "S9.searchDeep",
+    "status": "PASS",
+    "note": "case-insensitive, through the subfolder: parqsee-crash-0915-fixtures,paths,glob[1].parquet723.0 B"
+  },
+  {
+    "id": "S9.contextMenu",
+    "status": "PASS"
+  },
+  {
+    "id": "S9.openNewTab",
+    "status": "PASS"
+  },
+  {
+    "id": "S9.openNewTabDup",
+    "status": "OBSERVE",
+    "note": "\"Open\" on an already-open file: tabs=2"
+  },
+  {
+    "id": "S9.highlight",
+    "status": "PASS",
+    "note": "selected rows: UPPER.PARQUET723.0 B"
+  },
+  {
+    "id": "S9.secondRoot",
+    "status": "PASS",
+    "note": "truncated.parquet1.1 MB,wide.parquet176.6 KB,dir with space,inner.parquet723.0 B (44)"
+  },
+  {
+    "id": "S9.rootsStored",
+    "status": "PASS"
+  },
+  {
+    "id": "S9.removeRoot",
+    "status": "PASS",
+    "note": "roots=[{\"name\":\"parqsee-crash-0915-fixtures\",\"path\":\"/private/tmp/parqsee-crash-0915-fixtures\"}]"
+  },
+  {
+    "id": "S9.hideSidebar",
+    "status": "PASS"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S9r.rootRestored",
+    "status": "PASS",
+    "note": "[{\"name\":\"parqsee-crash-0915-fixtures\",\"path\":\"/private/tmp/parqsee-crash-0915-fixtures\"}]"
+  },
+  {
+    "id": "S9r.workspaceOnLaunch",
+    "status": "PASS",
+    "note": "the tree is back, and so are the tabs: UPPER.PARQUET,dict.parquet"
+  },
+  {
+    "id": "S9r.treeLoaded",
+    "status": "PASS",
+    "note": "root expanded and listed"
+  },
+  {
+    "id": "S9r.recentRestored",
+    "status": "PASS",
+    "note": "recent=dict.parquet,UPPER.PARQUET,one_row.parquet"
+  },
+  {
+    "id": "S9r.recentUi",
+    "status": "PASS",
+    "note": "recent files listed next to the tree"
+  },
+  {
+    "id": "S9r.openFromTree",
+    "status": "PASS"
+  },
+  {
+    "id": "S9r.removeLastRoot",
+    "status": "PASS",
+    "note": "empty sidebar, tab stays"
+  },
+  {
+    "id": "S9r.welcomeAgain",
+    "status": "PASS",
+    "note": "no roots, no tabs: the welcome screen"
+  },
+  {
+    "id": "S10.open",
+    "status": "PASS",
+    "note": "Showing 1 to 50 of 100,000 entries"
+  },
+  {
+    "id": "S10.replaced",
+    "status": "PASS",
+    "note": "footer=Showing 1 to 1 of 1 entries cols=only"
+  },
+  {
+    "id": "S10.deleted",
+    "status": "PASS",
+    "note": "errorScreen=true message=Cannot open /private/tmp/parqsee-crash-0915/full/external/changing.parquet: No such file or directory (os error 2)"
+  },
+  {
+    "id": "S10.closeAfterError",
+    "status": "PASS",
+    "note": "tab gone after Close"
+  },
+  {
+    "id": "S11.page2",
+    "status": "PASS",
+    "note": "Showing 51 to 100 of 100,000 entries"
+  },
+  {
+    "id": "S11.queryView",
+    "status": "PASS",
+    "note": "one_row.parquet switched to the query view"
+  },
+  {
+    "id": "S11.activeMiddle",
+    "status": "PASS",
+    "note": "active=gone.parquet"
+  },
+  {
+    "id": "S11.saved",
+    "status": "PASS",
+    "note": "multi_rowgroup.parquet,gone.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915/full/session/gone.parquet"
+  },
+  {
+    "id": "S11.savedState",
+    "status": "PASS",
+    "note": "[{\"active_filter\":null,\"current_page\":2,\"view_mode\":null},{\"active_filter\":null,\"current_page\":1,\"view_mode\":null},{\"active_filter\":null,\"current_page\":1,\"view_mode\":\"query\"}]"
+  },
+  {
+    "id": "S11.recentUntouched",
+    "status": "PASS",
+    "note": "recent files are the opens, newest first"
+  },
+  {
+    "id": "S11r.tabs",
+    "status": "PASS",
+    "note": "tabs=multi_rowgroup.parquet,one_row.parquet"
+  },
+  {
+    "id": "S11r.activeFallsBackToFirst",
+    "status": "PASS",
+    "note": "active=multi_rowgroup.parquet (the active tab's file is gone)"
+  },
+  {
+    "id": "S11r.page2",
+    "status": "PASS",
+    "note": "Showing 51 to 100 of 100,000 entries"
+  },
+  {
+    "id": "S11r.notice",
+    "status": "PASS",
+    "note": "notice=1 file from the last session could not be reopenedgone.parquet"
+  },
+  {
+    "id": "S11r.recentUntouched",
+    "status": "PASS",
+    "note": "remember_file calls: 0"
+  },
+  {
+    "id": "S11r.queryView",
+    "status": "PASS",
+    "note": "one_row.parquet is back in the query view"
+  },
+  {
+    "id": "S11r.dismiss",
+    "status": "PASS"
+  },
+  {
+    "id": "S11r.pruned",
+    "status": "PASS",
+    "note": "multi_rowgroup.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to save the session: exploration save failure"
+  },
+  {
+    "id": "S11.retry.pagehide",
+    "status": "PASS",
+    "note": "attempts=2, diskPage=2"
+  },
+  {
+    "id": "S11.retry.dedup",
+    "status": "PASS",
+    "note": "successful snapshot is not resent: attempts=2"
+  },
+  {
+    "id": "expected-console-error",
+    "status": "PASS",
+    "note": "Failed to save the session: explicit retry failure"
+  },
+  {
+    "id": "S11.retry.button",
+    "status": "PASS",
+    "note": "attempts=4, diskPage=3"
+  },
+  {
+    "id": "S11o.welcome",
+    "status": "PASS",
+    "note": "the welcome screen, no tabs"
+  },
+  {
+    "id": "S11o.notAsked",
+    "status": "PASS",
+    "note": "commands: set_menu_language,iap_status,list_workspace_roots,list_recent_files,take_pending_files,save_session"
+  },
+  {
+    "id": "S12.coldTabs",
+    "status": "PASS",
+    "note": "tabs=multi_rowgroup.parquet,日本語ファイル.parquet"
+  },
+  {
+    "id": "S12.coldActive",
+    "status": "PASS",
+    "note": "active=日本語ファイル.parquet (the file must not be pushed behind the restored tabs)"
+  },
+  {
+    "id": "S12.coldGrid",
+    "status": "PASS",
+    "note": "Showing 1 to 3 of 3 entries"
+  },
+  {
+    "id": "S12.askedOnceAfterRestore",
+    "status": "PASS",
+    "note": "command order: set_menu_language,iap_status,list_workspace_roots,list_session_tabs,list_recent_files,open_parquet_file,take_pending_files,open_parquet_file,check_file_exists,open_parquet_file,read_parquet_data,remember_file,open_parquet_file,read_parquet_data,save_session"
+  },
+  {
+    "id": "S12.recorded",
+    "status": "PASS",
+    "note": "recent=日本語ファイル.parquet,multi_rowgroup.parquet"
+  },
+  {
+    "id": "S12.warm",
+    "status": "PASS",
+    "note": "active=hash#1.parquet footer=Showing 1 to 3 of 3 entries"
+  },
+  {
+    "id": "S12.notParquet",
+    "status": "PASS",
+    "note": "tabs=3 alerts=[\"Parqsee can only open .parquet files\"]"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S13.path",
+    "status": "PASS",
+    "note": "open_parquet_file paths: /private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet"
+  },
+  {
+    "id": "S13.grid",
+    "status": "PASS",
+    "note": "summary=1,500 rows × 14 columns footer=Showing 1 to 50 of 1,500 entries"
+  },
+  {
+    "id": "S13.columns",
+    "status": "PASS",
+    "note": "columns=order_id,order_date,customer,country,category,product,quantity,unit_price,discount_rate,total,status,is_gift,shipped_at"
+  },
+  {
+    "id": "S13.notRecent",
+    "status": "PASS",
+    "note": "recent=one_row.parquet"
+  },
+  {
+    "id": "S13.oneTab",
+    "status": "PASS",
+    "note": "tabs=sample.parquet,one_row.parquet"
+  },
+  {
+    "id": "S13.session",
+    "status": "PASS",
+    "note": "sample.parquet,one_row.parquet active=/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S13r.tabs",
+    "status": "PASS",
+    "note": "tabs=sample.parquet,one_row.parquet active=sample.parquet"
+  },
+  {
+    "id": "S13r.grid",
+    "status": "PASS",
+    "note": "1,500 rows × 14 columns"
+  },
+  {
+    "id": "S14.badge",
+    "status": "PASS",
+    "note": "badge title=\"Free version · up to 3 tabs at a time — click for the full version\""
+  },
+  {
+    "id": "S14.three",
+    "status": "PASS",
+    "note": "tabs=one_row.parquet,dict.parquet,numeric.parquet"
+  },
+  {
+    "id": "S14.concurrentRefused",
+    "status": "PASS",
+    "note": "prompt=true opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet remembered=one_row.parquet,dict.parquet,numeric.parquet evicted="
+  },
+  {
+    "id": "S14.concurrentEscape",
+    "status": "PASS",
+    "note": "prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet"
+  },
+  {
+    "id": "S14.fourth",
+    "status": "PASS",
+    "note": "tabs=one_row.parquet,dict.parquet,numeric.parquet opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet"
+  },
+  {
+    "id": "S14.price",
+    "status": "PASS",
+    "note": "One-time purchase: ¥1,500"
+  },
+  {
+    "id": "S14.escape",
+    "status": "PASS",
+    "note": "prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet"
+  },
+  {
+    "id": "S14.activate",
+    "status": "PASS",
+    "note": "active=one_row.parquet prompt=false"
+  },
+  {
+    "id": "S14.badgeOpens",
+    "status": "PASS",
+    "note": "prompt=true"
+  },
+  {
+    "id": "S14.cancelled",
+    "status": "PASS",
+    "note": "prompt=true purchases=parqsee.full"
+  },
+  {
+    "id": "S14.bought",
+    "status": "PASS",
+    "note": "badge count=0"
+  },
+  {
+    "id": "S14.unlimited",
+    "status": "PASS",
+    "note": "tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet"
+  },
+  {
+    "id": "S14.refund",
+    "status": "PASS",
+    "note": "badge=true tabs=5"
+  },
+  {
+    "id": "S14.sixth",
+    "status": "PASS",
+    "note": "prompt=true tabs=5"
+  },
+  {
+    "id": "S14.session",
+    "status": "PASS",
+    "note": "saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S14r.tabs",
+    "status": "PASS",
+    "note": "tabs=one_row.parquet,dict.parquet,numeric.parquet"
+  },
+  {
+    "id": "S14r.notice",
+    "status": "PASS",
+    "note": "2 tabs from the last session were not restored: the free version keeps 3 tabs open at a time. Upgradenan.parquet, big_ints.parquet"
+  },
+  {
+    "id": "S14r.notOpened",
+    "status": "PASS",
+    "note": "opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet"
+  },
+  {
+    "id": "S14r.upgradeLink",
+    "status": "PASS",
+    "note": "prompt=true"
+  },
+  {
+    "id": "S14r.restored",
+    "status": "PASS",
+    "note": "badge count=0"
+  },
+  {
+    "id": "S14r.cappedBack",
+    "status": "PASS",
+    "note": "tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet active=one_row.parquet"
+  },
+  {
+    "id": "S14r.cappedOpened",
+    "status": "PASS",
+    "note": "opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet,nan.parquet,big_ints.parquet remembered="
+  },
+  {
+    "id": "S14r.session",
+    "status": "PASS",
+    "note": "saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S15.otherTab",
+    "status": "PASS",
+    "note": "Late result leaves the other tab intact"
+  },
+  {
+    "id": "S15.reopen",
+    "status": "PASS",
+    "note": "Reopened tab starts at id 0 with no filter or spinner"
+  },
+  {
+    "id": "S15.continue",
+    "status": "PASS",
+    "note": "Pagination remains usable after the stale read"
+  },
+  {
+    "id": "S16.failure",
+    "status": "PASS",
+    "note": "Failed to move the export into place at /private/tmp/parqsee-crash-0915/full/data/launch-4115-11/not-a-directory/out.json: the existing file could not be backed up first (Not a directory (os error 20)), so it was left as it was"
+  },
+  {
+    "id": "S16.retry",
+    "status": "PASS",
+    "note": "[{\"id\":5,\"grp\":5,\"name\":\"row-5\",\"val\":0.2831968025438686}]"
+  },
+  {
+    "id": "S16.recovered",
+    "status": "PASS",
+    "note": "Successful retry closes modal and preserves filtered grid"
+  },
+  {
+    "id": "S17.disk",
+    "status": "PASS",
+    "note": "{\"active\":\"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet\",\"tabs\":[{\"available\":true,\"name\":\"multi_rowgroup.parquet\",\"path\":\"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet\",\"state\":{\"active_filter\":null,\"current_page\":2,\"view_mode\":null}},{\"available\":true,\"name\":\"one_row.parquet\",\"path\":\"/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet\",\"state\":{\"active_filter\":null,\"current_page\":1,\"view_mode\":null}}]}"
+  },
+  {
+    "id": "S17.restore",
+    "status": "PASS",
+    "note": "Fresh browser and Rust process restore persisted page, order and selection"
+  },
+  {
+    "id": "S18.failed",
+    "status": "PASS",
+    "note": "Purchase failure releases both controls and preserves three tabs"
+  },
+  {
+    "id": "S18.pending",
+    "status": "PASS",
+    "note": "Pending purchase remains free and permits retry"
+  },
+  {
+    "id": "S18.refund",
+    "status": "PASS",
+    "note": "Refund retains existing four tabs, refuses fifth; failed restore can retry"
+  },
+  {
+    "id": "S18.restored",
+    "status": "PASS",
+    "note": "Restore retry unlocks fifth tab"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  }
+]

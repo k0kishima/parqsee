@@ -1,0 +1,902 @@
+[
+  {
+    "offset": 0,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "id": 2,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 3,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 4,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-4.parquet: Parquet argument error: Parquet error: cannot skip field type Set",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 8,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-8.parquet: Parquet argument error: Parquet error: cannot skip field type Set",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 16,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-16.parquet: Parquet argument error: Parquet error: Unexpected struct field type 15",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 17,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-17.parquet: Parquet argument error: Parquet error: Unexpected struct field type 15",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 24,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-24.parquet: Parquet argument error: Parquet error: encountered non UTF-8 data",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 34,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-34.parquet: Parquet argument error: Parquet error: cannot skip field type Set",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 51,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "err": "Failed to read parquet file /private/tmp/parqsee-crash-0915/mutations/flip-51.parquet: Parquet argument error: Parquet error: Unexpected struct field type 15",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 68,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Unexpected FieldRepetitionType 14",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-68.parquet: Parquet error: Unexpected FieldRepetitionType 14",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 85,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Unexpected FieldRepetitionType -1599",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-85.parquet: Parquet error: Unexpected FieldRepetitionType -1599",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 102,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Unexpected struct field type 15",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-102.parquet: Parquet error: Unexpected struct field type 15",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 119,
+    "exit": 0,
+    "responses": [
+      {
+        "id": 1,
+        "ok": {
+          "columns": [
+            {
+              "column_type": "STRING",
+              "kind": "text",
+              "logical_type": "STRING",
+              "name": "only",
+              "physical_type": "BYTE_ARRAY"
+            }
+          ],
+          "num_columns": 1,
+          "num_rows": 1
+        }
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 136,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Statistics null count is negative -2624",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-136.parquet: Parquet error: Statistics null count is negative -2624",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 153,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Required field page_type is missing",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-153.parquet: Parquet error: Required field page_type is missing",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 170,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Unexpected struct field type 15",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-170.parquet: Parquet error: Unexpected struct field type 15",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 187,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 0",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-187.parquet: External: invalid utf-8 sequence of 1 bytes from index 0",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 205,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 3",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-205.parquet: External: invalid utf-8 sequence of 1 bytes from index 3",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 222,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 20",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-222.parquet: External: invalid utf-8 sequence of 1 bytes from index 20",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 239,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 37",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-239.parquet: External: invalid utf-8 sequence of 1 bytes from index 37",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 256,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 54",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-256.parquet: External: invalid utf-8 sequence of 1 bytes from index 54",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 273,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 71",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-273.parquet: External: invalid utf-8 sequence of 1 bytes from index 71",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 290,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 88",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-290.parquet: External: invalid utf-8 sequence of 1 bytes from index 88",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 307,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 105",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-307.parquet: External: invalid utf-8 sequence of 1 bytes from index 105",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 324,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 122",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-324.parquet: External: invalid utf-8 sequence of 1 bytes from index 122",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 341,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 139",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-341.parquet: External: invalid utf-8 sequence of 1 bytes from index 139",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 358,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "External: invalid utf-8 sequence of 1 bytes from index 156",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-358.parquet: External: invalid utf-8 sequence of 1 bytes from index 156",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 375,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: invalid utf8",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-375.parquet: Parquet error: invalid utf8",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 392,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-392.parquet: Parquet error: invalid utf8",
+        "id": 2
+      },
+      {
+        "err": "Parquet error: invalid utf8",
+        "id": 1
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 403,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "EOF: Parquet file too small. Size is 411 but need 437",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-403.parquet: EOF: Parquet file too small. Size is 411 but need 437",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 406,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "EOF: Parquet file too small. Size is 411 but need 4278190426",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-406.parquet: EOF: Parquet file too small. Size is 411 but need 4278190426",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  },
+  {
+    "offset": 410,
+    "exit": 0,
+    "responses": [
+      {
+        "err": "Parquet error: Invalid Parquet file. Corrupt footer",
+        "id": 1
+      },
+      {
+        "err": "Failed to open parquet file /private/tmp/parqsee-crash-0915/mutations/flip-410.parquet: Parquet error: Invalid Parquet file. Corrupt footer",
+        "id": 2
+      },
+      {
+        "id": 3,
+        "ok": [
+          {
+            "only": "x"
+          }
+        ]
+      }
+    ],
+    "stderr": "",
+    "healthy_read": true
+  }
+]

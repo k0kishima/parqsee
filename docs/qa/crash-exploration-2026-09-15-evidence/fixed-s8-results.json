@@ -1,0 +1,157 @@
+[
+  {
+    "id": "S8.ja",
+    "status": "PASS",
+    "note": "applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ"
+  },
+  {
+    "id": "S8.persist",
+    "status": "PASS",
+    "note": "{\"theme\":\"system\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"ja\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}"
+  },
+  {
+    "id": "S8.escapeCloses",
+    "status": "PASS",
+    "note": "Escape closes the dialog and keeps the change"
+  },
+  {
+    "id": "S8.reloadJa",
+    "status": "PASS",
+    "note": "language survives reload"
+  },
+  {
+    "id": "S8.dark",
+    "status": "PASS",
+    "note": "html.dark applied at once"
+  },
+  {
+    "id": "S8.noViewerSettings",
+    "status": "PASS",
+    "note": "the grid's own settings are not in the dialog"
+  },
+  {
+    "id": "S8.purchaseHidden",
+    "status": "PASS",
+    "note": "no purchase section in a build without a store (has_store false)"
+  },
+  {
+    "id": "S8.closeButton",
+    "status": "PASS",
+    "note": "✕ closes the dialog"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "screenshot/playwright-csp",
+    "status": "OBSERVE",
+    "note": "One WebKit screenshot stylesheet was blocked by CSP"
+  },
+  {
+    "id": "S8.viewOptions",
+    "status": "PASS",
+    "note": "{\"rowDensity\":\"compact\",\"typeDisplay\":\"physical\"}"
+  },
+  {
+    "id": "S8.physicalTypes",
+    "status": "PASS",
+    "note": "header labels switch to the physical types"
+  },
+  {
+    "id": "S8.viewOptionsEscape",
+    "status": "PASS",
+    "note": "Escape closes the popover"
+  },
+  {
+    "id": "S8.viewOptionsOutside",
+    "status": "PASS",
+    "note": "a click elsewhere closes the popover"
+  },
+  {
+    "id": "S8.rppInQueryView",
+    "status": "OBSERVE",
+    "note": "query view visible before=true after rows/page change=true"
+  },
+  {
+    "id": "S8.recentBefore",
+    "status": "PASS",
+    "note": "a recent entry to clear"
+  },
+  {
+    "id": "S8.clearRecentNoConfirm",
+    "status": "PASS",
+    "note": "no confirmation: Clear all matches File › Open Recent › Clear Menu"
+  },
+  {
+    "id": "S8.clearRecent",
+    "status": "PASS",
+    "note": "recent cleared in the store, the button gone with the list"
+  },
+  {
+    "id": "S8.corruptStorage",
+    "status": "PASS",
+    "note": "app survives corrupt localStorage; errors=[]"
+  },
+  {
+    "id": "S8.settingsSession",
+    "status": "PASS",
+    "note": "Real tab persisted before restart"
+  },
+  {
+    "id": "S8.settingsGrid.0",
+    "status": "PASS",
+    "note": "Saved tab displays after invalid settings are normalized"
+  },
+  {
+    "id": "S8.settingsRepaired.0",
+    "status": "PASS",
+    "note": "{\"theme\":\"dark\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"en\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}"
+  },
+  {
+    "id": "S8.settingsQuery.0",
+    "status": "PASS",
+    "note": "Query grid also renders with recovered settings"
+  },
+  {
+    "id": "S8.settingsGrid.1",
+    "status": "PASS",
+    "note": "Saved tab displays after invalid settings are normalized"
+  },
+  {
+    "id": "S8.settingsRepaired.1",
+    "status": "PASS",
+    "note": "{\"theme\":\"dark\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"en\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}"
+  },
+  {
+    "id": "S8.settingsQuery.1",
+    "status": "PASS",
+    "note": "Query grid also renders with recovered settings"
+  },
+  {
+    "id": "S8.settingsGrid.2",
+    "status": "PASS",
+    "note": "Saved tab displays after invalid settings are normalized"
+  },
+  {
+    "id": "S8.settingsRepaired.2",
+    "status": "PASS",
+    "note": "{\"theme\":\"dark\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"en\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}"
+  },
+  {
+    "id": "S8.settingsQuery.2",
+    "status": "PASS",
+    "note": "Query grid also renders with recovered settings"
+  },
+  {
+    "id": "S8.corruptStore",
+    "status": "PASS",
+    "note": "errors=[]"
+  },
+  {
+    "id": "S8.corruptStoreOverwritten",
+    "status": "PASS",
+    "note": "the next change rewrites the store"
+  }
+]

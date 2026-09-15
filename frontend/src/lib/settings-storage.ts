@@ -4,6 +4,9 @@ export type Language = 'en' | 'ja';
 /** Vertical padding of the grids' rows; `comfortable` is the original size. */
 export type RowDensity = 'comfortable' | 'compact';
 
+/** Supported page sizes, shared by persisted settings and the picker. */
+export const ROWS_PER_PAGE_OPTIONS = [25, 50, 100, 200, 500] as const;
+
 /** The cell and header classes each density gives the grids. */
 export const ROW_DENSITY_CLASSES = {
   comfortable: { cell: 'py-2.5', header: 'py-3', queryCell: 'py-1.5', queryHeader: 'py-2' },
@@ -50,20 +53,36 @@ export const defaultSettings: Settings = {
 const SETTINGS_STORAGE_KEY = 'parqsee-settings';
 
 /**
- * Read persisted settings merged over the defaults. Kept free of React and of
- * SettingsContext so it can also be called at import time (see lib/i18n).
+ * Read persisted settings, replacing invalid fields with their defaults.
+ * Kept free of React and SettingsContext so it can also be called at import
+ * time (see lib/i18n).
  */
 export function loadSettings(): Settings {
   try {
     const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (saved) {
-      // Merge saved settings with defaults to ensure all properties exist
-      return { ...defaultSettings, ...JSON.parse(saved) };
+      const parsed: unknown = JSON.parse(saved);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaultSettings;
+      const values = parsed as Record<string, unknown>;
+      // Persisted JSON is untrusted at runtime: TypeScript's Settings type
+      // cannot prevent null or obsolete values from reaching the render tree.
+      return {
+        theme: choice(values.theme, ['light', 'dark', 'system'], defaultSettings.theme),
+        rowsPerPage: choice(values.rowsPerPage, ROWS_PER_PAGE_OPTIONS, defaultSettings.rowsPerPage),
+        typeDisplay: choice(values.typeDisplay, ['logical', 'physical', 'both'], defaultSettings.typeDisplay),
+        language: choice(values.language, ['en', 'ja'], defaultSettings.language),
+        restoreTabs: typeof values.restoreTabs === 'boolean' ? values.restoreTabs : defaultSettings.restoreTabs,
+        rowDensity: choice(values.rowDensity, ['comfortable', 'compact'], defaultSettings.rowDensity),
+      };
     }
   } catch (e) {
     console.error('Failed to parse saved settings', e);
   }
   return defaultSettings;
+}
+
+function choice<T extends string | number>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.find(option => option === value) ?? fallback;
 }
 
 export function saveSettings(settings: Settings): void {

@@ -1,0 +1,62 @@
+[
+  {
+    "phase": "baseline",
+    "settings": "{\"theme\":\"system\",\"rowsPerPage\":50,\"typeDisplay\":\"logical\",\"language\":\"en\",\"restoreTabs\":true,\"rowDensity\":\"comfortable\"}",
+    "session": {
+      "version": 1,
+      "roots": [],
+      "recent": [
+        {
+          "path": "/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet",
+          "name": "one_row.parquet",
+          "size": 411,
+          "last_accessed": 1789439513094,
+          "bookmark": null
+        }
+      ],
+      "last_export": null,
+      "session": {
+        "tabs": [
+          {
+            "path": "/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet",
+            "name": "one_row.parquet",
+            "bookmark": null,
+            "state": {
+              "view_mode": null,
+              "current_page": 1,
+              "active_filter": null
+            }
+          }
+        ],
+        "active": "/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet",
+        "saved_at": 1789439513361
+      }
+    },
+    "errors": []
+  },
+  {
+    "phase": "restart-0",
+    "rootChildren": 0,
+    "body": "",
+    "errors": [
+      "console: TypeError: undefined is not an object (evaluating 'Yl[y].header')",
+      "TypeError: undefined is not an object (evaluating 'Yl[y].header')"
+    ],
+    "exitCode": null
+  },
+  {
+    "phase": "restart-1",
+    "rootChildren": 0,
+    "body": "",
+    "errors": [
+      "console: TypeError: undefined is not an object (evaluating 'Yl[y].header')",
+      "TypeError: undefined is not an object (evaluating 'Yl[y].header')"
+    ],
+    "exitCode": null
+  },
+  {
+    "phase": "repaired-setting-only",
+    "body": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nx\t\nrows/page\n|\nShowing 1 to 1 of 1 entries\nPrevious\nof 1\nNext",
+    "errors": []
+  }
+]

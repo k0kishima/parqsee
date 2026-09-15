@@ -204,6 +204,11 @@ visible Retry button, disk persistence, and successful-save deduplication.
 The notification is nonmodal, localized in English/Japanese, remains until
 the latest state is saved, and does not claim native Quit completion.
 
+`ONLY=S8` also covers EX-20260915-01: a real saved tab is restored in fresh
+browser/bridge processes with invalid density and page-size settings. The
+checks verify the Content and Query grids, normalized `localStorage`
+settings, and preservation of the valid theme.
+
 The pre-fix reproducer of EX-01 (`exploratory-diagnostics.mjs`, which
 asserted that a failed session save was *not* retried by pagehide) was
 removed with the fix: it could only fail on a revision that has it, and

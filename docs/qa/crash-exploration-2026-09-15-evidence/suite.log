@@ -1,0 +1,726 @@
+
+### S1-fidelity
+[PASS] S1.upper summary=3 rows × 2 columns rows=3 footer=Showing 1 to 3 of 3 entries
+[PASS] S1.glob rows=3 dataError=false
+[PASS] S1.nan x column renders as ["NaN","Infinity","-Infinity","1"]
+[PASS] S1.bigints ["9007199254740993","18446744073709551615"]
+[PASS] S1.numeric d128=12345.67 u64=18446744073709551615 f64=0.30000000000000004 f32row1=0 i64min=-9223372036854775808
+[OBSERVE] S1.numeric.types header type labels: BOOLEAN, INT8, INT16, INT32, INT64, INT8_UNSIGNED, INT16_UNSIGNED, INT32_UNSIGNED, INT64_UNSIGNED, FLOAT, DOUBLE, DECIMAL(10,2), DECIMAL(50,1),
+[OBSERVE] S1.temporal d32=2024-02-29 d64=2024-02-29 t32ms=01:02:03.004 ts_us=2024-01-02T03:04:05.678901 ts_utc=2024-01-02T03:04:05.678901Z ts_tokyo=2024-01-02T03:04:05.678901+09:00 dur=PT86405S types=DATE,DATE,TIME(MILLIS, UTC:false),TIME(MICROS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MICROS, UTC:false),TIMESTAMP(NANOS, UTC:false),TIMESTAMP(MICROS, UTC:true),TIMESTAMP(MICROS, UTC:true),INT64,
+[PASS] S1.temporal.date64 Date64 renders as 2024-02-29
+[OBSERVE] S1.text empty string row -> "", null row -> "NULL", newline row -> "line\nbreak\ttab", bin=0001ff, uuid=b90aff0a908e48adabd64721d380fbb4
+[PASS] S1.text.emptyVsNull empty string and NULL distinguishable: "" vs "NULL"
+[OBSERVE] S1.nested li=[1,2] st={"x":1,"y":"a"} mp={"k":1} deep=[{"v":[1,2]}] st_big={"big":"9007199254740993"} st_dec={"amt":"1.50"} emptyList=[] nullList=NULL
+[PASS] S1.dup dup column names refused: ["Failed to open file: This file has more than one column named \"id\"; Parqsee cannot open files with duplicate column names."]
+[PASS] expected-console-error Failed to open parquet file: This file has more than one column named "id"; Parqsee cannot open files with duplicate column names.
+[OBSERVE] S1.allnull row0=["1","NULL","NULL","NULL"] types=INT64,STRING,INT64,UNKNOWN,
+[OBSERVE] S1.empty summary=0 rows × 2 columns footer=Showing 0 to 0 of 0 entries pageOf=of 1
+[PASS] S1.empty.export export disabled on empty file: true; message: true
+[OBSERVE] S1.longtext 200KB cell rendered length=200000 title attr set=true
+[PASS] S1.broken.corrupt.parquet alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+[PASS] expected-console-error Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+[PASS] S1.broken.notparquet.parquet alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+[PASS] expected-console-error Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+[PASS] S1.broken.empty_file.parquet alerts=["Failed to open file: EOF: Parquet file too small. Size is 0 but need 8"]
+[PASS] expected-console-error Failed to open parquet file: EOF: Parquet file too small. Size is 0 but need 8
+[PASS] S1.broken.truncated.parquet alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+[PASS] expected-console-error Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+[PASS] S1.badpage errorScreen=true dataError=false
+[PASS] S1.wide.virtual first=col_000,col_001 after scroll=col_598,col_599 rendered=33
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S2-pagination
+[PASS] S2.first Showing 1 to 50 of 100,000 entries
+[PASS] S2.prevDisabled
+[PASS] S2.next first id 50
+[PASS] S2.jump first id 74950 footer=Showing 74951 to 75000 of 100,000 entries
+[PASS] S2.badInput input reverted to 1500
+[PASS] S2.zeroInput input now 1500
+[PASS] S2.tooBig input now 1500
+[OBSERVE] S2.spaceInput ' 7 ' -> page 7, first id 300
+[PASS] S2.last first id 99950 footer=Showing 99951 to 100000 of 100,000 entries
+[PASS] S2.rpp25 rows=25 ids=0,1,2 page=1 footer=Showing 1 to 25 of 100,000 entries
+[PASS] S2.rpp500 rows=500
+[PASS] S2.race.filterThenClear after clear: ids=0,1,2 footer=Showing 1 to 50 of 100,000 entries filterInput="" clearBtnVisible=false
+[PASS] S2.race.doubleNext page=3 first id=100
+[OBSERVE] S2.refresh after refresh page=1 first id=0
+
+### S3-filter
+[PASS] S3.eqText Showing 1 to 1 of 1 entries
+[PASS] S3.summaryFollowsFilter summary=1 rows × 4 columns
+[PASS] S3.like Showing 1 to 50 of 1,111 entries
+[PASS] S3.gtInt Showing 1 to 9 of 9 entries
+[OBSERVE] S3.intGarbage id = 'abc' -> dataError=false footer=Showing 1 to 9 of 9 entries
+[PASS] S3.floatTrim Showing 1 to 50 of 49,804 entries
+[PASS] S3.apostrophe footer=Showing 0 to 0 of 0 entries err=false
+[OBSERVE] S3.emptyValue empty value apply -> footer=Showing 1 to 50 of 100,000 entries (filter treated as none?)
+[PASS] S3.bigLiteral footer=Showing 0 to 0 of 0 entries err=false
+[PASS] S3.and Showing 1 to 14 of 14 entries
+[OBSERVE] S3.removeNeedsApply after removing 2nd condition without Apply footer=Showing 1 to 14 of 14 entries
+[PASS] S3.afterRemove Showing 1 to 50 of 14,286 entries
+[PASS] S3.pageInFilter second page of grp=3 starts at id 353
+[OBSERVE] S3.exportModal modal: All rows (14,286 rows) | Current page (rows 51-100) | notice=true
+[PASS] S3.clear Showing 1 to 50 of 100,000 entries
+[PASS] S3.nestedError dataError=true rows=3 text=Failed to collect results: type_coercion
+caused by
+Error during planning: Cannot infer common argument type for comparison operation Struct("x": Int64, "y": Utf8) = Utf8
+[OBSERVE] S3.nestedLike LIKE on struct: dataError=true footer=Showing 1 to 3 of 3 entries
+[PASS] S3.isNull IS NULL on list: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.binaryNotNull Showing 1 to 6 of 6 entries
+[OBSERVE] S3.binaryEqHex bin = '0001ff' (as displayed) -> footer=Showing 1 to 1 of 1 entries err=false
+[PASS] S3.emoji Showing 1 to 1 of 1 entries
+[PASS] S3.date d32 > '2000-01-01': Showing 1 to 1 of 1 entries err=false
+[PASS] S3.timestamp ts_us < '2000-01-01 00:00:00': Showing 1 to 1 of 1 entries err=false
+[PASS] S3.tsTokyoEqDisplayed ts_tokyo = displayed value: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.dateEq d32 = '2024-02-29': Showing 1 to 1 of 1 entries
+[PASS] S3.date64Eq d64 = '2024-02-29': Showing 1 to 1 of 1 entries err=false
+[OBSERVE] S3.duration dur > 0: Showing 1 to 1 of 1 entries err=true
+[PASS] S3.bool b = true: Showing 1 to 1 of 1 entries err=false
+[OBSERVE] S3.boolGarbage b = 'yes': Showing 1 to 1 of 1 entries err=false
+[PASS] S3.decimal d128 > 0: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.decimalEq d128 = 12345.67: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.decimal256Eq d256 = 0: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.u64max u64 = max: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.f64sci f64 = 1e300: Showing 1 to 1 of 1 entries
+[PASS] S3.quoteName "qu\"ote" = 1: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.mixedCase MixedCase = 1: Showing 1 to 1 of 1 entries err=false
+[OBSERVE] S3.emptyName "" = 1: Showing 1 to 3 of 3 entries err=false
+[PASS] S3.reservedName select = 1: Showing 1 to 1 of 1 entries err=false
+[PASS] S3.dotName "a.b" = 1: Showing 1 to 1 of 1 entries err=false
+
+### S4-search
+[PASS] S4.cmdF search bar opens with Cmd+F
+[OBSERVE] S4.count counter after "row-1": 1 / 11
+[PASS] S4.highlight highlighted cells=11
+[PASS] S4.nextMatch 1 / 11 -> 2 / 11
+[PASS] S4.headerMatch header matches for "GRP" (case-insensitive)=1
+[OBSERVE] S4.scope "row-99999" (on last page only) counter=none
+[PASS] S4.escape Esc closes search and clears highlights
+[PASS] S4.wideScroll scrollLeft=51469 header has col_599=true
+[OBSERVE] S4.cmdFinQuery Cmd+F in query view: search bar visible=false query editor still visible=true
+
+### S5-sql
+[PASS] S5.default default query: 100 rows
+[PASS] S5.truncated 10000 rowsShowing the first 10,000 rows — add a LIMIT clause to narrow the result
+[OBSERVE] S5.rowVirt rendered rows for 10000-row result: 24
+[PASS] S5.scrollBottom last rendered id=9999
+[PASS] S5.error SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val.
+[PASS] expected-console-error SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val.
+[OBSERVE] S5.emptyQuery empty query -> SQL execution failed: Error during planning: No SQL statements were provided in the query string
+[PASS] expected-console-error SQL execution failed: Error during planning: No SQL statements were provided in the query string
+[PASS] S5.aliases a b|日本語|c ["0","0","100000"]
+[OBSERVE] S5.derivedTypes d|big|s -> ["9999.0000","9999000000000000","9999"]
+[OBSERVE] S5.specialTypes ["2026-09-15T02:30:35.316380","2026-09-15","1 days","[1,2]","{\"a\":1}"]
+[PASS] S5.cmdEnter Cmd+Enter result ["42"]
+[PASS] S5.persistToggle result kept after toggling Content/Query
+[PASS] S5.persistTab query view restored on tab switch: textarea visible=true value=SELECT 42 AS answer
+[OBSERVE] S5.drop DROP TABLE t -> status=null err=The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t.
+[PASS] expected-console-error The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t.
+[PASS] S5.dropBreaksBrowse after DROP TABLE t in SQL view, paging: dataError=false msg=
+[PASS] S5.refreshRecovers refresh after drop: rows=50
+[PASS] expected-console-error The SQL view is read-only: SET and transaction statements are not allowed. Use SELECT queries against table t.
+[OBSERVE] S5.setPartitions after SET target_partitions=8, page 1234 first ids over 4 loads: 61650
+
+### S6-export
+[OBSERVE] S6.doneState Successfully exported 100,000 rows to all.csv
+[PASS] S6.defaultPath.none no root, no earlier export: defaultPath=multi_rowgroup.csv
+[PASS] S6.all lines=100001 notif=[{"title":"Export Complete","body":"Successfully exported 100,000 rows to all.csv","icon":"done"}]
+[OBSERVE] S6.currentLabel Current page (rows 101-150)
+[OBSERVE] S6.doneState Successfully exported 50 rows to page3.csv
+[PASS] S6.defaultPath.lastExport after an export to /private/tmp/parqsee-crash-0915/full/e2e_exports: defaultPath=/private/tmp/parqsee-crash-0915/full/e2e_exports/multi_rowgroup.csv
+[PASS] S6.currentPage rows=50 first=100,2,row- last=149,2,row-
+[OBSERVE] S6.doneState Successfully exported 11 rows to custom.csv
+[PASS] S6.custom rows=11 first=9,2,row-
+[PASS] S6.invalidRange export disabled with message
+[OBSERVE] S6.clearStart after clearing Start Row the field shows ""; typing 5 now gives "5"
+[OBSERVE] S6.clearEnd after clearing End Row the field shows ""
+[OBSERVE] S6.startOverMax start=100001 -> value "100001" disabled=true
+[PASS] S6.cancelDialog modal stays open after cancelled save dialog
+[PASS] S6.unwritable error shown: Failed to move the export into place at /nonexistent/dir/out.csv: No such file or directory (os error 2); nothing was left there
+[PASS] S6.defaultPath.failedExportNotRecorded after a failed export: /private/tmp/parqsee-crash-0915/full/e2e_exports
+[OBSERVE] S6.filteredLabel All rows (14,285 rows) notice=true
+[OBSERVE] S6.doneState Successfully exported 14,285 rows to filtered.json
+[PASS] S6.filteredJson rows=14285
+[OBSERVE] S6.doneState Successfully exported 3 rows to nested.parquet.csv
+[PASS] S6.nested.parquet.csv ﻿id,li,lls,fsl,st,mp,deep,st_big,st_dec\n1,"[1,2]","[""a""]","[1.0,2.0]","{""x"":1,""y"":""a""}","{""k"":1}","[{""v"":[1,2]}]","{""big"":9007199254740993}","{""a
+[OBSERVE] S6.doneState Successfully exported 3 rows to nested.parquet.json
+[PASS] S6.nested.parquet.json [{"id":1,"li":[1,2],"lls":["a"],"fsl":[1.0,2.0],"st":{"x":1,"y":"a"},"mp":{"k":1},"deep":[{"v":[1,2]}],"st_big":{"big":9007199254740993},"st_dec":{"amt":"1.50"}
+[OBSERVE] S6.doneState Successfully exported 3 rows to numeric.parquet.csv
+[PASS] S6.numeric.parquet.csv ﻿b,i8,i16,i32,i64,u8,u16,u32,u64,f32,f64,d128,d256\ntrue,-128,-32768,-2147483648,-9223372036854775808,0,0,0,0,1.5,0.30000000000000004,12345.67,111111111111111111
+[OBSERVE] S6.doneState Successfully exported 3 rows to numeric.parquet.json
+[PASS] S6.numeric.parquet.json [{"b":true,"i8":-128,"i16":-32768,"i32":-2147483648,"i64":-9223372036854775808,"u8":0,"u16":0,"u32":0,"u64":0,"f32":1.5,"f64":0.30000000000000004,"d128":"12345.
+[OBSERVE] S6.doneState Successfully exported 7 rows to text_binary.parquet.csv
+[PASS] S6.text_binary.parquet.csv ﻿s,ls,bin,lbin,uuid\nplain,large,0001ff,4c,b90aff0a908e48adabd64721d380fbb4\n日本語 and emoji 🎉,large,,4c,303c924b77ee4293bc4b29cf3c9427a2\n,large,,4c,ce69c1e89f5e48
+[OBSERVE] S6.doneState Successfully exported 7 rows to text_binary.parquet.json
+[PASS] S6.text_binary.parquet.json [{"s":"plain","ls":"large","bin":"0001ff","lbin":"4c","uuid":"b90aff0a908e48adabd64721d380fbb4"},{"s":"日本語 and emoji 🎉","ls":"large","bin":"","lbin":"4c","uuid
+[OBSERVE] S6.doneState Successfully exported 4 rows to nan.parquet.csv
+[PASS] S6.nan.parquet.csv ﻿id,x,y\n1,NaN,NaN\n2,inf,2.0\n3,-inf,\n4,1.0,4.0\n
+[OBSERVE] S6.doneState Successfully exported 4 rows to nan.parquet.json
+[PASS] S6.nan.parquet.json [{"id":1,"x":"NaN","y":"NaN"},{"id":2,"x":"Infinity","y":"2"},{"id":3,"x":"-Infinity"},{"id":4,"x":"1","y":"4"}]
+[OBSERVE] S6.doneState Successfully exported 3 rows to temporal.parquet.csv
+[PASS] S6.temporal.parquet.csv ﻿d32,d64,t32ms,t64us,ts_s,ts_ms,ts_us,ts_ns,ts_utc,ts_tokyo,dur\n2024-02-29,2024-02-29T00:00:00,01:02:03.004,01:02:03.000004,2024-01-02 03:04:05.000000,2024-01-0
+[OBSERVE] S6.doneState Successfully exported 3 rows to temporal.parquet.json
+[PASS] S6.temporal.parquet.json [{"d32":"2024-02-29","d64":"2024-02-29","t32ms":"01:02:03.004","t64us":"01:02:03.000004","ts_s":"2024-01-02T03:04:05","ts_ms":"2024-01-02T03:04:05.678","ts_us":
+[PASS] S6.defaultPath.sourceInRoot save dialog default for UPPER.PARQUET under the root: /private/tmp/parqsee-crash-0915-fixtures/paths/UPPER.csv
+
+### S6-restore
+[PASS] S6r.stored bookmarks.json last_export={"path":"/private/tmp/parqsee-crash-0915/full/e2e_exports","bookmark":null,"exported_at":1789439838574}
+[PASS] S6r.lastExportRestored a file outside every root starts in the last export folder
+[PASS] S6r.sourceInRootRestored a file under the restored root starts in its own folder
+[PASS] S6r.deletedFolderSkipped a deleted last export folder is not offered
+
+### S7-tabs
+[PASS] S7.three one_row.parquet,nan.parquet,dict.parquet active=dict.parquet
+[PASS] S7.select
+[PASS] S7.cmdW nan.parquet,dict.parquet active=nan.parquet
+[PASS] S7.evict evict calls: one_row.parquet
+[PASS] S7.reopenExisting reopen already-open file: tabs=nan.parquet,dict.parquet
+[PASS] S7.reopenClosed reopen closed file works: rows=1
+[PASS] S7.cmd1
+[PASS] S7.cycle
+[PASS] S7.pathsWithSpace
+[PASS] S7.recentPanel panel=inner.parquet,one_row.parquet,nan.parquet,dict.parquet
+[PASS] S7.recentPanelSearch rows=1
+[PASS] S7.recentPanelNoMatch no rows, a note instead
+[PASS] S7.recentPanelEscape Escape closes the panel
+[PASS] S7.recentPanelEnter active=inner.parquet
+[PASS] S7.recentPanelPick tabs=nan.parquet,dict.parquet,one_row.parquet,inner.parquet active=inner.parquet
+[PASS] S7.welcome welcome after closing all tabs
+[PASS] S7.recent recent=inner.parquet,one_row.parquet,nan.parquet,dict.parquet
+[PASS] S7.recentNoLocalStorage legacy key cleared
+[PASS] S7.recentUi
+[PASS] S7.recentClick
+[PASS] S7.unavailableRecent deleted file marked unavailable after reload
+[PASS] S7.missingRecent alerts=File not found: /private/tmp/parqsee-crash-0915/full/gone/missing.parquet stillListed=false
+[PASS] S7.missingRecentForgotten removed from the store too
+[PASS] S7.dropOther alert for non-parquet drop
+[OBSERVE] S7.dropTwo dropping 2 files opened tabs: one_row.parquet,nan.parquet
+[PASS] S7.browse browse dialog opens file: dict.parquet
+[OBSERVE] S7.cmdOInWorkspace Cmd+O with a tab open -> tabs=2
+[OBSERVE] S7.settingsInWorkspace settings button in workspace: 1
+[PASS] S7.tabIsolation dict tab footer=Showing 1 to 5 of 5 entries
+[PASS] S7.tabStateKept filter kept when returning
+
+### S7b-recent-seed
+
+### S7b-recent-listing-race
+[PASS] S7b.keepsTheNewFile recent files shown: dict.parquet,one_row.parquet
+[PASS] S7b.matchesTheStore shown=dict.parquet,one_row.parquet stored=dict.parquet,one_row.parquet
+[OBSERVE] S7b.listings bridge calls: list_recent_files,remember_file,list_recent_files,list_recent_files
+
+### S8-settings
+[PASS] S8.ja applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ
+[PASS] S8.persist {"theme":"system","rowsPerPage":50,"typeDisplay":"logical","language":"ja","restoreTabs":true,"rowDensity":"comfortable"}
+[PASS] S8.escapeCloses Escape closes the dialog and keeps the change
+[PASS] S8.reloadJa language survives reload
+[PASS] S8.dark html.dark applied at once
+[PASS] S8.noViewerSettings the grid's own settings are not in the dialog
+[PASS] S8.purchaseHidden no purchase section in a build without a store (has_store false)
+[PASS] S8.closeButton ✕ closes the dialog
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+[PASS] S8.viewOptions {"rowDensity":"compact","typeDisplay":"physical"}
+[PASS] S8.physicalTypes header labels switch to the physical types
+[PASS] S8.viewOptionsEscape Escape closes the popover
+[PASS] S8.viewOptionsOutside a click elsewhere closes the popover
+[OBSERVE] S8.rppInQueryView query view visible before=true after rows/page change=true
+[PASS] S8.recentBefore a recent entry to clear
+[PASS] S8.clearRecentNoConfirm no confirmation: Clear all matches File › Open Recent › Clear Menu
+[PASS] S8.clearRecent recent cleared in the store, the button gone with the list
+[PASS] S8.corruptStorage app survives corrupt localStorage; errors=[]
+
+### S8-corrupt-store
+could not parse /private/tmp/parqsee-crash-0915/full/data/s8-corrupt/bookmarks.json: key must be a string at line 1 column 2; starting with an empty store
+[PASS] S8.corruptStore errors=[]
+[PASS] S8.corruptStoreOverwritten the next change rewrites the store
+
+### S9-explorer
+[PASS] S9.emptyState sidebar empty state with a file open but no folder
+[PASS] S9.noListingOutsideRoots list_directory calls: 0
+[PASS] S9.welcomeOpenFolder welcome screen has Open Folder
+[PASS] S9.rootStored [{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+[PASS] S9.workspaceWithoutTabs tree next to the welcome content, no tab yet
+[PASS] S9.list explorer entries: parqsee-crash-0915-fixtures,paths,.parqsee-fixtures,all_null.parquet1.0 KB,bad_page.parquet2.1 MB,big_ints.parquet784.0 B… (25)
+[PASS] S9.dirsFirst first entry under the root paths
+[PASS] S9.expand expanded: contains glob[1]? true
+[OBSERVE] S9.folderParquet folder.parquet rendered as: <div><div class="
+          group flex items-center px-2 py-1
+          cursor-pointer
+          hover:bg-tertiary
+        " style="padding-left: 40px;"><svg xmlns="http://www.w3.org/2000/svg" width="
+[OBSERVE] S9.noperm clicking noperm dir: errors=["console: Failed to load directory: Permission denied (os error 13)"] any UI error=1
+[PASS] expected-console-error Failed to load directory: Permission denied (os error 13)
+[PASS] S9.openUpper active=UPPER.PARQUET
+[PASS] S9.brokenLink alerts=File not found: /private/tmp/parqsee-crash-0915-fixtures/paths/broken_link.parquet
+[PASS] S9.crumbBounded crumbs=parqsee-crash-0915-fixtures,paths
+[PASS] S9.collapse
+[PASS] S9.crumbReveal tree after crumb click: parqsee-crash-0915-fixtures,paths,dir with space,folder.parquet
+[PASS] S9.search parqsee-crash-0915-fixtures,nan.parquet1.0 KB
+[PASS] S9.searchDeep case-insensitive, through the subfolder: parqsee-crash-0915-fixtures,paths,glob[1].parquet723.0 B
+[PASS] S9.contextMenu
+[PASS] S9.openNewTab
+[OBSERVE] S9.openNewTabDup "Open" on an already-open file: tabs=2
+[PASS] S9.highlight selected rows: UPPER.PARQUET723.0 B
+[PASS] S9.secondRoot truncated.parquet1.1 MB,wide.parquet176.6 KB,dir with space,inner.parquet723.0 B (44)
+[PASS] S9.rootsStored
+[PASS] S9.removeRoot roots=[{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+[PASS] S9.hideSidebar
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S9-restore
+[PASS] S9r.rootRestored [{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+[PASS] S9r.workspaceOnLaunch the tree is back, and so are the tabs: UPPER.PARQUET,dict.parquet
+[PASS] S9r.treeLoaded root expanded and listed
+[PASS] S9r.recentRestored recent=dict.parquet,UPPER.PARQUET,one_row.parquet
+[PASS] S9r.recentUi recent files listed next to the tree
+[PASS] S9r.openFromTree
+[PASS] S9r.removeLastRoot empty sidebar, tab stays
+[PASS] S9r.welcomeAgain no roots, no tabs: the welcome screen
+
+### S10-external-change
+[PASS] S10.open Showing 1 to 50 of 100,000 entries
+[PASS] S10.replaced footer=Showing 1 to 1 of 1 entries cols=only
+[PASS] S10.deleted errorScreen=true message=Cannot open /private/tmp/parqsee-crash-0915/full/external/changing.parquet: No such file or directory (os error 2)
+[PASS] S10.closeAfterError tab gone after Close
+
+### S11-session
+[PASS] S11.page2 Showing 51 to 100 of 100,000 entries
+[PASS] S11.queryView one_row.parquet switched to the query view
+[PASS] S11.activeMiddle active=gone.parquet
+[PASS] S11.saved multi_rowgroup.parquet,gone.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915/full/session/gone.parquet
+[PASS] S11.savedState [{"active_filter":null,"current_page":2,"view_mode":null},{"active_filter":null,"current_page":1,"view_mode":null},{"active_filter":null,"current_page":1,"view_mode":"query"}]
+[PASS] S11.recentUntouched recent files are the opens, newest first
+
+### S11-session-restore
+[PASS] S11r.tabs tabs=multi_rowgroup.parquet,one_row.parquet
+[PASS] S11r.activeFallsBackToFirst active=multi_rowgroup.parquet (the active tab's file is gone)
+[PASS] S11r.page2 Showing 51 to 100 of 100,000 entries
+[PASS] S11r.notice notice=1 file from the last session could not be reopenedgone.parquet
+[PASS] S11r.recentUntouched remember_file calls: 0
+[PASS] S11r.queryView one_row.parquet is back in the query view
+[PASS] S11r.dismiss
+[PASS] S11r.pruned multi_rowgroup.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S11-session-save-retry
+[PASS] expected-console-error Failed to save the session: exploration save failure
+[PASS] S11.retry.pagehide attempts=2, diskPage=2
+[PASS] S11.retry.dedup successful snapshot is not resent: attempts=2
+[PASS] expected-console-error Failed to save the session: explicit retry failure
+[PASS] S11.retry.button attempts=4, diskPage=3
+
+### S11-session-off
+[PASS] S11o.welcome the welcome screen, no tabs
+[PASS] S11o.notAsked commands: set_menu_language,iap_status,list_workspace_roots,list_recent_files,take_pending_files,save_session
+
+### S12-finder-seed
+
+### S12-finder
+[PASS] S12.coldTabs tabs=multi_rowgroup.parquet,日本語ファイル.parquet
+[PASS] S12.coldActive active=日本語ファイル.parquet (the file must not be pushed behind the restored tabs)
+[PASS] S12.coldGrid Showing 1 to 3 of 3 entries
+[PASS] S12.askedOnceAfterRestore command order: set_menu_language,iap_status,list_workspace_roots,list_session_tabs,list_recent_files,open_parquet_file,take_pending_files,open_parquet_file,check_file_exists,open_parquet_file,read_parquet_data,remember_file,open_parquet_file,read_parquet_data,save_session
+[PASS] S12.recorded recent=日本語ファイル.parquet,multi_rowgroup.parquet
+[PASS] S12.warm active=hash#1.parquet footer=Showing 1 to 3 of 3 entries
+[PASS] S12.notParquet tabs=3 alerts=["Parqsee can only open .parquet files"]
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S13-sample
+[PASS] S13.path open_parquet_file paths: /private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet
+[PASS] S13.grid summary=1,500 rows × 14 columns footer=Showing 1 to 50 of 1,500 entries
+[PASS] S13.columns columns=order_id,order_date,customer,country,category,product,quantity,unit_price,discount_rate,total,status,is_gift,shipped_at
+[PASS] S13.notRecent recent=one_row.parquet
+[PASS] S13.oneTab tabs=sample.parquet,one_row.parquet
+[PASS] S13.session sample.parquet,one_row.parquet active=/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S13-sample-restore
+[PASS] S13r.tabs tabs=sample.parquet,one_row.parquet active=sample.parquet
+[PASS] S13r.grid 1,500 rows × 14 columns
+
+### S14-free-tier
+[PASS] S14.badge badge title="Free version · up to 3 tabs at a time — click for the full version"
+[PASS] S14.three tabs=one_row.parquet,dict.parquet,numeric.parquet
+[PASS] S14.concurrentRefused prompt=true opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet remembered=one_row.parquet,dict.parquet,numeric.parquet evicted=
+[PASS] S14.concurrentEscape prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet
+[PASS] S14.fourth tabs=one_row.parquet,dict.parquet,numeric.parquet opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet
+[PASS] S14.price One-time purchase: ¥1,500
+[PASS] S14.escape prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet
+[PASS] S14.activate active=one_row.parquet prompt=false
+[PASS] S14.badgeOpens prompt=true
+[PASS] S14.cancelled prompt=true purchases=parqsee.full
+[PASS] S14.bought badge count=0
+[PASS] S14.unlimited tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+[PASS] S14.refund badge=true tabs=5
+[PASS] S14.sixth prompt=true tabs=5
+[PASS] S14.session saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S14-free-restore
+[PASS] S14r.tabs tabs=one_row.parquet,dict.parquet,numeric.parquet
+[PASS] S14r.notice 2 tabs from the last session were not restored: the free version keeps 3 tabs open at a time. Upgradenan.parquet, big_ints.parquet
+[PASS] S14r.notOpened opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet
+[PASS] S14r.upgradeLink prompt=true
+[PASS] S14r.restored badge count=0
+[PASS] S14r.cappedBack tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet active=one_row.parquet
+[PASS] S14r.cappedOpened opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet,nan.parquet,big_ints.parquet remembered=
+[PASS] S14r.session saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+### S15-close-during-read
+[PASS] S15.otherTab Late result leaves the other tab intact
+[PASS] S15.reopen Reopened tab starts at id 0 with no filter or spinner
+[PASS] S15.continue Pagination remains usable after the stale read
+
+### S16-export-retry
+[PASS] S16.failure Failed to move the export into place at /private/tmp/parqsee-crash-0915/full/data/launch-4115-11/not-a-directory/out.json: the existing file could not be backed up first (Not a directory (os error 20)), so it was left as it was
+[PASS] S16.retry [{"id":5,"grp":5,"name":"row-5","val":0.2831968025438686}]
+[PASS] S16.recovered Successful retry closes modal and preserves filtered grid
+
+### S17-flush-session
+[PASS] S17.disk {"active":"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet","tabs":[{"available":true,"name":"multi_rowgroup.parquet","path":"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet","state":{"active_filter":null,"current_page":2,"view_mode":null}},{"available":true,"name":"one_row.parquet","path":"/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet","state":{"active_filter":null,"current_page":1,"view_mode":null}}]}
+
+### S17-relaunch
+[PASS] S17.restore Fresh browser and Rust process restore persisted page, order and selection
+
+### S18-store-recovery
+[PASS] S18.failed Purchase failure releases both controls and preserves three tabs
+[PASS] S18.pending Pending purchase remains free and permits retry
+[PASS] S18.refund Refund retains existing four tabs, refuses fifth; failed restore can retry
+[PASS] S18.restored Restore retry unlocks fifth tab
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+
+
+===== SUMMARY =====
+PASS    S1.upper  summary=3 rows × 2 columns rows=3 footer=Showing 1 to 3 of 3 entries
+PASS    S1.glob  rows=3 dataError=false
+PASS    S1.nan  x column renders as ["NaN","Infinity","-Infinity","1"]
+PASS    S1.bigints  ["9007199254740993","18446744073709551615"]
+PASS    S1.numeric  d128=12345.67 u64=18446744073709551615 f64=0.30000000000000004 f32row1=0 i64min=-9223372036854775808
+OBSERVE S1.numeric.types  header type labels: BOOLEAN, INT8, INT16, INT32, INT64, INT8_UNSIGNED, INT16_UNSIGNED, INT32_UNSIGNED, INT64_UNSIGNED, FLOAT, DOUBLE, DECIMAL(10,2), DECIMAL(50,1),
+OBSERVE S1.temporal  d32=2024-02-29 d64=2024-02-29 t32ms=01:02:03.004 ts_us=2024-01-02T03:04:05.678901 ts_utc=2024-01-02T03:04:05.678901Z ts_tokyo=2024-01-02T03:04:05.678901+09:00 dur=PT86405S types=DATE,DATE,TIME(MILLIS, UTC:false),TIME(MICROS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MILLIS, UTC:false),TIMESTAMP(MICROS, UTC:false),TIMESTAMP(NANOS, UTC:false),TIMESTAMP(MICROS, UTC:true),TIMESTAMP(MICROS, UTC:true),INT64,
+PASS    S1.temporal.date64  Date64 renders as 2024-02-29
+OBSERVE S1.text  empty string row -> "", null row -> "NULL", newline row -> "line\nbreak\ttab", bin=0001ff, uuid=b90aff0a908e48adabd64721d380fbb4
+PASS    S1.text.emptyVsNull  empty string and NULL distinguishable: "" vs "NULL"
+OBSERVE S1.nested  li=[1,2] st={"x":1,"y":"a"} mp={"k":1} deep=[{"v":[1,2]}] st_big={"big":"9007199254740993"} st_dec={"amt":"1.50"} emptyList=[] nullList=NULL
+PASS    S1.dup  dup column names refused: ["Failed to open file: This file has more than one column named \"id\"; Parqsee cannot open files with duplicate column names."]
+PASS    expected-console-error  Failed to open parquet file: This file has more than one column named "id"; Parqsee cannot open files with duplicate column names.
+OBSERVE S1.allnull  row0=["1","NULL","NULL","NULL"] types=INT64,STRING,INT64,UNKNOWN,
+OBSERVE S1.empty  summary=0 rows × 2 columns footer=Showing 0 to 0 of 0 entries pageOf=of 1
+PASS    S1.empty.export  export disabled on empty file: true; message: true
+OBSERVE S1.longtext  200KB cell rendered length=200000 title attr set=true
+PASS    S1.broken.corrupt.parquet  alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+PASS    expected-console-error  Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+PASS    S1.broken.notparquet.parquet  alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+PASS    expected-console-error  Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+PASS    S1.broken.empty_file.parquet  alerts=["Failed to open file: EOF: Parquet file too small. Size is 0 but need 8"]
+PASS    expected-console-error  Failed to open parquet file: EOF: Parquet file too small. Size is 0 but need 8
+PASS    S1.broken.truncated.parquet  alerts=["Failed to open file: Parquet error: Invalid Parquet file. Corrupt footer"]
+PASS    expected-console-error  Failed to open parquet file: Parquet error: Invalid Parquet file. Corrupt footer
+PASS    S1.badpage  errorScreen=true dataError=false
+PASS    S1.wide.virtual  first=col_000,col_001 after scroll=col_598,col_599 rendered=33
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S2.first  Showing 1 to 50 of 100,000 entries
+PASS    S2.prevDisabled
+PASS    S2.next  first id 50
+PASS    S2.jump  first id 74950 footer=Showing 74951 to 75000 of 100,000 entries
+PASS    S2.badInput  input reverted to 1500
+PASS    S2.zeroInput  input now 1500
+PASS    S2.tooBig  input now 1500
+OBSERVE S2.spaceInput  ' 7 ' -> page 7, first id 300
+PASS    S2.last  first id 99950 footer=Showing 99951 to 100000 of 100,000 entries
+PASS    S2.rpp25  rows=25 ids=0,1,2 page=1 footer=Showing 1 to 25 of 100,000 entries
+PASS    S2.rpp500  rows=500
+PASS    S2.race.filterThenClear  after clear: ids=0,1,2 footer=Showing 1 to 50 of 100,000 entries filterInput="" clearBtnVisible=false
+PASS    S2.race.doubleNext  page=3 first id=100
+OBSERVE S2.refresh  after refresh page=1 first id=0
+PASS    S3.eqText  Showing 1 to 1 of 1 entries
+PASS    S3.summaryFollowsFilter  summary=1 rows × 4 columns
+PASS    S3.like  Showing 1 to 50 of 1,111 entries
+PASS    S3.gtInt  Showing 1 to 9 of 9 entries
+OBSERVE S3.intGarbage  id = 'abc' -> dataError=false footer=Showing 1 to 9 of 9 entries
+PASS    S3.floatTrim  Showing 1 to 50 of 49,804 entries
+PASS    S3.apostrophe  footer=Showing 0 to 0 of 0 entries err=false
+OBSERVE S3.emptyValue  empty value apply -> footer=Showing 1 to 50 of 100,000 entries (filter treated as none?)
+PASS    S3.bigLiteral  footer=Showing 0 to 0 of 0 entries err=false
+PASS    S3.and  Showing 1 to 14 of 14 entries
+OBSERVE S3.removeNeedsApply  after removing 2nd condition without Apply footer=Showing 1 to 14 of 14 entries
+PASS    S3.afterRemove  Showing 1 to 50 of 14,286 entries
+PASS    S3.pageInFilter  second page of grp=3 starts at id 353
+OBSERVE S3.exportModal  modal: All rows (14,286 rows) | Current page (rows 51-100) | notice=true
+PASS    S3.clear  Showing 1 to 50 of 100,000 entries
+PASS    S3.nestedError  dataError=true rows=3 text=Failed to collect results: type_coercion
+caused by
+Error during planning: Cannot infer common argument type for comparison operation Struct("x": Int64, "y": Utf8) = Utf8
+OBSERVE S3.nestedLike  LIKE on struct: dataError=true footer=Showing 1 to 3 of 3 entries
+PASS    S3.isNull  IS NULL on list: Showing 1 to 1 of 1 entries err=false
+PASS    S3.binaryNotNull  Showing 1 to 6 of 6 entries
+OBSERVE S3.binaryEqHex  bin = '0001ff' (as displayed) -> footer=Showing 1 to 1 of 1 entries err=false
+PASS    S3.emoji  Showing 1 to 1 of 1 entries
+PASS    S3.date  d32 > '2000-01-01': Showing 1 to 1 of 1 entries err=false
+PASS    S3.timestamp  ts_us < '2000-01-01 00:00:00': Showing 1 to 1 of 1 entries err=false
+PASS    S3.tsTokyoEqDisplayed  ts_tokyo = displayed value: Showing 1 to 1 of 1 entries err=false
+PASS    S3.dateEq  d32 = '2024-02-29': Showing 1 to 1 of 1 entries
+PASS    S3.date64Eq  d64 = '2024-02-29': Showing 1 to 1 of 1 entries err=false
+OBSERVE S3.duration  dur > 0: Showing 1 to 1 of 1 entries err=true
+PASS    S3.bool  b = true: Showing 1 to 1 of 1 entries err=false
+OBSERVE S3.boolGarbage  b = 'yes': Showing 1 to 1 of 1 entries err=false
+PASS    S3.decimal  d128 > 0: Showing 1 to 1 of 1 entries err=false
+PASS    S3.decimalEq  d128 = 12345.67: Showing 1 to 1 of 1 entries err=false
+PASS    S3.decimal256Eq  d256 = 0: Showing 1 to 1 of 1 entries err=false
+PASS    S3.u64max  u64 = max: Showing 1 to 1 of 1 entries err=false
+PASS    S3.f64sci  f64 = 1e300: Showing 1 to 1 of 1 entries
+PASS    S3.quoteName  "qu\"ote" = 1: Showing 1 to 1 of 1 entries err=false
+PASS    S3.mixedCase  MixedCase = 1: Showing 1 to 1 of 1 entries err=false
+OBSERVE S3.emptyName  "" = 1: Showing 1 to 3 of 3 entries err=false
+PASS    S3.reservedName  select = 1: Showing 1 to 1 of 1 entries err=false
+PASS    S3.dotName  "a.b" = 1: Showing 1 to 1 of 1 entries err=false
+PASS    S4.cmdF  search bar opens with Cmd+F
+OBSERVE S4.count  counter after "row-1": 1 / 11
+PASS    S4.highlight  highlighted cells=11
+PASS    S4.nextMatch  1 / 11 -> 2 / 11
+PASS    S4.headerMatch  header matches for "GRP" (case-insensitive)=1
+OBSERVE S4.scope  "row-99999" (on last page only) counter=none
+PASS    S4.escape  Esc closes search and clears highlights
+PASS    S4.wideScroll  scrollLeft=51469 header has col_599=true
+OBSERVE S4.cmdFinQuery  Cmd+F in query view: search bar visible=false query editor still visible=true
+PASS    S5.default  default query: 100 rows
+PASS    S5.truncated  10000 rowsShowing the first 10,000 rows — add a LIMIT clause to narrow the result
+OBSERVE S5.rowVirt  rendered rows for 10000-row result: 24
+PASS    S5.scrollBottom  last rendered id=9999
+PASS    S5.error  SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val.
+PASS    expected-console-error  SQL execution failed: Schema error: No field named bogus. Valid fields are t.id, t.grp, t.name, t.val.
+OBSERVE S5.emptyQuery  empty query -> SQL execution failed: Error during planning: No SQL statements were provided in the query string
+PASS    expected-console-error  SQL execution failed: Error during planning: No SQL statements were provided in the query string
+PASS    S5.aliases  a b|日本語|c ["0","0","100000"]
+OBSERVE S5.derivedTypes  d|big|s -> ["9999.0000","9999000000000000","9999"]
+OBSERVE S5.specialTypes  ["2026-09-15T02:30:35.316380","2026-09-15","1 days","[1,2]","{\"a\":1}"]
+PASS    S5.cmdEnter  Cmd+Enter result ["42"]
+PASS    S5.persistToggle  result kept after toggling Content/Query
+PASS    S5.persistTab  query view restored on tab switch: textarea visible=true value=SELECT 42 AS answer
+OBSERVE S5.drop  DROP TABLE t -> status=null err=The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t.
+PASS    expected-console-error  The SQL view is read-only: DDL statements (CREATE, DROP, ALTER) are not allowed. Use SELECT queries against table t.
+PASS    S5.dropBreaksBrowse  after DROP TABLE t in SQL view, paging: dataError=false msg=
+PASS    S5.refreshRecovers  refresh after drop: rows=50
+PASS    expected-console-error  The SQL view is read-only: SET and transaction statements are not allowed. Use SELECT queries against table t.
+OBSERVE S5.setPartitions  after SET target_partitions=8, page 1234 first ids over 4 loads: 61650
+OBSERVE S6.doneState  Successfully exported 100,000 rows to all.csv
+PASS    S6.defaultPath.none  no root, no earlier export: defaultPath=multi_rowgroup.csv
+PASS    S6.all  lines=100001 notif=[{"title":"Export Complete","body":"Successfully exported 100,000 rows to all.csv","icon":"done"}]
+OBSERVE S6.currentLabel  Current page (rows 101-150)
+OBSERVE S6.doneState  Successfully exported 50 rows to page3.csv
+PASS    S6.defaultPath.lastExport  after an export to /private/tmp/parqsee-crash-0915/full/e2e_exports: defaultPath=/private/tmp/parqsee-crash-0915/full/e2e_exports/multi_rowgroup.csv
+PASS    S6.currentPage  rows=50 first=100,2,row- last=149,2,row-
+OBSERVE S6.doneState  Successfully exported 11 rows to custom.csv
+PASS    S6.custom  rows=11 first=9,2,row-
+PASS    S6.invalidRange  export disabled with message
+OBSERVE S6.clearStart  after clearing Start Row the field shows ""; typing 5 now gives "5"
+OBSERVE S6.clearEnd  after clearing End Row the field shows ""
+OBSERVE S6.startOverMax  start=100001 -> value "100001" disabled=true
+PASS    S6.cancelDialog  modal stays open after cancelled save dialog
+PASS    S6.unwritable  error shown: Failed to move the export into place at /nonexistent/dir/out.csv: No such file or directory (os error 2); nothing was left there
+PASS    S6.defaultPath.failedExportNotRecorded  after a failed export: /private/tmp/parqsee-crash-0915/full/e2e_exports
+OBSERVE S6.filteredLabel  All rows (14,285 rows) notice=true
+OBSERVE S6.doneState  Successfully exported 14,285 rows to filtered.json
+PASS    S6.filteredJson  rows=14285
+OBSERVE S6.doneState  Successfully exported 3 rows to nested.parquet.csv
+PASS    S6.nested.parquet.csv  ﻿id,li,lls,fsl,st,mp,deep,st_big,st_dec\n1,"[1,2]","[""a""]","[1.0,2.0]","{""x"":1,""y"":""a""}","{""k"":1}","[{""v"":[1,2]}]","{""big"":9007199254740993}","{""a
+OBSERVE S6.doneState  Successfully exported 3 rows to nested.parquet.json
+PASS    S6.nested.parquet.json  [{"id":1,"li":[1,2],"lls":["a"],"fsl":[1.0,2.0],"st":{"x":1,"y":"a"},"mp":{"k":1},"deep":[{"v":[1,2]}],"st_big":{"big":9007199254740993},"st_dec":{"amt":"1.50"}
+OBSERVE S6.doneState  Successfully exported 3 rows to numeric.parquet.csv
+PASS    S6.numeric.parquet.csv  ﻿b,i8,i16,i32,i64,u8,u16,u32,u64,f32,f64,d128,d256\ntrue,-128,-32768,-2147483648,-9223372036854775808,0,0,0,0,1.5,0.30000000000000004,12345.67,111111111111111111
+OBSERVE S6.doneState  Successfully exported 3 rows to numeric.parquet.json
+PASS    S6.numeric.parquet.json  [{"b":true,"i8":-128,"i16":-32768,"i32":-2147483648,"i64":-9223372036854775808,"u8":0,"u16":0,"u32":0,"u64":0,"f32":1.5,"f64":0.30000000000000004,"d128":"12345.
+OBSERVE S6.doneState  Successfully exported 7 rows to text_binary.parquet.csv
+PASS    S6.text_binary.parquet.csv  ﻿s,ls,bin,lbin,uuid\nplain,large,0001ff,4c,b90aff0a908e48adabd64721d380fbb4\n日本語 and emoji 🎉,large,,4c,303c924b77ee4293bc4b29cf3c9427a2\n,large,,4c,ce69c1e89f5e48
+OBSERVE S6.doneState  Successfully exported 7 rows to text_binary.parquet.json
+PASS    S6.text_binary.parquet.json  [{"s":"plain","ls":"large","bin":"0001ff","lbin":"4c","uuid":"b90aff0a908e48adabd64721d380fbb4"},{"s":"日本語 and emoji 🎉","ls":"large","bin":"","lbin":"4c","uuid
+OBSERVE S6.doneState  Successfully exported 4 rows to nan.parquet.csv
+PASS    S6.nan.parquet.csv  ﻿id,x,y\n1,NaN,NaN\n2,inf,2.0\n3,-inf,\n4,1.0,4.0\n
+OBSERVE S6.doneState  Successfully exported 4 rows to nan.parquet.json
+PASS    S6.nan.parquet.json  [{"id":1,"x":"NaN","y":"NaN"},{"id":2,"x":"Infinity","y":"2"},{"id":3,"x":"-Infinity"},{"id":4,"x":"1","y":"4"}]
+OBSERVE S6.doneState  Successfully exported 3 rows to temporal.parquet.csv
+PASS    S6.temporal.parquet.csv  ﻿d32,d64,t32ms,t64us,ts_s,ts_ms,ts_us,ts_ns,ts_utc,ts_tokyo,dur\n2024-02-29,2024-02-29T00:00:00,01:02:03.004,01:02:03.000004,2024-01-02 03:04:05.000000,2024-01-0
+OBSERVE S6.doneState  Successfully exported 3 rows to temporal.parquet.json
+PASS    S6.temporal.parquet.json  [{"d32":"2024-02-29","d64":"2024-02-29","t32ms":"01:02:03.004","t64us":"01:02:03.000004","ts_s":"2024-01-02T03:04:05","ts_ms":"2024-01-02T03:04:05.678","ts_us":
+PASS    S6.defaultPath.sourceInRoot  save dialog default for UPPER.PARQUET under the root: /private/tmp/parqsee-crash-0915-fixtures/paths/UPPER.csv
+PASS    S6r.stored  bookmarks.json last_export={"path":"/private/tmp/parqsee-crash-0915/full/e2e_exports","bookmark":null,"exported_at":1789439838574}
+PASS    S6r.lastExportRestored  a file outside every root starts in the last export folder
+PASS    S6r.sourceInRootRestored  a file under the restored root starts in its own folder
+PASS    S6r.deletedFolderSkipped  a deleted last export folder is not offered
+PASS    S7.three  one_row.parquet,nan.parquet,dict.parquet active=dict.parquet
+PASS    S7.select
+PASS    S7.cmdW  nan.parquet,dict.parquet active=nan.parquet
+PASS    S7.evict  evict calls: one_row.parquet
+PASS    S7.reopenExisting  reopen already-open file: tabs=nan.parquet,dict.parquet
+PASS    S7.reopenClosed  reopen closed file works: rows=1
+PASS    S7.cmd1
+PASS    S7.cycle
+PASS    S7.pathsWithSpace
+PASS    S7.recentPanel  panel=inner.parquet,one_row.parquet,nan.parquet,dict.parquet
+PASS    S7.recentPanelSearch  rows=1
+PASS    S7.recentPanelNoMatch  no rows, a note instead
+PASS    S7.recentPanelEscape  Escape closes the panel
+PASS    S7.recentPanelEnter  active=inner.parquet
+PASS    S7.recentPanelPick  tabs=nan.parquet,dict.parquet,one_row.parquet,inner.parquet active=inner.parquet
+PASS    S7.welcome  welcome after closing all tabs
+PASS    S7.recent  recent=inner.parquet,one_row.parquet,nan.parquet,dict.parquet
+PASS    S7.recentNoLocalStorage  legacy key cleared
+PASS    S7.recentUi
+PASS    S7.recentClick
+PASS    S7.unavailableRecent  deleted file marked unavailable after reload
+PASS    S7.missingRecent  alerts=File not found: /private/tmp/parqsee-crash-0915/full/gone/missing.parquet stillListed=false
+PASS    S7.missingRecentForgotten  removed from the store too
+PASS    S7.dropOther  alert for non-parquet drop
+OBSERVE S7.dropTwo  dropping 2 files opened tabs: one_row.parquet,nan.parquet
+PASS    S7.browse  browse dialog opens file: dict.parquet
+OBSERVE S7.cmdOInWorkspace  Cmd+O with a tab open -> tabs=2
+OBSERVE S7.settingsInWorkspace  settings button in workspace: 1
+PASS    S7.tabIsolation  dict tab footer=Showing 1 to 5 of 5 entries
+PASS    S7.tabStateKept  filter kept when returning
+PASS    S7b.keepsTheNewFile  recent files shown: dict.parquet,one_row.parquet
+PASS    S7b.matchesTheStore  shown=dict.parquet,one_row.parquet stored=dict.parquet,one_row.parquet
+OBSERVE S7b.listings  bridge calls: list_recent_files,remember_file,list_recent_files,list_recent_files
+PASS    S8.ja  applies at once; body sample: Parqsee  Parquet ファイルをここにドロップ  または下のボタンから開く  ファイルを開く ⌘O フォルダを開く ⇧⌘O  Parquet ファイ
+PASS    S8.persist  {"theme":"system","rowsPerPage":50,"typeDisplay":"logical","language":"ja","restoreTabs":true,"rowDensity":"comfortable"}
+PASS    S8.escapeCloses  Escape closes the dialog and keeps the change
+PASS    S8.reloadJa  language survives reload
+PASS    S8.dark  html.dark applied at once
+PASS    S8.noViewerSettings  the grid's own settings are not in the dialog
+PASS    S8.purchaseHidden  no purchase section in a build without a store (has_store false)
+PASS    S8.closeButton  ✕ closes the dialog
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S8.viewOptions  {"rowDensity":"compact","typeDisplay":"physical"}
+PASS    S8.physicalTypes  header labels switch to the physical types
+PASS    S8.viewOptionsEscape  Escape closes the popover
+PASS    S8.viewOptionsOutside  a click elsewhere closes the popover
+OBSERVE S8.rppInQueryView  query view visible before=true after rows/page change=true
+PASS    S8.recentBefore  a recent entry to clear
+PASS    S8.clearRecentNoConfirm  no confirmation: Clear all matches File › Open Recent › Clear Menu
+PASS    S8.clearRecent  recent cleared in the store, the button gone with the list
+PASS    S8.corruptStorage  app survives corrupt localStorage; errors=[]
+PASS    S8.corruptStore  errors=[]
+PASS    S8.corruptStoreOverwritten  the next change rewrites the store
+PASS    S9.emptyState  sidebar empty state with a file open but no folder
+PASS    S9.noListingOutsideRoots  list_directory calls: 0
+PASS    S9.welcomeOpenFolder  welcome screen has Open Folder
+PASS    S9.rootStored  [{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+PASS    S9.workspaceWithoutTabs  tree next to the welcome content, no tab yet
+PASS    S9.list  explorer entries: parqsee-crash-0915-fixtures,paths,.parqsee-fixtures,all_null.parquet1.0 KB,bad_page.parquet2.1 MB,big_ints.parquet784.0 B… (25)
+PASS    S9.dirsFirst  first entry under the root paths
+PASS    S9.expand  expanded: contains glob[1]? true
+OBSERVE S9.folderParquet  folder.parquet rendered as: <div><div class="
+          group flex items-center px-2 py-1
+          cursor-pointer
+          hover:bg-tertiary
+        " style="padding-left: 40px;"><svg xmlns="http://www.w3.org/2000/svg" width="
+OBSERVE S9.noperm  clicking noperm dir: errors=["console: Failed to load directory: Permission denied (os error 13)"] any UI error=1
+PASS    expected-console-error  Failed to load directory: Permission denied (os error 13)
+PASS    S9.openUpper  active=UPPER.PARQUET
+PASS    S9.brokenLink  alerts=File not found: /private/tmp/parqsee-crash-0915-fixtures/paths/broken_link.parquet
+PASS    S9.crumbBounded  crumbs=parqsee-crash-0915-fixtures,paths
+PASS    S9.collapse
+PASS    S9.crumbReveal  tree after crumb click: parqsee-crash-0915-fixtures,paths,dir with space,folder.parquet
+PASS    S9.search  parqsee-crash-0915-fixtures,nan.parquet1.0 KB
+PASS    S9.searchDeep  case-insensitive, through the subfolder: parqsee-crash-0915-fixtures,paths,glob[1].parquet723.0 B
+PASS    S9.contextMenu
+PASS    S9.openNewTab
+OBSERVE S9.openNewTabDup  "Open" on an already-open file: tabs=2
+PASS    S9.highlight  selected rows: UPPER.PARQUET723.0 B
+PASS    S9.secondRoot  truncated.parquet1.1 MB,wide.parquet176.6 KB,dir with space,inner.parquet723.0 B (44)
+PASS    S9.rootsStored
+PASS    S9.removeRoot  roots=[{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+PASS    S9.hideSidebar
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S9r.rootRestored  [{"name":"parqsee-crash-0915-fixtures","path":"/private/tmp/parqsee-crash-0915-fixtures"}]
+PASS    S9r.workspaceOnLaunch  the tree is back, and so are the tabs: UPPER.PARQUET,dict.parquet
+PASS    S9r.treeLoaded  root expanded and listed
+PASS    S9r.recentRestored  recent=dict.parquet,UPPER.PARQUET,one_row.parquet
+PASS    S9r.recentUi  recent files listed next to the tree
+PASS    S9r.openFromTree
+PASS    S9r.removeLastRoot  empty sidebar, tab stays
+PASS    S9r.welcomeAgain  no roots, no tabs: the welcome screen
+PASS    S10.open  Showing 1 to 50 of 100,000 entries
+PASS    S10.replaced  footer=Showing 1 to 1 of 1 entries cols=only
+PASS    S10.deleted  errorScreen=true message=Cannot open /private/tmp/parqsee-crash-0915/full/external/changing.parquet: No such file or directory (os error 2)
+PASS    S10.closeAfterError  tab gone after Close
+PASS    S11.page2  Showing 51 to 100 of 100,000 entries
+PASS    S11.queryView  one_row.parquet switched to the query view
+PASS    S11.activeMiddle  active=gone.parquet
+PASS    S11.saved  multi_rowgroup.parquet,gone.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915/full/session/gone.parquet
+PASS    S11.savedState  [{"active_filter":null,"current_page":2,"view_mode":null},{"active_filter":null,"current_page":1,"view_mode":null},{"active_filter":null,"current_page":1,"view_mode":"query"}]
+PASS    S11.recentUntouched  recent files are the opens, newest first
+PASS    S11r.tabs  tabs=multi_rowgroup.parquet,one_row.parquet
+PASS    S11r.activeFallsBackToFirst  active=multi_rowgroup.parquet (the active tab's file is gone)
+PASS    S11r.page2  Showing 51 to 100 of 100,000 entries
+PASS    S11r.notice  notice=1 file from the last session could not be reopenedgone.parquet
+PASS    S11r.recentUntouched  remember_file calls: 0
+PASS    S11r.queryView  one_row.parquet is back in the query view
+PASS    S11r.dismiss
+PASS    S11r.pruned  multi_rowgroup.parquet,one_row.parquet active=/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    expected-console-error  Failed to save the session: exploration save failure
+PASS    S11.retry.pagehide  attempts=2, diskPage=2
+PASS    S11.retry.dedup  successful snapshot is not resent: attempts=2
+PASS    expected-console-error  Failed to save the session: explicit retry failure
+PASS    S11.retry.button  attempts=4, diskPage=3
+PASS    S11o.welcome  the welcome screen, no tabs
+PASS    S11o.notAsked  commands: set_menu_language,iap_status,list_workspace_roots,list_recent_files,take_pending_files,save_session
+PASS    S12.coldTabs  tabs=multi_rowgroup.parquet,日本語ファイル.parquet
+PASS    S12.coldActive  active=日本語ファイル.parquet (the file must not be pushed behind the restored tabs)
+PASS    S12.coldGrid  Showing 1 to 3 of 3 entries
+PASS    S12.askedOnceAfterRestore  command order: set_menu_language,iap_status,list_workspace_roots,list_session_tabs,list_recent_files,open_parquet_file,take_pending_files,open_parquet_file,check_file_exists,open_parquet_file,read_parquet_data,remember_file,open_parquet_file,read_parquet_data,save_session
+PASS    S12.recorded  recent=日本語ファイル.parquet,multi_rowgroup.parquet
+PASS    S12.warm  active=hash#1.parquet footer=Showing 1 to 3 of 3 entries
+PASS    S12.notParquet  tabs=3 alerts=["Parqsee can only open .parquet files"]
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S13.path  open_parquet_file paths: /private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet,/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet
+PASS    S13.grid  summary=1,500 rows × 14 columns footer=Showing 1 to 50 of 1,500 entries
+PASS    S13.columns  columns=order_id,order_date,customer,country,category,product,quantity,unit_price,discount_rate,total,status,is_gift,shipped_at
+PASS    S13.notRecent  recent=one_row.parquet
+PASS    S13.oneTab  tabs=sample.parquet,one_row.parquet
+PASS    S13.session  sample.parquet,one_row.parquet active=/Users/k0kishima/work/fuji/parqsee/backend/resources/sample.parquet
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S13r.tabs  tabs=sample.parquet,one_row.parquet active=sample.parquet
+PASS    S13r.grid  1,500 rows × 14 columns
+PASS    S14.badge  badge title="Free version · up to 3 tabs at a time — click for the full version"
+PASS    S14.three  tabs=one_row.parquet,dict.parquet,numeric.parquet
+PASS    S14.concurrentRefused  prompt=true opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet remembered=one_row.parquet,dict.parquet,numeric.parquet evicted=
+PASS    S14.concurrentEscape  prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet
+PASS    S14.fourth  tabs=one_row.parquet,dict.parquet,numeric.parquet opened=one_row.parquet,one_row.parquet,dict.parquet,dict.parquet,numeric.parquet,numeric.parquet
+PASS    S14.price  One-time purchase: ¥1,500
+PASS    S14.escape  prompt=false tabs=one_row.parquet,dict.parquet,numeric.parquet
+PASS    S14.activate  active=one_row.parquet prompt=false
+PASS    S14.badgeOpens  prompt=true
+PASS    S14.cancelled  prompt=true purchases=parqsee.full
+PASS    S14.bought  badge count=0
+PASS    S14.unlimited  tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+PASS    S14.refund  badge=true tabs=5
+PASS    S14.sixth  prompt=true tabs=5
+PASS    S14.session  saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S14r.tabs  tabs=one_row.parquet,dict.parquet,numeric.parquet
+PASS    S14r.notice  2 tabs from the last session were not restored: the free version keeps 3 tabs open at a time. Upgradenan.parquet, big_ints.parquet
+PASS    S14r.notOpened  opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet
+PASS    S14r.upgradeLink  prompt=true
+PASS    S14r.restored  badge count=0
+PASS    S14r.cappedBack  tabs=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet active=one_row.parquet
+PASS    S14r.cappedOpened  opened=one_row.parquet,dict.parquet,numeric.parquet,one_row.parquet,nan.parquet,big_ints.parquet remembered=
+PASS    S14r.session  saved=one_row.parquet,dict.parquet,numeric.parquet,nan.parquet,big_ints.parquet
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+PASS    S15.otherTab  Late result leaves the other tab intact
+PASS    S15.reopen  Reopened tab starts at id 0 with no filter or spinner
+PASS    S15.continue  Pagination remains usable after the stale read
+PASS    S16.failure  Failed to move the export into place at /private/tmp/parqsee-crash-0915/full/data/launch-4115-11/not-a-directory/out.json: the existing file could not be backed up first (Not a directory (os error 20)), so it was left as it was
+PASS    S16.retry  [{"id":5,"grp":5,"name":"row-5","val":0.2831968025438686}]
+PASS    S16.recovered  Successful retry closes modal and preserves filtered grid
+PASS    S17.disk  {"active":"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet","tabs":[{"available":true,"name":"multi_rowgroup.parquet","path":"/private/tmp/parqsee-crash-0915-fixtures/multi_rowgroup.parquet","state":{"active_filter":null,"current_page":2,"view_mode":null}},{"available":true,"name":"one_row.parquet","path":"/private/tmp/parqsee-crash-0915-fixtures/one_row.parquet","state":{"active_filter":null,"current_page":1,"view_mode":null}}]}
+PASS    S17.restore  Fresh browser and Rust process restore persisted page, order and selection
+PASS    S18.failed  Purchase failure releases both controls and preserves three tabs
+PASS    S18.pending  Pending purchase remains free and permits retry
+PASS    S18.refund  Refund retains existing four tabs, refuses fifth; failed restore can retry
+PASS    S18.restored  Restore retry unlocks fifth tab
+OBSERVE screenshot/playwright-csp  One WebKit screenshot stylesheet was blocked by CSP
+
+260 PASS, 0 FAIL/ERROR, 64 OBSERVE

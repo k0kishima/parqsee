@@ -1,0 +1,2 @@
+[OBSERVE] screenshot/playwright-csp One WebKit screenshot stylesheet was blocked by CSP
+[{"phase":"24-file-drop","tabs":24,"errors":[]},{"phase":"24-tab-restore","tabs":24,"errors":[]},{"exception":"TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: /Open sample/i })\u001b[22m\n","errors":[]}]

@@ -1,0 +1,186 @@
+[
+  {
+    "id": "normal",
+    "settings": {},
+    "errors": [],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nx\t\nrows/page\n|\nShowing 1 to 1 of 1 entries\nPrevious\nof 1\nNext",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "density_null",
+    "settings": {
+      "rowDensity": null
+    },
+    "exception": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded.",
+    "errors": [
+      "console: TypeError: undefined is not an object (evaluating 'Yl[y].header')",
+      "TypeError: undefined is not an object (evaluating 'Yl[y].header')"
+    ],
+    "text": "",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "density_unknown",
+    "settings": {
+      "rowDensity": "dense"
+    },
+    "exception": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded.",
+    "errors": [
+      "console: TypeError: undefined is not an object (evaluating 'Yl[y].header')",
+      "TypeError: undefined is not an object (evaluating 'Yl[y].header')"
+    ],
+    "text": "",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "rows_zero",
+    "settings": {
+      "rowsPerPage": 0
+    },
+    "errors": [],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nrows/page\n|\nShowing 1 to 0 of 1 entries\nPrevious\nof Infinity\nNext",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "rows_negative",
+    "settings": {
+      "rowsPerPage": -1
+    },
+    "exception": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded.",
+    "errors": [],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\nError Loading File\n\nmissing limit\n\nClose",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "rows_string",
+    "settings": {
+      "rowsPerPage": "50"
+    },
+    "exception": "TimeoutError: page.waitForFunction: Timeout 10000ms exceeded.",
+    "errors": [],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\nError Loading File\n\nmissing limit\n\nClose",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "language_null",
+    "settings": {
+      "language": null
+    },
+    "errors": [],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nx\t\nrows/page\n|\nShowing 1 to 1 of 1 entries\nPrevious\nof 1\nNext",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-0",
+    "query": "SELECT 1 AS x, 2 AS x",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them."
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\nSQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-1",
+    "query": "SELECT arrow_cast(9223372036854775807, 'Timestamp(Nanosecond, None)') AS edge",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them."
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\n1 rows\nDuration: 3ms\nedge\nTimestamp(ns)\n\n2262-04-11T23:47:16.854775807\t",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-2",
+    "query": "SELECT CAST('not a number' AS BIGINT)",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\nFailed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-3",
+    "query": "SELECT 1 / 0 AS division",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\nFailed to collect results: Arrow error: Divide by zero error",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-4",
+    "query": "SELECT * FROM t WHERE id IN (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\n2000 rows\nDuration: 190ms\nid\nInt64\ngrp\nInt32\nname\nUtf8View\nval\nFloat64\n\n0\t0\trow-0\t0.5553447967819066\t\n1\t1\trow-1\t0.072528684907336\t\n2\t2\trow-2\t0.8891395256018565\t\n3\t3\trow-3\t0.0777980933916067\t\n4\t4\trow-4\t0.052123809233009855\t\n5\t5\trow-5\t0.2831968025438686\t\n6\t6\trow-6\t0.003757129301504958\t\n7\t0\trow-7\t0.24532056135368663\t\n8\t1\trow-8\t0.625564939853348\t\n9\t2\trow-9\t0.8788423381117992\t\n10\t3\trow-10\t0.2374341890062139\t\n11\t4\trow-11\t0.2672509252083356\t\n12\t5\trow-12\t0.8535895333048462\t\n13\t6\trow-13\t0.21737330313162795\t\n14\t0\trow-14\t0.7384368787607407\t\n15\t1\trow-15\t0.8551668410660759\t\n16\t2\trow-16\t0.189895884117136\t\n17\t3\trow-17\t0.7325307286552538\t\n18\t4\trow-18\t0.7580801197968515\t\n19\t5\trow-19\t0.17475664004286195\t\n20\t6\trow-20\t0.9101508780480776\t\n21\t0\trow-21\t0.5142570955367856\t\n22\t1\trow-22\t0.08541759877200972\t\n23\t2\trow-23\t0.4910536006600896\t",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-5",
+    "query": "SELECT ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error",
+      "console: SQL execution failed: SQL error: RecursionLimitExceeded (current limit: 50)"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\nSQL execution failed: SQL error: RecursionLimitExceeded (current limit: 50)",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "sql-6",
+    "query": "SELECT 42 AS recovered",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error",
+      "console: SQL execution failed: SQL error: RecursionLimitExceeded (current limit: 50)"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\nmulti_rowgroup.parquet\n\nContent\nQuery\nTable name: t\nRun\n⌘↩\n1 rows\nDuration: 2ms\nrecovered\nInt64\n\n42\t",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "close-running-query",
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error",
+      "console: SQL execution failed: SQL error: RecursionLimitExceeded (current limit: 50)"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nx\t\nrows/page\n|\nShowing 1 to 1 of 1 entries\nPrevious\nof 1\nNext",
+    "exitCode": null,
+    "signal": null
+  },
+  {
+    "id": "rapid-open-close",
+    "cycles": 12,
+    "errors": [
+      "console: SQL execution failed: Error during planning: Projections require unique expression names but the expression \"Int64(1) AS x\" at position 0 and \"Int64(2) AS x\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.",
+      "console: Failed to collect results: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'not a number' to value of Int64 type",
+      "console: Failed to collect results: Arrow error: Divide by zero error",
+      "console: SQL execution failed: SQL error: RecursionLimitExceeded (current limit: 50)"
+    ],
+    "text": "File Explorer\n\nOpen a folder to browse Parquet files\n\nOpen Folder\none_row.parquet\n\nContent\nQuery\n1 rows × 1 columns\n\nSearch\nRefresh\nExport\none_row.parquet\nFILTER:\nApply\nonly\nSTRING\n\nx\t\nrows/page\n|\nShowing 1 to 1 of 1 entries\nPrevious\nof 1\nNext",
+    "exitCode": null,
+    "signal": null
+  }
+]
