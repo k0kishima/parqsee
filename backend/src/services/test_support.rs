@@ -15,6 +15,14 @@ pub fn temp_path(scope: &str, name: &str) -> PathBuf {
     dir.join(name)
 }
 
+/// A directory of this process's own under `temp_path`'s scope, created and
+/// empty of anything but what the test puts in it.
+pub fn temp_dir(scope: &str, name: &str) -> PathBuf {
+    let dir = temp_path(scope, name);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 /// Write one batch out as the parquet fixture a test reads back. The writer
 /// takes the batch's own schema; `props` is the one thing that ever varied
 /// (a row group count small enough to make paging cross a boundary).

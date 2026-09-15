@@ -184,8 +184,8 @@ fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
 #[cfg(test)]
 mod tests {
     use super::{has_parquet_extension, list_directory};
+    use crate::services::test_support::temp_dir;
     use serde::Deserialize;
-    use std::path::PathBuf;
 
     #[derive(Deserialize)]
     struct ParquetExtensionCase {
@@ -198,17 +198,9 @@ mod tests {
             .expect("the shared parquet-extension contract must be valid JSON")
     }
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("parqsee-file-test-{}", std::process::id()))
-            .join(name);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[tokio::test]
     async fn lists_directories_first_then_files_ignoring_case() {
-        let dir = temp_dir("listing");
+        let dir = temp_dir("file", "listing");
         std::fs::create_dir_all(dir.join("zeta")).unwrap();
         std::fs::create_dir_all(dir.join("Alpha")).unwrap();
         std::fs::write(dir.join("b.parquet"), b"xx").unwrap();
@@ -232,7 +224,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_missing_paths_and_plain_files() {
-        let dir = temp_dir("errors");
+        let dir = temp_dir("file", "errors");
         std::fs::write(dir.join("file.txt"), b"x").unwrap();
         let missing = dir.join("missing").to_string_lossy().into_owned();
         assert_eq!(list_directory(missing).await.unwrap_err(), "Directory does not exist");
