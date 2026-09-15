@@ -76,6 +76,40 @@ mod tests {
         (path.to_string(), name)
     }
 
+    #[derive(serde::Deserialize)]
+    struct ParentFolderCase {
+        path: String,
+        folder: String,
+    }
+
+    /// The same cases the webview's `recentFileLabels` is held to. The two
+    /// lists disambiguate over different sets — this menu sees only the
+    /// entries it shows, the panel sees all of them — but the folder a
+    /// disambiguated entry carries has to read the same on both surfaces,
+    /// and nothing but this checks that.
+    #[test]
+    fn follows_the_shared_parent_folder_contract() {
+        let cases: Vec<ParentFolderCase> = serde_json::from_str(include_str!(
+            "../../../contracts/parent-folder-cases.json"
+        ))
+        .expect("the shared parent-folder contract must be valid JSON");
+        assert!(!cases.is_empty());
+
+        for case in cases {
+            // Two entries sharing a name is what puts the folder on a label.
+            let items = recent_menu_items(&[
+                (case.path.clone(), "report.parquet".to_string()),
+                ("/elsewhere/report.parquet".to_string(), "report.parquet".to_string()),
+            ]);
+            assert_eq!(
+                items[0].label,
+                format!("report.parquet — {}", case.folder),
+                "parent folder of {}",
+                case.path
+            );
+        }
+    }
+
     #[test]
     fn items_carry_the_path_in_their_id_and_the_name_as_label() {
         let items = recent_menu_items(&[entry("/data/a.parquet"), entry("/data/b.parquet")]);

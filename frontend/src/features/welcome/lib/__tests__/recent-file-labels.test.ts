@@ -1,9 +1,27 @@
 import { describe, it, expect } from 'vitest';
+import parentFolderCases from '../../../../../../contracts/parent-folder-cases.json';
 import { recentFileLabels, matchesRecentFile } from '../recent-file-labels';
 
 const file = (path: string) => ({ path, name: path.split('/').pop()! });
 
 describe('recentFileLabels', () => {
+  // The same cases `services::recent_menu` is held to. The two lists
+  // disambiguate over different sets — this panel sees every entry, the
+  // native menu only the ones it shows — but the folder a disambiguated
+  // entry carries has to read the same on both surfaces, and nothing but
+  // this checks that.
+  it('follows the shared parent-folder contract', () => {
+    expect(parentFolderCases.length).toBeGreaterThan(0);
+    for (const testCase of parentFolderCases) {
+      // Two entries sharing a name is what puts the folder on a label.
+      const labels = recentFileLabels([
+        { path: testCase.path, name: 'report.parquet' },
+        { path: '/elsewhere/report.parquet', name: 'report.parquet' },
+      ]);
+      expect(labels.get(testCase.path)?.folder, `parent folder of ${testCase.path}`).toBe(testCase.folder);
+    }
+  });
+
   it('leaves a unique name alone', () => {
     const labels = recentFileLabels([file('/data/a.parquet'), file('/data/b.parquet')]);
     expect(labels.get('/data/a.parquet')).toEqual({ name: 'a.parquet', folder: null });
