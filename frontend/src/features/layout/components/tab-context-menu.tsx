@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, XSquare, ChevronsRight, Copy, FolderOpen, RotateCcw } from 'lucide-react';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { copyPath, revealInFinder } from '../../../lib/reveal';
 import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
 import { shortcutKeys } from '../../../lib/shortcuts';
 
@@ -80,21 +80,8 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
     'document'
   );
 
-  const copyPath = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(path);
-    } catch (error) {
-      console.error('Failed to copy path:', error);
-    }
-  }, [path]);
-
-  const revealInFinder = useCallback(async () => {
-    try {
-      await revealItemInDir(path);
-    } catch (error) {
-      console.error('Failed to reveal in Finder:', error);
-    }
-  }, [path]);
+  const handleCopyPath = useCallback(() => copyPath(path), [path]);
+  const handleRevealInFinder = useCallback(() => revealInFinder(path), [path]);
 
   const item = (
     label: string,
@@ -127,8 +114,8 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
       className="fixed z-50 min-w-[180px] rounded-md shadow-lg border border-primary bg-primary py-1"
       style={{ left: position.x, top: position.y }}
     >
-      {item(t('tabs.contextMenu.copyPath'), Copy, true, copyPath)}
-      {item(t('tabs.contextMenu.revealInFinder'), FolderOpen, true, revealInFinder)}
+      {item(t('tabs.contextMenu.copyPath'), Copy, true, handleCopyPath)}
+      {item(t('tabs.contextMenu.revealInFinder'), FolderOpen, true, handleRevealInFinder)}
       <div role="separator" className="my-1 border-t border-primary" />
       {item(t('tabs.contextMenu.close'), X, true, onCloseTab, shortcutKeys('close-tab'))}
       {item(t('tabs.contextMenu.closeOthers'), XSquare, canCloseOthers, onCloseOthers)}
