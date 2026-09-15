@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import i18n from '../lib/i18n';
 import { Settings, loadSettings, saveSettings } from '../lib/settings-storage';
 import { setMenuLanguage } from '../features/settings/api';
@@ -11,7 +12,7 @@ interface SettingsContextType {
   effectiveTheme: 'light' | 'dark';
 }
 
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+const [SettingsContext, useSettings] = createRequiredContext<SettingsContextType>('Settings');
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -76,10 +77,4 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useSettings() {
-  const context = useContext(SettingsContext);
-  if (!context) {
-    throw new Error('useSettings must be used within a SettingsProvider');
-  }
-  return context;
-}
+export { useSettings };

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../lib/tauri';
 import {
@@ -18,7 +19,7 @@ interface RecentFilesContextType {
   removeRecentFile: (path: string) => void;
 }
 
-const RecentFilesContext = createContext<RecentFilesContextType | undefined>(undefined);
+const [RecentFilesContext, useRecentFiles] = createRequiredContext<RecentFilesContextType>('RecentFiles');
 /** Where the list lived before it moved into the backend's store. */
 const LEGACY_STORAGE_KEY = 'parqsee-recent-files';
 
@@ -149,10 +150,4 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useRecentFiles() {
-  const context = useContext(RecentFilesContext);
-  if (!context) {
-    throw new Error('useRecentFiles must be used within a RecentFilesProvider');
-  }
-  return context;
-}
+export { useRecentFiles };

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
+import { useState, useCallback, useEffect, useRef, useReducer, useTransition, ReactNode } from 'react';
+import { createRequiredContext } from '../lib/required-context';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRecentFiles } from './RecentFilesContext';
@@ -117,7 +118,7 @@ interface WorkspaceContextType {
     retrySessionSave: () => void;
 }
 
-const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
+const [WorkspaceContext, useWorkspace] = createRequiredContext<WorkspaceContextType>('Workspace');
 
 /** How many closed tabs ⇧⌘T can walk back through. */
 const CLOSED_TAB_HISTORY = 10;
@@ -757,10 +758,4 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     );
 }
 
-export function useWorkspace() {
-    const context = useContext(WorkspaceContext);
-    if (context === undefined) {
-        throw new Error('useWorkspace must be used within a WorkspaceProvider');
-    }
-    return context;
-}
+export { useWorkspace };
