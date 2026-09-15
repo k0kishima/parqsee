@@ -326,6 +326,13 @@ export async function openFolder(page, dir) {
 }
 
 /** Wait until the browse grid has settled (no spinner). */
+// The tab panel currently on screen. Every tab stays mounted and the hidden
+// ones are positioned off-view, so an unscoped locator matches cells and
+// headings of tabs the user cannot see. Scope to this. The string is
+// exported too, for the places that compose it into a larger selector.
+export const ACTIVE_PANEL = 'div[style*="position: absolute"][style*="display: flex"]';
+export const activePanel = (page) => page.locator(ACTIVE_PANEL);
+
 export async function waitGrid(page, timeout = 15000) {
   await page.waitForFunction(() => !document.querySelector('.animate-spin'), null, { timeout });
   await page.waitForTimeout(50);

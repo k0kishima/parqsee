@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
-import { FIX, OUT, dropFile, check, FREE_STORE, setStore, pushIapStatus } from './lib.mjs';
+import { FIX, OUT, dropFile, check, FREE_STORE, setStore, pushIapStatus, activePanel } from './lib.mjs';
 import { scenario, screenshot } from './runner.mjs';
 
-const active = page => page.locator('div[style*="position: absolute"][style*="display: flex"]');
+const active = activePanel;
 const tabs = page => page.locator('[title^="Close tab"]');
 const footer = page => active(page).getByText(/^Showing .* entries$/);
 const firstCell = page => active(page).locator('tbody tr:not([aria-hidden]) td:not([aria-hidden])').first();

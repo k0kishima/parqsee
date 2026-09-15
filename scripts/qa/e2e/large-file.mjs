@@ -1,7 +1,7 @@
 // Large-file timing: open the gen_huge.py file, jump to the last page, and
 // report how long the page read and the render took. Use BRIDGE_BIN with a
 // release build for representative numbers.
-import { launch, dropFile, waitGrid, gridRows, FIX, OUT } from './lib.mjs';
+import { launch, dropFile, waitGrid, gridRows, ACTIVE_PANEL, FIX, OUT } from './lib.mjs';
 const HUGE = process.env.HUGE ?? `${FIX}/huge.parquet`;
 const { page, bridge, close } = await launch();
 const t0 = Date.now();
@@ -16,7 +16,7 @@ bridge.call = (cmd, args, d) => {
 await dropFile(page, HUGE);
 await page.waitForSelector('h1', { timeout: 20000 });
 await waitGrid(page, 30000);
-const active = 'div[style*="position: absolute"][style*="display: flex"]';
+const active = ACTIVE_PANEL;
 console.log('opened in', Date.now() - t0, 'ms; footer:', (await page.locator(`${active} footer, ${active} [class*="border-t"]`).last().textContent().catch(() => ''))?.slice(0, 120));
 const lastBtn = page.locator(`${active} button:has(path[d="M13 5l7 7-7 7M5 5l7 7-7 7"])`);
 console.log('last-page button count:', await lastBtn.count(), 'disabled:', await lastBtn.first().isDisabled());
