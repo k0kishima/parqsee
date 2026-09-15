@@ -128,8 +128,13 @@ const SUPPORT_URL = 'https://parqsee.fuji.llc/support.html';
 const SUPPORT_URL_JA = 'https://parqsee.fuji.llc/ja/support.html';
 
 let nextTabSerial = 0;
-/** Unique per tab; Date.now() alone collided when two files opened in one tick. */
-const newTabId = () => `${Date.now()}-${nextTabSerial++}`;
+/**
+ * Unique for the session, which is all a tab id is used for: the reducer
+ * finds tabs by it and nothing persists it (the saved session records
+ * paths). A serial, not the clock: `Date.now()` gave two files opened in
+ * one tick the same id.
+ */
+const newTabId = () => `tab-${nextTabSerial++}`;
 
 /**
  * Open one tab of the saved session and turn it into the entry the restore
