@@ -195,6 +195,38 @@ pub struct IapPurchaseResult {
     pub status: IapStatus,
 }
 
+/// What a SQL result column can be on a chart, decided from the result's
+/// Arrow schema. The webview cannot decide this itself: `data_type` is the
+/// type's display string, which is free to change wording, and the file's
+/// `ColumnInfo` describes the file, not a query — `CAST`, arithmetic and
+/// aggregates all change the type. Only the two things a chart needs are
+/// distinguished: how to parse the values (`batches_to_rows` renders
+/// decimals and big integers as strings) and whether the column is a
+/// continuous axis.
+///
+/// Dictionary-encoded columns are `unsupported` rather than mapped to their
+/// value type: the JSON rendering of a dictionary's decimals and non-finite
+/// floats is not tested to match a plain column's, so the webview would be
+/// parsing values it cannot trust. A `CAST` in the query unwraps them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "ipc/")]
+pub enum QueryChartType {
+    Integer,
+    Float,
+    Decimal,
+    Date,
+    Timestamp {
+        /// Arrow's timezone string, `None` for a wall-clock timestamp.
+        timezone: Option<String>,
+    },
+    /// Strings, booleans and times of day: a label per row, no axis.
+    Category,
+    /// Binary, nested, interval and everything else: the query has to
+    /// `CAST` it to something chartable.
+    Unsupported,
+}
+
 /// One column of a SQL result: the name the query gave it and its Arrow type
 /// rendered for display. Not `ColumnInfo` — that describes a column of the
 /// parquet file itself, and a query's columns can be computed, joined or
@@ -204,6 +236,7 @@ pub struct IapPurchaseResult {
 pub struct QueryColumn {
     pub name: String,
     pub data_type: String,
+    pub chart_type: QueryChartType,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -255,11 +288,17 @@ pub struct HistogramBucket {
 pub enum ProfileChart {
     /// Values with their counts, commonest first. `other` is the number of
     /// non-null rows whose value is not listed — 0 when the list is complete.
-    TopValues { values: Vec<ValueCount>, other: usize },
+    TopValues {
+        values: Vec<ValueCount>,
+        other: usize,
+    },
     /// Equal-width buckets in value order over the column's range. `other`
     /// is the number of non-null values no bucket holds: NaN and the
     /// infinities of a float column.
-    Histogram { buckets: Vec<HistogramBucket>, other: usize },
+    Histogram {
+        buckets: Vec<HistogramBucket>,
+        other: usize,
+    },
     /// A type the profile has no chart for (nested, interval); the counts
     /// still apply.
     Unsupported,

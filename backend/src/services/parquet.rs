@@ -149,10 +149,15 @@ impl ParquetCache {
 
     /// Get cached metadata, or compute and cache it.
     pub async fn get_or_create_metadata(&self, path: &str) -> Result<ParquetMetadata, String> {
-        self.get_or_create_metadata_with(path, || compute_metadata(path)).await
+        self.get_or_create_metadata_with(path, || compute_metadata(path))
+            .await
     }
 
-    async fn get_or_create_metadata_with<F>(&self, path: &str, compute: F) -> Result<ParquetMetadata, String>
+    async fn get_or_create_metadata_with<F>(
+        &self,
+        path: &str,
+        compute: F,
+    ) -> Result<ParquetMetadata, String>
     where
         F: FnOnce() -> Result<ParquetMetadata, String>,
     {
@@ -208,7 +213,11 @@ impl ParquetCache {
     /// back on its own failure, or an eviction that releases it anyway —
     /// and `try_lock` rather than a wait is what keeps this from
     /// deadlocking against `evict`, which takes the two gates in order.
-    fn release_unless_used(&self, path: &str, other_gates: &Mutex<HashMap<String, Weak<AsyncMutex<()>>>>) {
+    fn release_unless_used(
+        &self,
+        path: &str,
+        other_gates: &Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+    ) {
         let Ok(other_gate) = Self::gate_for(other_gates, path) else {
             return;
         };
@@ -274,8 +283,12 @@ async fn register_file_as_t(
     use datafusion::datasource::listing::ListingOptions;
 
     let file_path = std::path::Path::new(path);
-    let url = url::Url::from_file_path(file_path)
-        .map_err(|_| format!("Failed to register parquet file: not an absolute path: {}", path))?;
+    let url = url::Url::from_file_path(file_path).map_err(|_| {
+        format!(
+            "Failed to register parquet file: not an absolute path: {}",
+            path
+        )
+    })?;
     let extension = file_path
         .extension()
         .and_then(|e| e.to_str())
@@ -464,10 +477,16 @@ pub fn range_reader(
         .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
 
     let num_rows = builder.metadata().file_metadata().num_rows();
-    let total_rows = usize::try_from(num_rows)
-        .map_err(|_| format!("Failed to read parquet file {}: invalid row count {}", path, num_rows))?;
+    let total_rows = usize::try_from(num_rows).map_err(|_| {
+        format!(
+            "Failed to read parquet file {}: invalid row count {}",
+            path, num_rows
+        )
+    })?;
     let offset = offset.unwrap_or(0).min(total_rows);
-    let limit = limit.unwrap_or(total_rows - offset).min(total_rows - offset);
+    let limit = limit
+        .unwrap_or(total_rows - offset)
+        .min(total_rows - offset);
 
     builder
         .with_batch_size(batch_size.max(1))
@@ -485,12 +504,19 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     // otherwise unannotated integers. Filters must use the type actually
     // decoded by Arrow/DataFusion, not treat its displayed date as a number.
     let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
-        file_metadata.schema_descr(), file_metadata.key_value_metadata(),
-    ).map_err(|e| e.to_string())?;
+        file_metadata.schema_descr(),
+        file_metadata.key_value_metadata(),
+    )
+    .map_err(|e| e.to_string())?;
     for (column, field) in metadata.columns.iter_mut().zip(arrow_schema.fields()) {
-        if matches!(field.data_type(), DataType::Date32 | DataType::Date64 |
-            DataType::Time32(_) | DataType::Time64(_) | DataType::Timestamp(_, _))
-            && column.kind != ColumnKind::Temporal
+        if matches!(
+            field.data_type(),
+            DataType::Date32
+                | DataType::Date64
+                | DataType::Time32(_)
+                | DataType::Time64(_)
+                | DataType::Timestamp(_, _)
+        ) && column.kind != ColumnKind::Temporal
         {
             column.kind = ColumnKind::Temporal;
             column.column_type = format!("{:?}", field.data_type());
@@ -559,7 +585,9 @@ use arrow::json::LineDelimitedWriter;
 /// have no JSON spelling, so the writer silently emits `null` for them).
 fn contains_json_unsafe(data_type: &DataType) -> bool {
     match data_type {
-        DataType::Decimal128(_, _)
+        DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _)
         | DataType::Decimal256(_, _)
         | DataType::Float16
         | DataType::Float32
@@ -591,8 +619,16 @@ fn non_finite_floats_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
             .iter()
             .flatten()
             .any(|v| !v.to_f32().is_finite()),
-        DataType::Float32 => array.as_primitive::<Float32Type>().iter().flatten().any(|v| !v.is_finite()),
-        DataType::Float64 => array.as_primitive::<Float64Type>().iter().flatten().any(|v| !v.is_finite()),
+        DataType::Float32 => array
+            .as_primitive::<Float32Type>()
+            .iter()
+            .flatten()
+            .any(|v| !v.is_finite()),
+        DataType::Float64 => array
+            .as_primitive::<Float64Type>()
+            .iter()
+            .flatten()
+            .any(|v| !v.is_finite()),
         _ => false,
     };
     if !has_non_finite {
@@ -658,8 +694,12 @@ fn decimals_in_struct(array: &StructArray) -> Result<StructArray, String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
     let (converted_fields, converted_columns): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
-    StructArray::try_new(converted_fields.into(), converted_columns, array.nulls().cloned())
-        .map_err(|e| e.to_string())
+    StructArray::try_new(
+        converted_fields.into(),
+        converted_columns,
+        array.nulls().cloned(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
@@ -667,10 +707,11 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
         return Ok(array.clone());
     }
     match array.data_type() {
-        DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
-            arrow::compute::cast(array, &DataType::Utf8)
-                .map_err(|e| format!("Failed to render decimal column: {}", e))
-        }
+        DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => arrow::compute::cast(array, &DataType::Utf8)
+            .map_err(|e| format!("Failed to render decimal column: {}", e)),
         DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             non_finite_floats_as_strings(array)
         }
@@ -876,9 +917,12 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
 
     // The walk touches every value, so skip it for schemas that cannot hold
     // an unsafe integer (mirrors json_unsafe_to_strings' early return).
-    let may_overflow = batches
-        .first()
-        .is_some_and(|b| b.schema().fields().iter().any(|f| contains_big_integer(f.data_type())));
+    let may_overflow = batches.first().is_some_and(|b| {
+        b.schema()
+            .fields()
+            .iter()
+            .any(|f| contains_big_integer(f.data_type()))
+    });
     if may_overflow {
         rows.iter_mut().for_each(stringify_unsafe_integers);
     }
@@ -890,7 +934,10 @@ pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 fn is_float(data_type: &DataType) -> bool {
-    matches!(data_type, DataType::Float16 | DataType::Float32 | DataType::Float64)
+    matches!(
+        data_type,
+        DataType::Float16 | DataType::Float32 | DataType::Float64
+    )
 }
 
 /// The JavaScript spelling of a float JSON cannot carry, or None for a finite one.
@@ -930,13 +977,19 @@ fn restore_non_finite_floats(rows: &mut [Value], batches: &[RecordBatch]) {
                     .as_primitive::<Float32Type>()
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, v)| v.and_then(|v| non_finite_spelling(v as f64)).map(|s| (i, s)))
+                    .filter_map(|(i, v)| {
+                        v.and_then(|v| non_finite_spelling(v as f64))
+                            .map(|s| (i, s))
+                    })
                     .collect(),
                 DataType::Float16 => column
                     .as_primitive::<Float16Type>()
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, v)| v.and_then(|v| non_finite_spelling(v.to_f64())).map(|s| (i, s)))
+                    .filter_map(|(i, v)| {
+                        v.and_then(|v| non_finite_spelling(v.to_f64()))
+                            .map(|s| (i, s))
+                    })
                     .collect(),
                 _ => continue,
             };
@@ -1177,7 +1230,11 @@ fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>,
             }
             let take = batch.num_rows().min(*remaining);
             *remaining -= take;
-            Some(if take == batch.num_rows() { batch } else { batch.slice(0, take) })
+            Some(if take == batch.num_rows() {
+                batch
+            } else {
+                batch.slice(0, take)
+            })
         })
         .collect();
     (kept, true)
@@ -1187,6 +1244,7 @@ fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>,
 mod tests {
     use super::{truncate_batches, ParquetCache};
     use crate::models::{ColumnKind, ParquetMetadata};
+    use crate::services::test_support::{self, write_parquet};
     use arrow::array::{
         Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
         Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder, StructArray,
@@ -1194,7 +1252,6 @@ mod tests {
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use arrow::record_batch::RecordBatch;
     use std::path::{Path, PathBuf};
-    use crate::services::test_support::{self, write_parquet};
     use std::sync::{mpsc, Arc};
     use std::time::Duration;
 
@@ -1345,6 +1402,57 @@ mod tests {
         assert_eq!(rows[0]["pair"][1], "2.00");
     }
 
+    /// The narrow decimals arrow added after 128/256 take the same string
+    /// path, at the top level and inside a list, or the JSON writer would
+    /// refuse the batch.
+    #[tokio::test]
+    async fn narrow_decimals_render_as_exact_strings() {
+        use arrow::array::{Decimal32Array, Decimal32Builder, Decimal64Array};
+        let small = Decimal32Array::from(vec![Some(12345), None])
+            .with_precision_and_scale(9, 2)
+            .unwrap();
+        let medium = Decimal64Array::from(vec![Some(-1i64), Some(123456789012345678i64)])
+            .with_precision_and_scale(18, 4)
+            .unwrap();
+        let mut prices = ListBuilder::new(
+            Decimal32Builder::new()
+                .with_precision_and_scale(9, 2)
+                .unwrap(),
+        );
+        for _ in 0..2 {
+            prices.values().append_value(150);
+            prices.append(true);
+        }
+        let prices = prices.finish();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("small", DataType::Decimal32(9, 2), true),
+            Field::new("medium", DataType::Decimal64(18, 4), true),
+            Field::new("prices", prices.data_type().clone(), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(small) as ArrayRef,
+                Arc::new(medium),
+                Arc::new(prices),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("narrow_decimals.parquet");
+        write_parquet(&path, &batch, None);
+
+        let cache = ParquetCache::new();
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+            .await
+            .expect("narrow decimals must not fail the read");
+        assert_eq!(rows[0]["small"], "123.45");
+        assert!(rows[1].get("small").map_or(true, |v| v.is_null()));
+        assert_eq!(rows[0]["medium"], "-0.0001");
+        assert_eq!(rows[1]["medium"], "12345678901234.5678");
+        assert_eq!(rows[0]["prices"][0], "1.50");
+    }
+
     /// pandas writes missing floats as NaN; the grid must not show them as NULL.
     #[tokio::test]
     async fn non_finite_floats_are_distinguishable_from_null() {
@@ -1364,8 +1472,22 @@ mod tests {
                     None,
                     Some(2.0),
                 ])) as ArrayRef,
-                Arc::new(arrow::array::Float32Array::from(vec![Some(2.0), None, None, None, None, None])),
-                Arc::new(arrow::array::Float64Array::from(vec![Some(0.1 + 0.2), None, None, None, None, None])),
+                Arc::new(arrow::array::Float32Array::from(vec![
+                    Some(2.0),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ])),
+                Arc::new(arrow::array::Float64Array::from(vec![
+                    Some(0.1 + 0.2),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ])),
             ],
         )
         .unwrap();
@@ -1424,14 +1546,25 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rows.len(), 3);
-        assert_eq!(super::count_data(&cache, &path.to_string_lossy(), None).await.unwrap(), 3);
+        assert_eq!(
+            super::count_data(&cache, &path.to_string_lossy(), None)
+                .await
+                .unwrap(),
+            3
+        );
     }
 
     /// Glob characters are legal in file names; they must not be treated as
     /// a pattern over the parent directory.
     #[tokio::test]
     async fn reads_files_whose_names_contain_glob_characters() {
-        for name in ["glob[1].parquet", "what?.parquet", "star*.parquet", "sp ace.parquet", "pct%20.parquet"] {
+        for name in [
+            "glob[1].parquet",
+            "what?.parquet",
+            "star*.parquet",
+            "sp ace.parquet",
+            "pct%20.parquet",
+        ] {
             let path = temp_path("globs").join(name);
             write_small(&path);
             let cache = ParquetCache::new();
@@ -1451,7 +1584,11 @@ mod tests {
         let run = |q: &'static str| {
             let cache = &cache;
             let file = file.clone();
-            async move { super::execute_sql_limited(cache, &file, q, Some(10)).await.map(|(b, _, _)| b) }
+            async move {
+                super::execute_sql_limited(cache, &file, q, Some(10))
+                    .await
+                    .map(|(b, _, _)| b)
+            }
         };
 
         for q in [
@@ -1470,8 +1607,19 @@ mod tests {
         // The table survived the attempts, and plain reads still work.
         let rows = super::read_data(&cache, &file, 0, 10, None).await.unwrap();
         assert_eq!(rows.len(), 3);
-        assert_eq!(run("SELECT * FROM t LIMIT 100;").await.unwrap().iter().map(|b| b.num_rows()).sum::<usize>(), 3);
-        assert!(run("EXPLAIN SELECT * FROM t").await.is_ok(), "EXPLAIN must not be limited");
+        assert_eq!(
+            run("SELECT * FROM t LIMIT 100;")
+                .await
+                .unwrap()
+                .iter()
+                .map(|b| b.num_rows())
+                .sum::<usize>(),
+            3
+        );
+        assert!(
+            run("EXPLAIN SELECT * FROM t").await.is_ok(),
+            "EXPLAIN must not be limited"
+        );
         assert!(run("SHOW TABLES").await.is_ok(), "information_schema is on");
     }
 
@@ -1499,12 +1647,23 @@ mod tests {
 
         let cache = ParquetCache::new();
         let file = path.to_string_lossy().to_string();
-        for (filter, expected) in [("\"hash\" = 1", 1), ("\"score\" = 1.5", 1), ("\"id\" = 7", 1), ("\"hash\" = 18446744073709551615", 1)] {
+        for (filter, expected) in [
+            ("\"hash\" = 1", 1),
+            ("\"score\" = 1.5", 1),
+            ("\"id\" = 7", 1),
+            ("\"hash\" = 18446744073709551615", 1),
+        ] {
             let rows = super::read_data(&cache, &file, 0, 10, Some(filter.to_string()))
                 .await
                 .unwrap_or_else(|e| panic!("{filter}: {e}"));
             assert_eq!(rows.len(), expected, "{filter}");
-            assert_eq!(super::count_data(&cache, &file, Some(filter.to_string())).await.unwrap(), expected, "{filter}");
+            assert_eq!(
+                super::count_data(&cache, &file, Some(filter.to_string()))
+                    .await
+                    .unwrap(),
+                expected,
+                "{filter}"
+            );
         }
     }
 
@@ -1529,7 +1688,11 @@ mod tests {
             Field::new("id", DataType::Int64, false),
             Field::new("name", DataType::Utf8, true),
             Field::new("x", DataType::Float64, true),
-            Field::new("ts", DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None), true),
+            Field::new(
+                "ts",
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                true,
+            ),
             Field::new("amount", DataType::Decimal128(12, 3), true),
             Field::new("ok", DataType::Boolean, true),
             Field::new("tags", tags.data_type().clone(), true),
@@ -1539,28 +1702,46 @@ mod tests {
             vec![
                 Arc::new(Int64Array::from((0..n as i64).collect::<Vec<_>>())) as ArrayRef,
                 Arc::new(StringArray::from(
-                    (0..n).map(|i| if i % 3 == 0 { None } else { Some(format!("row {i}")) }).collect::<Vec<_>>(),
+                    (0..n)
+                        .map(|i| {
+                            if i % 3 == 0 {
+                                None
+                            } else {
+                                Some(format!("row {i}"))
+                            }
+                        })
+                        .collect::<Vec<_>>(),
                 )),
                 Arc::new(Float64Array::from(
-                    (0..n).map(|i| if i == 4 { f64::NAN } else { i as f64 / 4.0 }).collect::<Vec<_>>(),
+                    (0..n)
+                        .map(|i| if i == 4 { f64::NAN } else { i as f64 / 4.0 })
+                        .collect::<Vec<_>>(),
                 )),
                 Arc::new(TimestampMillisecondArray::from(
-                    (0..n).map(|i| Some(1_700_000_000_000 + i as i64 * 3_600_000)).collect::<Vec<_>>(),
+                    (0..n)
+                        .map(|i| Some(1_700_000_000_000 + i as i64 * 3_600_000))
+                        .collect::<Vec<_>>(),
                 )),
                 Arc::new(
-                    Decimal128Array::from((0..n).map(|i| Some(i as i128 * 1_001)).collect::<Vec<_>>())
-                        .with_precision_and_scale(12, 3)
-                        .unwrap(),
+                    Decimal128Array::from(
+                        (0..n).map(|i| Some(i as i128 * 1_001)).collect::<Vec<_>>(),
+                    )
+                    .with_precision_and_scale(12, 3)
+                    .unwrap(),
                 ),
                 Arc::new(BooleanArray::from(
-                    (0..n).map(|i| if i % 4 == 0 { None } else { Some(i % 2 == 0) }).collect::<Vec<_>>(),
+                    (0..n)
+                        .map(|i| if i % 4 == 0 { None } else { Some(i % 2 == 0) })
+                        .collect::<Vec<_>>(),
                 )),
                 Arc::new(tags),
             ],
         )
         .unwrap();
         let path = temp_path("pages.parquet");
-        let props = WriterProperties::builder().set_max_row_group_row_count(Some(4)).build();
+        let props = WriterProperties::builder()
+            .set_max_row_group_row_count(Some(4))
+            .build();
         write_parquet(&path, &batch, Some(props));
 
         let cache = ParquetCache::new();
@@ -1568,7 +1749,9 @@ mod tests {
         // (offset, limit): inside one row group, across a boundary, the tail
         // clipped by the end, an empty page past the end, and everything.
         for (offset, limit) in [(0, 3), (2, 5), (8, 5), (10, 5), (42, 1), (0, 100)] {
-            let direct = super::read_data(&cache, &file, offset, limit, None).await.unwrap();
+            let direct = super::read_data(&cache, &file, offset, limit, None)
+                .await
+                .unwrap();
             let via_sql = super::read_data(&cache, &file, offset, limit, Some("1 = 1".into()))
                 .await
                 .unwrap();
@@ -1622,9 +1805,17 @@ mod tests {
         let creation = tokio::spawn(async move {
             creating_cache
                 .get_or_create_metadata_with("same-path", move || {
-                    started_tx.send(()).expect("test must receive creation signal");
-                    release_rx.recv().expect("test must release metadata creation");
-                    Ok(ParquetMetadata { num_rows: 1, num_columns: 0, columns: vec![] })
+                    started_tx
+                        .send(())
+                        .expect("test must receive creation signal");
+                    release_rx
+                        .recv()
+                        .expect("test must release metadata creation");
+                    Ok(ParquetMetadata {
+                        num_rows: 1,
+                        num_columns: 0,
+                        columns: vec![],
+                    })
                 })
                 .await
         });
@@ -1636,15 +1827,23 @@ mod tests {
         let evicting_cache = Arc::clone(&cache);
         let mut eviction = tokio::spawn(async move { evicting_cache.evict("same-path").await });
         assert!(
-            tokio::time::timeout(Duration::from_millis(100), &mut eviction).await.is_err(),
+            tokio::time::timeout(Duration::from_millis(100), &mut eviction)
+                .await
+                .is_err(),
             "eviction must wait for the in-flight creation before removing its result"
         );
 
-        release_tx.send(()).expect("metadata creation must still be waiting");
+        release_tx
+            .send(())
+            .expect("metadata creation must still be waiting");
         assert!(creation.await.expect("creation task must complete").is_ok());
         assert!(eviction.await.expect("eviction task must complete").is_ok());
         assert!(
-            !cache.metadata.lock().expect("metadata cache lock").contains_key("same-path"),
+            !cache
+                .metadata
+                .lock()
+                .expect("metadata cache lock")
+                .contains_key("same-path"),
             "an eviction issued during creation must leave no stale metadata behind"
         );
     }
@@ -1673,10 +1872,18 @@ mod tests {
 
         let cache = ParquetCache::with_access(access);
         cache.get_or_create_metadata(&path).await.unwrap();
-        assert_eq!(fake.active(), std::slice::from_ref(&path), "filling the metadata entry resolves the bookmark");
+        assert_eq!(
+            fake.active(),
+            std::slice::from_ref(&path),
+            "filling the metadata entry resolves the bookmark"
+        );
         cache.get_or_create_session(&path).await.unwrap();
         cache.get_or_create_metadata(&path).await.unwrap();
-        assert_eq!(fake.starts(), 2, "the session fill reuses the held grant; hits do not touch it");
+        assert_eq!(
+            fake.starts(),
+            2,
+            "the session fill reuses the held grant; hits do not touch it"
+        );
 
         cache.evict(&path).await.unwrap();
         assert!(fake.active().is_empty(), "eviction ends the grant");
@@ -1686,7 +1893,9 @@ mod tests {
     /// A cache over `FakeBookmarks`, with `path` recorded in an earlier
     /// session and its grant released — the shape a Recent Files or session
     /// entry has at launch, where a fill has to resolve the bookmark itself.
-    fn cache_over_recorded_file(path: &str) -> (ParquetCache, crate::services::access::fake::FakeBookmarks) {
+    fn cache_over_recorded_file(
+        path: &str,
+    ) -> (ParquetCache, crate::services::access::fake::FakeBookmarks) {
         use crate::services::access::fake::FakeBookmarks;
         use crate::services::access::FileAccess;
 
@@ -1718,9 +1927,16 @@ mod tests {
 
         for attempt in 1..=2 {
             cache.get_or_create_metadata(&path).await.unwrap_err();
-            assert!(fake.active().is_empty(), "attempt {attempt} left a grant behind");
+            assert!(
+                fake.active().is_empty(),
+                "attempt {attempt} left a grant behind"
+            );
             assert_eq!(fake.starts(), 1 + attempt, "the fill resolved the bookmark");
-            assert_eq!(fake.stops(), 1 + attempt, "and gave it back when the decode failed");
+            assert_eq!(
+                fake.stops(),
+                1 + attempt,
+                "and gave it back when the decode failed"
+            );
         }
         assert!(cache.metadata.lock().unwrap().is_empty());
         assert!(cache.sessions.lock().unwrap().is_empty());
@@ -1745,13 +1961,23 @@ mod tests {
         let (cache, fake) = cache_over_recorded_file(&path);
 
         cache
-            .get_or_create_metadata_with(&path, || Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] }))
+            .get_or_create_metadata_with(&path, || {
+                Ok(ParquetMetadata {
+                    num_rows: 0,
+                    num_columns: 0,
+                    columns: vec![],
+                })
+            })
             .await
             .unwrap();
         assert_eq!(fake.active(), std::slice::from_ref(&path));
 
         assert!(cache.get_or_create_session(&path).await.is_err());
-        assert_eq!(fake.active(), std::slice::from_ref(&path), "the tab's grant survives the session failure");
+        assert_eq!(
+            fake.active(),
+            std::slice::from_ref(&path),
+            "the tab's grant survives the session failure"
+        );
         assert_eq!((fake.starts(), fake.stops()), (2, 1));
 
         cache.evict(&path).await.unwrap();
@@ -1778,16 +2004,30 @@ mod tests {
                     .get_or_create_metadata_with(&path, move || {
                         started_tx.send(()).unwrap();
                         release_rx.recv().unwrap()?;
-                        Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] })
+                        Ok(ParquetMetadata {
+                            num_rows: 0,
+                            num_columns: 0,
+                            columns: vec![],
+                        })
                     })
                     .await
             })
         };
-        started_rx.recv_timeout(Duration::from_secs(1)).expect("metadata creation must begin");
-        assert_eq!(fake.active(), std::slice::from_ref(&path), "the metadata fill holds the grant");
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("metadata creation must begin");
+        assert_eq!(
+            fake.active(),
+            std::slice::from_ref(&path),
+            "the metadata fill holds the grant"
+        );
 
         assert!(cache.get_or_create_session(&path).await.is_err());
-        assert_eq!(fake.active(), std::slice::from_ref(&path), "the in-flight metadata fill still needs it");
+        assert_eq!(
+            fake.active(),
+            std::slice::from_ref(&path),
+            "the in-flight metadata fill still needs it"
+        );
         assert_eq!((fake.starts(), fake.stops()), (2, 1));
 
         release_tx.send(Ok(())).unwrap();
@@ -1818,18 +2058,28 @@ mod tests {
                     .get_or_create_metadata_with(&path, move || {
                         started_tx.send(()).unwrap();
                         release_rx.recv().unwrap()?;
-                        Ok(ParquetMetadata { num_rows: 0, num_columns: 0, columns: vec![] })
+                        Ok(ParquetMetadata {
+                            num_rows: 0,
+                            num_columns: 0,
+                            columns: vec![],
+                        })
                     })
                     .await
             })
         };
-        started_rx.recv_timeout(Duration::from_secs(1)).expect("metadata creation must begin");
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("metadata creation must begin");
         cache.get_or_create_session(&path).await.unwrap();
         assert_eq!(fake.active(), std::slice::from_ref(&path));
 
         release_tx.send(Err("decode failed".into())).unwrap();
         creation.await.unwrap().unwrap_err();
-        assert_eq!(fake.active(), std::slice::from_ref(&path), "the session entry still holds the grant");
+        assert_eq!(
+            fake.active(),
+            std::slice::from_ref(&path),
+            "the session entry still holds the grant"
+        );
         assert_eq!((fake.starts(), fake.stops()), (2, 1));
         assert!(cache.metadata.lock().unwrap().is_empty());
 
@@ -1843,7 +2093,10 @@ mod tests {
         let schema = Arc::new(Schema::new(vec![Field::new("d", DataType::Date64, true)]));
         let batch = RecordBatch::try_new(
             schema.clone(),
-            vec![Arc::new(arrow::array::Date64Array::from(vec![Some(1_709_164_800_000), None])) as ArrayRef],
+            vec![Arc::new(arrow::array::Date64Array::from(vec![
+                Some(1_709_164_800_000),
+                None,
+            ])) as ArrayRef],
         )
         .unwrap();
         let path = temp_path("date64.parquet");
@@ -1858,7 +2111,10 @@ mod tests {
     #[test]
     fn page_query_covers_every_clause_combination() {
         use super::build_page_query;
-        assert_eq!(build_page_query(None, Some(0), Some(50)), "SELECT * FROM t LIMIT 50");
+        assert_eq!(
+            build_page_query(None, Some(0), Some(50)),
+            "SELECT * FROM t LIMIT 50"
+        );
         assert_eq!(
             build_page_query(Some("  "), Some(100), Some(50)),
             "SELECT * FROM t LIMIT 50 OFFSET 100"
@@ -1889,8 +2145,10 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Int64Array::from(vec![9007199254740993i64, -9007199254740993i64]))
-                    as ArrayRef,
+                Arc::new(Int64Array::from(vec![
+                    9007199254740993i64,
+                    -9007199254740993i64,
+                ])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![42i64, 9007199254740991i64])),
                 Arc::new(nested),
             ],
@@ -2053,9 +2311,15 @@ mod tests {
         };
         assert_eq!(super::count_from_batches(&[]).unwrap(), 0);
         assert_eq!(super::count_from_batches(&[count(vec![])]).unwrap(), 0);
-        assert_eq!(super::count_from_batches(&[count(vec![]), count(vec![42])]).unwrap(), 42);
+        assert_eq!(
+            super::count_from_batches(&[count(vec![]), count(vec![42])]).unwrap(),
+            42
+        );
         assert!(super::count_from_batches(&[count(vec![-1])]).is_err());
-        assert!(super::count_from_batches(&[batch(1)]).is_err(), "an Int32 column is not a count");
+        assert!(
+            super::count_from_batches(&[batch(1)]).is_err(),
+            "an Int32 column is not a count"
+        );
     }
 
     #[test]
