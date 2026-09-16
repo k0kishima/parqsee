@@ -1443,10 +1443,16 @@ await scenario('S21-sort', async ({ page, bridge }) => {
   const p2 = await visibleGrid(page);
   check('S21.page2', p2[0][0] === '350' && p2[49][0] === String(99 * 7) && p2.every(r => r[1] === '0'), `first=${p2[0]?.slice(0, 2)} last=${p2[49]?.slice(0, 2)}`);
   check('S21.headersRead', (await headerCols(page)).slice(0, 2).join(',') === 'id,grp', `headers=${await headerCols(page)}`);
+  // The last page is read from the far end of the reversed order and
+  // turned around: the highest ids of grp 6, still ascending.
+  await page.locator('button:has-text("Next") + button').click(); await waitGrid(page);
+  const lastPage = await visibleGrid(page);
+  const maxGrp6 = N21 - 1 - ((N21 - 1 - 6) % 7);
+  check('S21.lastPage', (await footer(page)) === `Showing ${N21 - 49} to ${N21} of 100,000 entries` && lastPage.every(r => r[1] === '6') && lastPage[49][0] === String(maxGrp6) && lastPage[48][0] === String(maxGrp6 - 7), `footer=${await footer(page)} last=${lastPage[49]?.slice(0, 2)} before=${lastPage[48]?.slice(0, 2)}`);
+  await act(page).locator('input[inputmode="numeric"]').fill('1'); await act(page).locator('input[inputmode="numeric"]').press('Enter'); await waitGrid(page);
 
   // A second click reverses the whole sequence, tie-break included, and
   // starts over from the first page.
-  const maxGrp6 = N21 - 1 - ((N21 - 1 - 6) % 7);
   await sortButton('grp').click(); await waitGrid(page);
   const d = await visibleGrid(page);
   check('S21.desc', (await ariaSort('grp')) === 'descending' && d[0][1] === '6' && d[0][0] === String(maxGrp6) && d[1][0] === String(maxGrp6 - 7) && (await footer(page))?.startsWith('Showing 1 to 50'), `first=${d[0]?.slice(0, 2)} second=${d[1]?.slice(0, 2)} footer=${await footer(page)}`);

@@ -1113,33 +1113,17 @@ pub fn build_page_query(
     query
 }
 
-/// The `ORDER BY` terms for `sort`, resolved against the file's columns
-/// (which `order_by_terms` needs for the tie-breakers). `None` when there
-/// is no sort.
-async fn order_by_for(
-    cache: &ParquetCache,
-    path: &str,
-    sort: Option<&SortSpec>,
-) -> Result<Option<String>, String> {
-    match sort {
-        Some(sort) => {
-            let metadata = cache.get_or_create_metadata(path).await?;
-            order_by_terms(sort, &metadata.columns).map(Some)
-        }
-        None => Ok(None),
-    }
-}
-
 /// One page of rows. Without a filter or a sort the page comes straight
 /// from the parquet reader with the range pushed down (see `range_reader`);
 /// a `LIMIT/OFFSET` query would decode every row before the page, so the
 /// last page of a large file took seconds in release and a minute in
 /// debug. With a filter or a sort the page is the DataFusion query the
 /// export shares, so what is exported is what the grid shows. Both paths
-/// read row groups in file order, so the two paginate the same sequence
-/// (and a sort, being an `ORDER BY` over the whole file for every page,
-/// costs a scan per page: the price of a sort key the file does not have —
-/// see `order_by_terms` for what keeps its pages consistent).
+/// read row groups in file order, so the two paginate the same sequence.
+/// A sort is an `ORDER BY` over the whole file for every page, a scan per
+/// page — the price of a sort key the file does not have; see
+/// `order_by_terms` for what keeps its pages consistent and `sorted_page`
+/// for how the deep pages are kept as cheap as the first.
 pub async fn read_data(
     cache: &ParquetCache,
     path: &str,
@@ -1148,9 +1132,11 @@ pub async fn read_data(
     filter: Option<String>,
     sort: Option<SortSpec>,
 ) -> Result<Vec<Value>, String> {
-    let order_by = order_by_for(cache, path, sort.as_ref()).await?;
-    let batches = match (where_clause(filter.as_deref()), order_by) {
-        (None, None) => {
+    if let Some(sort) = sort {
+        return sorted_page(cache, path, offset, limit, filter, sort).await;
+    }
+    let batches = match where_clause(filter.as_deref()) {
+        None => {
             // Decoding is CPU-bound; keep it off the async workers so other
             // commands (a count, another tab's page) are not stalled behind it.
             let path = path.to_string();
@@ -1162,9 +1148,8 @@ pub async fn read_data(
             .await
             .map_err(|e| format!("Page read task failed: {}", e))??
         }
-        (_, order_by) => {
-            let query =
-                build_page_query(filter.as_deref(), order_by.as_deref(), Some(offset), Some(limit));
+        Some(_) => {
+            let query = build_page_query(filter.as_deref(), None, Some(offset), Some(limit));
             execute_sql_with_cache(cache, path, &query).await?.0
         }
     };
@@ -1184,6 +1169,67 @@ pub async fn count_data(
 
     let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
     count_from_batches(&batches)
+}
+
+/// The window of the reversed sequence that holds page `[offset, offset +
+/// limit)` of a sequence of `total` rows, when the page lies in the far
+/// half; `None` for a page in the near half, which is read as it is.
+///
+/// DataFusion answers `ORDER BY ... LIMIT l OFFSET o` with a top-k heap of
+/// `o + l` rows, so a page's cost grows with its offset: on a 58M-row file
+/// the first page sorted in 2.5–3.8 s, the page at offset 1M in 29 s, and
+/// the last page in 180 s with an 11 GB peak — the whole file in the heap.
+/// The descending order is the exact reverse of the ascending one (every
+/// key in the same direction, `NULLS LAST` / `NULLS FIRST` swapped), so
+/// the last page ascending is the first page descending read backwards,
+/// and a page past the midpoint is read from the other end with the same
+/// small heap. The worst page is now the middle one, at half the file.
+pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usize, usize)> {
+    if offset >= total || offset <= total / 2 {
+        return None;
+    }
+    let limit = limit.min(total - offset);
+    Some((total - offset - limit, limit))
+}
+
+/// A page of the sorted sequence: the `ORDER BY ... LIMIT/OFFSET` query
+/// as is for the near half, and for the far half the same window of the
+/// reversed order, read from the other end and turned around
+/// (`mirrored_window`). The filtered count that decides which half a page
+/// is in is a scan of its own, cheap beside the sort.
+async fn sorted_page(
+    cache: &ParquetCache,
+    path: &str,
+    offset: usize,
+    limit: usize,
+    filter: Option<String>,
+    sort: SortSpec,
+) -> Result<Vec<Value>, String> {
+    let metadata = cache.get_or_create_metadata(path).await?;
+    let total = match where_clause(filter.as_deref()) {
+        Some(_) => count_data(cache, path, filter.clone()).await?,
+        None => usize::try_from(metadata.num_rows).unwrap_or(usize::MAX),
+    };
+    let (sort, offset, limit, mirrored) = match mirrored_window(offset, limit, total) {
+        Some((offset, limit)) => (
+            SortSpec {
+                column: sort.column,
+                direction: sort.direction.reversed(),
+            },
+            offset,
+            limit,
+            true,
+        ),
+        None => (sort, offset, limit, false),
+    };
+    let order_by = order_by_terms(&sort, &metadata.columns)?;
+    let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
+    let batches = execute_sql_with_cache(cache, path, &query).await?.0;
+    let mut rows = batches_to_rows(&batches)?;
+    if mirrored {
+        rows.reverse();
+    }
+    Ok(rows)
 }
 
 /// The single value of a `SELECT COUNT(*)` result; an empty result counts as 0.
@@ -2230,6 +2276,23 @@ mod tests {
                 physical_type: String::new(),
             })
             .collect()
+    }
+
+    #[test]
+    fn deep_pages_are_read_from_the_far_end() {
+        use super::mirrored_window;
+        // The near half, the midpoint included, is read as it is.
+        assert_eq!(mirrored_window(0, 7, 61), None);
+        assert_eq!(mirrored_window(30, 7, 61), None);
+        // Past the midpoint: the same rows counted from the other end.
+        assert_eq!(mirrored_window(31, 7, 61), Some((23, 7)));
+        assert_eq!(mirrored_window(49, 7, 61), Some((5, 7)));
+        // The last page is clipped by the end, so it starts the reversed order.
+        assert_eq!(mirrored_window(56, 7, 61), Some((0, 5)));
+        // Past the end there is nothing to mirror (the query answers empty).
+        assert_eq!(mirrored_window(61, 7, 61), None);
+        assert_eq!(mirrored_window(70, 7, 61), None);
+        assert_eq!(mirrored_window(0, 7, 0), None);
     }
 
     #[test]

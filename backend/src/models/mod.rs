@@ -121,6 +121,15 @@ pub enum SortDirection {
     Desc,
 }
 
+impl SortDirection {
+    pub fn reversed(self) -> Self {
+        match self {
+            SortDirection::Asc => SortDirection::Desc,
+            SortDirection::Desc => SortDirection::Asc,
+        }
+    }
+}
+
 /// A tab from the last session, as the webview reopens it at launch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "ipc/")]
