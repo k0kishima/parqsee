@@ -48,9 +48,9 @@ describe('ColumnProfilePanel', () => {
     vi.clearAllMocks();
   });
 
-  it('shows the counts and every value, and a click filters by the value', async () => {
+  it('shows the counts and every value, and a click filters by the value and closes the panel', async () => {
     mockProfileColumn.mockResolvedValue(topValues);
-    const { onAddConditions } = renderPanel(cat);
+    const { onAddConditions, onClose } = renderPanel(cat);
     expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
 
     expect(await screen.findByText('5')).toBeInTheDocument();
@@ -64,14 +64,17 @@ describe('ColumnProfilePanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'a: 2' }));
     expect(onAddConditions).toHaveBeenCalledWith([{ column: 'cat', operator: '=', value: 'a' }]);
+    // One value leaves nothing to chart, so the panel goes.
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     await userEvent.click(screen.getByRole('button', { name: 'viewer.profile.null: 1' }));
     expect(onAddConditions).toHaveBeenCalledWith([{ column: 'cat', operator: 'IS NULL', value: '' }]);
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it('turns a histogram bucket into a range condition and names what was not binned', async () => {
+  it('turns a histogram bucket into a range condition, stays open for the drill-down, and names what was not binned', async () => {
     mockProfileColumn.mockResolvedValue(histogram);
-    const { onAddConditions } = renderPanel(price, '"price" > 0');
+    const { onAddConditions, onClose } = renderPanel(price, '"price" > 0');
     expect(await screen.findByText('viewer.profile.distribution')).toBeInTheDocument();
     expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'price', '"price" > 0');
     expect(screen.getByText('viewer.profile.notBinned')).toBeInTheDocument();
@@ -81,6 +84,7 @@ describe('ColumnProfilePanel', () => {
       { column: 'price', operator: '>=', value: '0.5' },
       { column: 'price', operator: '<', value: '1' },
     ]);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('says when the list is only the commonest values', async () => {

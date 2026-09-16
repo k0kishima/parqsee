@@ -13,7 +13,12 @@ interface ColumnProfilePanelProps {
   /** The grid's WHERE fragment; the profile describes the rows it keeps. */
   filter: string;
   onClose: () => void;
-  /** A click on a value or a bucket: the conditions that select its rows. */
+  /**
+   * A click on a value or a bucket: the conditions that select its rows.
+   * The panel calls `onClose` after it for a value or NULL — the profile
+   * of one value is a single bar, so there is nothing left to show — and
+   * stays open for a bucket, whose rows it bins again (the drill-down).
+   */
   onAddConditions: (conditions: FilterCondition[]) => void;
 }
 
@@ -122,9 +127,18 @@ function ProfileRequest({ filePath, column, filter, onClose, onAddConditions }: 
     return () => { ++requestSeq.current; };
   }, [filePath, columnName, filter]);
 
-  const filterValue = (value: ValueCount) =>
+  // A value or NULL narrows the column to one thing: the chart would come
+  // back as one bar, so the panel closes and the eye is left with the
+  // condition the filter bar highlights. A bucket keeps the panel open,
+  // because the next profile bins that range again.
+  const filterValue = (value: ValueCount) => {
     onAddConditions([{ column: columnName, operator: '=', value: formatCellValue(value.value) ?? '' }]);
-  const filterNull = () => onAddConditions([{ column: columnName, operator: 'IS NULL', value: '' }]);
+    onClose();
+  };
+  const filterNull = () => {
+    onAddConditions([{ column: columnName, operator: 'IS NULL', value: '' }]);
+    onClose();
+  };
   const filterBucket = (bucket: HistogramBucket) =>
     onAddConditions([
       { column: columnName, operator: '>=', value: bucket.lower },

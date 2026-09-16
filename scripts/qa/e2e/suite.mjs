@@ -1213,12 +1213,14 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   check('S19.stats', stats.join('|') === '5|1 20%|3', stats.join('|'));
   check('S19.headerMarked', await profileButton('cat').getAttribute('aria-pressed') === 'true');
 
-  // A click on a value filters by it; the grid and the panel both follow.
+  // A click on a value filters by it. One value leaves nothing to chart, so
+  // the panel closes and the new condition takes focus in the filter bar.
   await panel().locator('button[aria-label="a: 2"]').click();
   await waitGrid(page);
   check('S19.valueFilter', (await footer(page)) === 'Showing 1 to 2 of 2 entries' && await filterInputs().first().inputValue() === 'a', `footer=${await footer(page)} value=${await filterInputs().first().inputValue()}`);
-  await waitBars('a: 2');
-  check('S19.reprofiled', profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.filter))}`);
+  check('S19.valueClosesPanel', (await panel().count()) === 0 && await profileButton('cat').getAttribute('aria-pressed') === 'false', `panels=${await panel().count()}`);
+  check('S19.valueFocused', await page.evaluate(() => document.activeElement instanceof HTMLInputElement && document.activeElement.value), await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
+  check('S19.notReprofiled', !profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.filter))}`);
   // A restored predicate must survive a click on another column's chart.
   await page.waitForTimeout(600);
   await page.reload();
@@ -1233,14 +1235,16 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await profileButton('cat').click();
   await waitBars('a: 2|b: 1|c: 1|NULL: 1');
 
-  // The NULL row filters with IS NULL.
+  // The NULL row filters with IS NULL, and closes the panel like a value.
   await panel().locator('button[aria-label="NULL: 1"]').click();
   await waitGrid(page);
   check('S19.nullFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && (await visibleGrid(page))[0][0] === 'NULL', `footer=${await footer(page)} first=${(await visibleGrid(page))[0]}`);
+  check('S19.nullClosesPanel', (await panel().count()) === 0, `panels=${await panel().count()}`);
   await act(page).locator('button[title="Clear"]').click();
   await waitGrid(page);
 
   // The header button toggles; another column's button switches.
+  await profileButton('cat').click();
   await waitBars('a: 2|b: 1|c: 1|NULL: 1');
   await page.evaluate(() => { window.__delays.profile_column = 600; });
   await profileButton('n').click();
@@ -1260,6 +1264,8 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await panel().locator('ul button').first().click();
   await waitGrid(page);
   check('S19.bucketFilter', (await footer(page)).includes('of 5,000 ') && await filterInputs().count() === 2, `footer=${await footer(page)} rows=${await filterInputs().count()}`);
+  // A bucket keeps the panel open: its rows are binned again for the drill-down.
+  check('S19.bucketKeepsPanel', (await panel().count()) === 1, `panels=${await panel().count()}`);
   await waitFirstBar('0 – 500: 500');
   await panel().locator('ul button').first().click();
   await waitGrid(page);
