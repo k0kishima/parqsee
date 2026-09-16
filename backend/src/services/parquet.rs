@@ -1264,13 +1264,19 @@ async fn execute_browse_query(
     }
     let plan = plan_query_checked(&ctx, query).await?;
     let reusable = reusable_plan(&plan)?;
-    let batches = ctx.execute_logical_plan(plan).await
+    let mut batches = ctx.execute_logical_plan(plan).await
         .map_err(|e| format!("SQL execution failed: {}", e))?
         .collect().await.map_err(|e| format!("Failed to collect results: {}", e))?;
+    // LIMIT can return a slice backed by the entire top-k output. Copy only
+    // page-sized results; very large ranges remain uncached.
+    let page_sized = batches.iter().map(RecordBatch::num_rows).sum::<usize>() <= 8192;
+    if reusable && page_sized {
+        batches = batches.iter().map(compact_batch).collect::<Result<_, _>>()?;
+    }
     // Include keys as well as arrays; do not retain an unbounded filter string.
     let bytes = batches.iter().map(RecordBatch::get_array_memory_size).sum::<usize>()
         + path.len() + session_id.len() + query.len();
-    if reusable && bytes <= RESULT_CACHE_BYTES {
+    if reusable && page_sized && bytes <= RESULT_CACHE_BYTES {
         let sessions = cache.sessions.lock().map_err(|e| e.to_string())?;
         if sessions.get(path).is_some_and(|ctx| ctx.session_id() == session_id) {
             let mut results = cache.results.lock().map_err(|e| e.to_string())?;
@@ -1287,6 +1293,24 @@ async fn execute_browse_query(
         }
     }
     Ok(batches)
+}
+
+fn compact_batch(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    use arrow::array::{ArrayRef, BinaryViewArray, StringViewArray, UInt64Array};
+    let indices = UInt64Array::from_iter_values(0..batch.num_rows() as u64);
+    let columns = batch.columns().iter().map(|column| {
+        let taken = arrow::compute::take(column.as_ref(), &indices, None)?;
+        // take() copies view descriptors but retains the referenced blocks.
+        let compact: ArrayRef = if let Some(strings) = taken.as_any().downcast_ref::<StringViewArray>() {
+            Arc::new(strings.gc())
+        } else if let Some(binary) = taken.as_any().downcast_ref::<BinaryViewArray>() {
+            Arc::new(binary.gc())
+        } else {
+            taken
+        };
+        Ok(compact)
+    }).collect::<Result<Vec<_>, arrow::error::ArrowError>>().map_err(|e| e.to_string())?;
+    RecordBatch::try_new(batch.schema(), columns).map_err(|e| e.to_string())
 }
 
 /// The window of the reversed sequence that holds page `[offset, offset +
@@ -1342,8 +1366,8 @@ pub(crate) async fn sorted_page_batches(
     };
     let order_by = order_by_terms(&sort, &metadata.columns)?;
     let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
-    let batches = match execute_sql_with_cache(cache, path, &query).await {
-        Ok((batches, _)) => batches,
+    let batches = match execute_browse_query(cache, path, &query).await {
+        Ok(batches) => batches,
         // The top-k heap for a page this deep outgrew `SESSION_MEMORY_LIMIT`.
         Err(e) if e.contains("Resources exhausted") => {
             return Err("This page is too deep into the sort for a file this large: sorting it \
@@ -1859,6 +1883,46 @@ mod tests {
             super::execute_browse_query(&cache, &file, query).await.unwrap();
             assert!(!cache.results.lock().unwrap().iter().any(|r| r.query == query));
         }
+    }
+
+    #[test]
+    fn cached_pages_do_not_retain_the_topk_buffers() {
+        let strings = arrow::array::StringViewArray::from_iter_values(
+            (0..20_000).map(|i| format!("row {i:08} with a long string payload")),
+        );
+        let batch = RecordBatch::try_from_iter(vec![
+            ("id", Arc::new(Int64Array::from_iter_values(0..20_000)) as ArrayRef),
+            ("text", Arc::new(strings) as ArrayRef),
+        ]).unwrap().slice(10_000, 100);
+        let compact = super::compact_batch(&batch).unwrap();
+        assert_eq!(batch, compact);
+        assert!(compact.get_array_memory_size() < 20_000);
+        assert!(batch.get_array_memory_size() > 500_000);
+    }
+
+    #[tokio::test]
+    async fn sorted_pages_are_reused_with_distinct_windows_and_orders() {
+        let path = temp_path("cached_pages.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        for (offset, direction, filter, id) in [
+            (0, SortDirection::Asc, None, 1),
+            (1, SortDirection::Asc, None, 2),
+            (0, SortDirection::Desc, None, 3),
+            (0, SortDirection::Asc, Some("id > 1".to_string()), 2),
+        ] {
+            let sort = Some(SortSpec { column: "id".into(), direction });
+            let first = super::read_data(&cache, &file, offset, 1, filter.clone(), sort.clone()).await.unwrap();
+            assert_eq!(first[0]["id"], id);
+            let moved = path.with_extension("saved");
+            std::fs::rename(&path, &moved).unwrap();
+            let hit = super::read_data(&cache, &file, offset, 1, filter, sort).await.unwrap();
+            std::fs::rename(&moved, &path).unwrap();
+            assert_eq!(hit, first);
+        }
+        cache.evict(&file).await.unwrap();
+        assert!(cache.results.lock().unwrap().is_empty());
     }
 
     /// Glob characters are legal in file names; they must not be treated as
