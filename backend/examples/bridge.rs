@@ -36,6 +36,7 @@ use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
+use parqsee_lib::services::profile::profile_column;
 use parqsee_lib::services::sample::sample_path;
 use parqsee_lib::services::store::{AlwaysUnlocked, License};
 use serde_json::{json, Value};
@@ -124,6 +125,9 @@ async fn dispatch(
             .await?
         ),
         "count_parquet_data" => json!(count_data(cache, &s(&args, "path")?, opt_s(&args, "filter")).await?),
+        "profile_column" => json!(
+            profile_column(cache, &s(&args, "path")?, &s(&args, "column")?, opt_s(&args, "filter")).await?
+        ),
         "evict_cache" => {
             cache.evict(&s(&args, "path")?).await?;
             Value::Null

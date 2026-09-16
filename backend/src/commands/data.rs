@@ -1,7 +1,8 @@
 use crate::commands::guarded;
 use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
-use crate::services::{export, parquet};
+use crate::models::ColumnProfile;
+use crate::services::{export, parquet, profile};
 use std::sync::Arc;
 
 // No license check here: the free tier reads rows like the full version
@@ -29,6 +30,21 @@ pub async fn count_parquet_data(
 ) -> Result<usize, String> {
     guarded("Counting rows", async {
         parquet::count_data(&cache, &path, filter).await
+    })
+    .await
+}
+
+/// The column profile for the panel beside the grid; `filter` is the
+/// grid's `WHERE` fragment, so the panel describes the rows on screen.
+#[tauri::command]
+pub async fn profile_column(
+    cache: tauri::State<'_, ParquetCache>,
+    path: String,
+    column: String,
+    filter: Option<String>,
+) -> Result<ColumnProfile, String> {
+    guarded("Profiling the column", async {
+        profile::profile_column(&cache, &path, &column, filter).await
     })
     .await
 }

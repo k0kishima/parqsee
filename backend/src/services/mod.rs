@@ -3,6 +3,7 @@ pub mod export;
 pub mod menu_labels;
 pub mod opened;
 pub mod parquet;
+pub mod profile;
 pub mod recent_menu;
 pub mod sample;
 pub mod store;

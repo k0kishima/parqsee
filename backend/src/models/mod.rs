@@ -219,3 +219,61 @@ pub struct QueryResult {
     pub truncated: bool,
     pub max_rows: usize,
 }
+
+/// One value of a column and how many rows hold it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct ValueCount {
+    /// Rendered like a grid cell (`batches_to_rows`), so the webview shows
+    /// it as the grid does and can type it back into a filter as it is.
+    #[ts(type = "unknown")]
+    pub value: serde_json::Value,
+    pub count: usize,
+}
+
+/// One bucket of a histogram: `lower <= value < upper`. Both ends are SQL
+/// literals a filter on the column accepts as typed — bare numbers, or a
+/// date / time / timestamp in the text arrow renders it with — so a click on
+/// the bucket becomes `col >= lower AND col < upper` without another
+/// rendering step.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct HistogramBucket {
+    pub lower: String,
+    pub upper: String,
+    pub count: usize,
+}
+
+/// The chart a column profile carries; which one is
+/// `services::profile`'s decision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "shape", rename_all = "snake_case")]
+#[ts(export, export_to = "ipc/")]
+pub enum ProfileChart {
+    /// Values with their counts, commonest first. `other` is the number of
+    /// non-null rows whose value is not listed — 0 when the list is complete.
+    TopValues { values: Vec<ValueCount>, other: usize },
+    /// Equal-width buckets in value order over the column's range. `other`
+    /// is the number of non-null values no bucket holds: NaN and the
+    /// infinities of a float column.
+    Histogram { buckets: Vec<HistogramBucket>, other: usize },
+    /// A type the profile has no chart for (nested, interval); the counts
+    /// still apply.
+    Unsupported,
+}
+
+/// What one column holds under the grid's filter, for the panel beside the
+/// grid. Computed by `services::profile::profile_column`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct ColumnProfile {
+    pub column: String,
+    pub kind: ColumnKind,
+    /// Rows under the filter — the count the grid's footer shows.
+    pub total_rows: usize,
+    pub null_count: usize,
+    /// Distinct non-null values; absent for a type the count is not
+    /// defined on (nested, interval).
+    pub distinct_count: Option<usize>,
+    pub chart: ProfileChart,
+}
