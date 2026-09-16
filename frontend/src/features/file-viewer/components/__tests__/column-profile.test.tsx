@@ -124,4 +124,20 @@ describe('ColumnProfilePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'common.close' }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it.each(['column', 'filter', 'file'] as const)('removes old clickable bars immediately when the %s changes', async change => {
+    mockProfileColumn.mockResolvedValueOnce(topValues);
+    mockProfileColumn.mockImplementationOnce(() => new Promise(() => {}));
+    const props = { filePath: '/data/t.parquet', column: cat, filter: '', onClose: vi.fn(), onAddConditions: vi.fn() };
+    const { rerender } = render(<ColumnProfilePanel {...props} />);
+    expect(await screen.findByRole('button', { name: 'a: 2' })).toBeInTheDocument();
+    rerender(<ColumnProfilePanel {...props}
+      column={change === 'column' ? price : cat}
+      filter={change === 'filter' ? '"id" > 10' : ''}
+      filePath={change === 'file' ? '/data/other.parquet' : props.filePath}
+    />);
+    expect(screen.queryByRole('button', { name: 'a: 2' })).not.toBeInTheDocument();
+    expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
+    expect(props.onAddConditions).not.toHaveBeenCalled();
+  });
 });

@@ -88,7 +88,14 @@ const percent = (part: number, whole: number) =>
  * file, and a filtered scan can take longer than the unfiltered one that
  * replaced it.
  */
-export function ColumnProfilePanel({ filePath, column, filter, onClose, onAddConditions }: ColumnProfilePanelProps) {
+export function ColumnProfilePanel(props: ColumnProfilePanelProps) {
+  // A chart belongs to the complete request, including its filter. Remount
+  // before painting a different request so old bars can never apply values
+  // to a new column or to a row set they did not describe.
+  return <ProfileRequest key={JSON.stringify([props.filePath, props.column.name, props.filter])} {...props} />;
+}
+
+function ProfileRequest({ filePath, column, filter, onClose, onAddConditions }: ColumnProfilePanelProps) {
   const { t } = useTranslation();
   const [profile, setProfile] = useState<ColumnProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,6 +119,7 @@ export function ColumnProfilePanel({ filePath, column, filter, onClose, onAddCon
         setLoading(false);
       }
     );
+    return () => { ++requestSeq.current; };
   }, [filePath, columnName, filter]);
 
   const filterValue = (value: ValueCount) =>
