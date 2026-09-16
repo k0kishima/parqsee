@@ -325,18 +325,35 @@ command's answer carries the higher `revision`, since the two can cross.
    (`unfiltered_pages_match_the_sql_path` pins this).
    A sort is the one thing that does reorder it, and it is the expensive
    path by design: each page is its own `ORDER BY ... LIMIT/OFFSET` query
-   over the whole file (DataFusion answers it with a top-k heap sized to
-   `offset + limit`, so early pages are cheaper than late ones), and the
-   file has no row id, so the `ORDER BY` names the sort column and then
-   every other sortable column in the same direction (`order_by_terms`).
-   Without those tie-breakers the heap's order among equal keys differs
-   from page to page and a sort on a category column showed rows twice
-   and dropped others; `sorted_pages_join_up_without_repeating_or_losing_a_row`
-   fails when they are removed. Rows identical in every sortable column
-   but differing in a nested one are the one case left open. If the
-   per-page scan ever hurts on large files, the next step is a cached
-   permutation per (file, filter, column, direction) paged through the
-   parquet reader's row selection, not a smaller key.
+   over the whole file, and the file has no row id, so the `ORDER BY`
+   names the sort column and then every other sortable column in the same
+   direction (`order_by_terms`). Without those tie-breakers the heap's
+   order among equal keys differs from page to page and a sort on a
+   category column showed rows twice and dropped others;
+   `sorted_pages_join_up_without_repeating_or_losing_a_row` fails when
+   they are removed. Rows identical in every sortable column but differing
+   in a nested one are the one case left open.
+   DataFusion answers the query with a top-k heap of `offset + limit`
+   whole rows, so the cost grows with the offset: on a 58M-row file in
+   release, the first page sorted in 2.5–3.8 s, offset 1M in 29 s and
+   2.1 GB, the last page in 180 s and 11 GB. Two things keep that in
+   bounds. A page past the midpoint is read from the other end — the
+   descending order is the exact reverse of the ascending one, so
+   `sorted_page` takes the mirrored window of the reversed order and turns
+   it around (`mirrored_window`); the last page now costs what the first
+   does and the middle page is the worst. And every file's session runs
+   under a memory pool of `SESSION_MEMORY_LIMIT` (2 GiB): operators that
+   can spill (the SQL view's aggregates and full sorts) go to disk past
+   it, a top-k cannot and fails, which `sorted_page` reports as a page
+   too deep to sort with the ways out (a filter, the other end, the SQL
+   view). On that file the sorted pages within about 1–2M rows of either
+   end answer and the deeper ones fail with a peak near 2.3 GB instead of
+   taking the app down (`a_sort_past_the_memory_limit_fails_cleanly`).
+   If the per-page scan ever hurts on large files, the next step is a
+   cached permutation per (file, filter, column, direction) paged through
+   the parquet reader's row selection, not a smaller key. A sorted export
+   is the same query without the limit: a full sort of the file, spilled
+   to disk past the pool.
 4. In the SQL view and in filters, the open file is always registered as table `t`.
 5. Settings and recent files are persisted in `localStorage`. `lib/settings-storage.ts`
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`

@@ -22,6 +22,19 @@ use crate::services::access::FileAccess;
 /// the file gets no tab, so nothing would ever evict it, and each failed
 /// open of a different file would otherwise hold one more grant until the
 /// process ends.
+/// How much memory a file's DataFusion session may hold at once, over every
+/// query on it: the sorted grid's top-k heap, the SQL view's aggregates
+/// and sorts. Operators that can spill (aggregates, a full sort) go to the
+/// disk manager's temp directory past it; a top-k cannot and fails with
+/// "Resources exhausted", which `sorted_page` turns into a message that
+/// names the way out. Measured on a 58M-row, 7-column file in release:
+/// the sorted page at offset 1M peaked at 2.1 GB of process memory, at
+/// 5M at 3.3 GB, at the middle (29M) at 12.9 GB — the heap holds
+/// `offset + limit` rows of the whole row. The limit keeps a deep page of
+/// a huge file from taking the app down on a small machine; the pages
+/// within reach of it are the far majority a viewer pages to.
+pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
+
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
@@ -30,6 +43,8 @@ pub struct ParquetCache {
     session_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     metadata_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     access: Arc<FileAccess>,
+    /// `SESSION_MEMORY_LIMIT`, unless a test lowers it.
+    memory_limit: usize,
 }
 
 impl Default for ParquetCache {
@@ -51,7 +66,16 @@ impl ParquetCache {
             session_gates: Mutex::new(HashMap::new()),
             metadata_gates: Mutex::new(HashMap::new()),
             access,
+            memory_limit: SESSION_MEMORY_LIMIT,
         }
+    }
+
+    /// The cache with a session memory limit of `bytes` (the tests set it
+    /// far below what a sorted page needs).
+    #[cfg(test)]
+    pub fn with_memory_limit(mut self, bytes: usize) -> Self {
+        self.memory_limit = bytes;
+        self
     }
 
     fn gate_for(
@@ -132,7 +156,20 @@ impl ParquetCache {
             .with_target_partitions(1)
             // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
             .with_information_schema(true);
-        let ctx = datafusion::execution::context::SessionContext::new_with_config(config);
+        // Bounded, see `SESSION_MEMORY_LIMIT`; the rest of the runtime is
+        // the default, disk spilling included.
+        let runtime = match datafusion::execution::runtime_env::RuntimeEnvBuilder::new()
+            .with_memory_limit(self.memory_limit, 1.0)
+            .build_arc()
+        {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                self.release_unless_used(path, &self.metadata_gates);
+                return Err(format!("Failed to set up the query runtime: {}", e));
+            }
+        };
+        let ctx =
+            datafusion::execution::context::SessionContext::new_with_config_rt(config, runtime);
         if let Err(e) = register_file_as_t(&ctx, path).await {
             self.release_unless_used(path, &self.metadata_gates);
             return Err(e);
@@ -1224,7 +1261,17 @@ async fn sorted_page(
     };
     let order_by = order_by_terms(&sort, &metadata.columns)?;
     let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
-    let batches = execute_sql_with_cache(cache, path, &query).await?.0;
+    let batches = match execute_sql_with_cache(cache, path, &query).await {
+        Ok((batches, _)) => batches,
+        // The top-k heap for a page this deep outgrew `SESSION_MEMORY_LIMIT`.
+        Err(e) if e.contains("Resources exhausted") => {
+            return Err("This page is too deep into the sort for a file this large: sorting it \
+                 needs more memory than the app allows itself. Narrow the rows with a \
+                 filter, page from the other end, or sort in the SQL view."
+                .to_string());
+        }
+        Err(e) => return Err(e),
+    };
     let mut rows = batches_to_rows(&batches)?;
     if mirrored {
         rows.reverse();
@@ -2276,6 +2323,46 @@ mod tests {
                 physical_type: String::new(),
             })
             .collect()
+    }
+
+    /// A sorted page whose top-k heap outgrows the session's memory limit
+    /// fails with a message that names the way out, and leaves the file's
+    /// unsorted and filtered pages untouched.
+    #[tokio::test]
+    async fn a_sort_past_the_memory_limit_fails_cleanly() {
+        let path = temp_path("sort_memory.parquet");
+        let n = 2000i64;
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("name", DataType::Utf8, true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| Some(format!("row {i:04}"))).collect::<Vec<_>>(),
+                )),
+            ],
+        )
+        .unwrap();
+        write_parquet(&path, &batch, None);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new().with_memory_limit(4 * 1024);
+        let sort = || {
+            Some(SortSpec {
+                column: "name".into(),
+                direction: SortDirection::Asc,
+            })
+        };
+
+        let err = super::read_data(&cache, &file, 500, 50, None, sort()).await.unwrap_err();
+        assert!(err.contains("too deep into the sort"), "{err}");
+        let plain = super::read_data(&cache, &file, 500, 50, None, None).await.unwrap();
+        assert_eq!(plain[0]["id"], 500);
+        let filtered = super::read_data(&cache, &file, 0, 5, Some("\"id\" > 1990".into()), None)
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 5);
     }
 
     #[test]

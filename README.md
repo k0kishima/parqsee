@@ -200,8 +200,10 @@ Read it before changing the backend.
   build and scans roughly twenty times slower.
 - An unfiltered page is read by skipping row groups; a filter turns the page
   into a DataFusion query, so a filter over a huge file is the slow case. A
-  sort is slower still: every page sorts the whole file, and the pages near
-  the end cost the most.
+  sort is slower still: every page sorts the whole file. The pages near
+  either end are the cheap ones; a page deep in the middle of a file with
+  tens of millions of rows may be refused as too deep to sort within the
+  memory the app allows itself, and a filter is the way to it.
 - Close tabs you are done with: each one keeps a session and the file's
   metadata cached.
 
