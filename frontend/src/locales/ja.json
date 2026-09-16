@@ -193,6 +193,11 @@
       "filterValue": "この値で絞り込む",
       "filterRange": "この範囲で絞り込む",
       "filterNull": "NULL で絞り込む"
+    },
+    "sort": {
+      "toggle": "{{column}} で並べ替え",
+      "asc": "昇順",
+      "desc": "降順"
     }
   },
   "fileExplorer": {
@@ -223,6 +228,7 @@
     "startRow": "開始行",
     "endRow": "終了行",
     "filterNotice": "適用中のフィルタが反映されます:",
+    "sortNotice": "適用中の並び順:",
     "invalidRange": "1 〜 {{total}} の範囲で、開始行が終了行以下になるように入力してください。",
     "noRows": "現在のフィルタに一致する行がありません。",
     "exporting": "エクスポート中...",

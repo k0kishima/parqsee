@@ -10,11 +10,12 @@ import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
 import { ColumnProfilePanel } from "./column-profile";
 import { ViewOptions } from "./view-options";
-import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata } from "../api";
+import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata, SortSpec } from "../api";
 import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
 import { pageWindow } from "../lib/page-window";
+import { isSortableColumn, nextSort } from "../lib/sort";
 import type { RowData } from "../../../lib/row";
 import { useAppCommand, type AppCommand } from "../../../lib/app-commands";
 import { toErrorMessage } from "../../../lib/tauri";
@@ -78,6 +79,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const [activeFilter, setActiveFilter] = useState(initialState?.activeFilter || "");
   const filterBarRef = useRef<FilterBarHandle>(null);
 
+  // The column the grid is sorted by, from the header's sort button; null
+  // is file order. Part of the tab's saved state, like the filter.
+  const [sort, setSort] = useState<SortSpec | null>(initialState?.sort ?? null);
+
   // The column whose profile panel is open. Not part of the tab's saved
   // state: like the search, it is a look at the file, not a view of it.
   const [profiledColumn, setProfiledColumn] = useState<string | null>(null);
@@ -98,7 +103,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   /** The state the rows on screen were successfully loaded for. */
-  const lastGood = useRef<{ page: number; filter: string; totalRows: number } | null>(null);
+  const lastGood = useRef<{ page: number; filter: string; sort: SortSpec | null; totalRows: number } | null>(null);
   /** Skip the reload triggered by rolling state back after a failed load. */
   const skipReload = useRef(false);
   /**
@@ -118,11 +123,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         currentPage,
         searchTerm,
         activeFilter,
+        sort,
         selectedRow,
         isSearchOpen,
       });
     }
-  }, [currentPage, searchTerm, activeFilter, selectedRow, isSearchOpen]);
+  }, [currentPage, searchTerm, activeFilter, sort, selectedRow, isSearchOpen]);
 
   const loadFile = useCallback(async () => {
     // Page loads still in flight belong to the previous metadata.
@@ -136,6 +142,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       if (seq !== loadSeq.current) return;
       setMetadata(meta);
       setTotalRows(meta.num_rows);
+      // A sort follows the file's columns: restored from a session, or kept
+      // across a Refresh, it may name a column the file no longer has, and
+      // the grid is better in file order than on an error screen.
+      setSort(s => (s && meta.columns.some(c => c.name === s.column && isSortableColumn(c)) ? s : null));
       // The filter is kept across a refresh: dropping it here left the filter
       // bar showing a condition the grid no longer applied. If the file's
       // columns changed underneath it, the reload reports the error and the
@@ -159,7 +169,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         ? await countParquetData(filePath, activeFilter)
         : metadata.num_rows;
       const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
-      const rows = await readParquetData(filePath, offset, limit, activeFilter);
+      const rows = await readParquetData(filePath, offset, limit, activeFilter, sort);
       // A newer load has taken over; its result describes the current state.
       if (seq !== loadSeq.current) return;
 
@@ -168,7 +178,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // lands before a failing read must not update the page.
       setTotalRows(total);
       setData(rows);
-      lastGood.current = { page: currentPage, filter: activeFilter, totalRows: total };
+      lastGood.current = { page: currentPage, filter: activeFilter, sort, totalRows: total };
       setLoading(false);
     } catch (err) {
       if (seq !== loadSeq.current) return;
@@ -190,16 +200,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // rollback would trigger, which would also clear the error banner.
       const good = lastGood.current;
       if (good) {
-        if (good.filter !== activeFilter || good.page !== currentPage) {
+        if (good.filter !== activeFilter || good.page !== currentPage || good.sort !== sort) {
           skipReload.current = true;
           setActiveFilter(good.filter);
           setCurrentPage(good.page);
+          setSort(good.sort);
         }
         setTotalRows(good.totalRows);
       }
       setLoading(false);
     }
-  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage]);
+  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort]);
 
   // filePath is fixed for a mounted viewer (TabContent is keyed by tab), so
   // loadFile only ever changes with it and loadData with the page state the
@@ -284,7 +295,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   // a page or filter change highlighted an unrelated row. Cleared during
   // render when the page identity changes, not in an effect
   // (react.dev/learn/you-might-not-need-an-effect).
-  const pageIdentity = `${currentPage} ${rowsPerPage} ${activeFilter}`;
+  const pageIdentity = `${currentPage} ${rowsPerPage} ${activeFilter} ${sort ? `${sort.direction} ${sort.column}` : ''}`;
   const [selectedPageIdentity, setSelectedPageIdentity] = useState(pageIdentity);
   if (selectedPageIdentity !== pageIdentity) {
     setSelectedPageIdentity(pageIdentity);
@@ -296,6 +307,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     // A new filter changes the row set; start from the first page. Done here
     // rather than in an effect so rolling activeFilter back after a failed
     // load does not also reset the page.
+    setCurrentPage(1);
+  }, []);
+
+  // A click on a header sorts by that column, the next reverses it, the
+  // third returns to file order (`nextSort`). The sequence changes, so the
+  // grid starts over from the first page, as after a filter.
+  const handleSort = useCallback((column: string) => {
+    setSort(current => nextSort(current, column));
     setCurrentPage(1);
   }, []);
 
@@ -486,6 +505,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 scrollerRef={tableContainerRef}
                 profiledColumn={profiledColumn}
                 onProfileColumn={handleProfileColumn}
+                sort={sort}
+                onSort={handleSort}
               />
             )}
           </div>
@@ -606,6 +627,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           filePath={filePath}
           totalRows={totalRows}
           activeFilter={activeFilter}
+          sort={sort}
           currentPage={currentPage}
           rowsPerPage={rowsPerPage}
         />

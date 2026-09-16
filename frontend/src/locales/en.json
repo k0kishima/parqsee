@@ -193,6 +193,11 @@
             "filterValue": "Filter by this value",
             "filterRange": "Filter by this range",
             "filterNull": "Filter by NULL"
+        },
+        "sort": {
+            "toggle": "Sort by {{column}}",
+            "asc": "ascending",
+            "desc": "descending"
         }
     },
     "fileExplorer": {
@@ -223,6 +228,7 @@
         "startRow": "Start Row",
         "endRow": "End Row",
         "filterNotice": "The active filter is applied:",
+        "sortNotice": "Sorted by:",
         "invalidRange": "Enter a range between 1 and {{total}}, with the start row first.",
         "noRows": "No rows match the current filter.",
         "exporting": "Exporting...",

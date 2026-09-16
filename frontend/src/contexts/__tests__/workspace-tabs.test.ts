@@ -244,15 +244,15 @@ describe('sessionSnapshot', () => {
     const state: WorkspaceTabs = {
       ...three,
       tabStates: {
-        a: { currentPage: 2, activeFilter: 'x > 1', searchTerm: 'needle', selectedRow: 4, isSearchOpen: true, scrollPosition: 100 },
-        b: { viewMode: 'query', activeFilter: '' },
+        a: { currentPage: 2, activeFilter: 'x > 1', sort: { column: 'x', direction: 'desc' }, searchTerm: 'needle', selectedRow: 4, isSearchOpen: true, scrollPosition: 100 },
+        b: { viewMode: 'query', activeFilter: '', sort: null },
       },
     };
     expect(sessionSnapshot(state)).toEqual({
       tabs: [
-        { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: 'x > 1' } },
-        { path: '/data/b.parquet', state: { view_mode: 'query', current_page: null, active_filter: null } },
-        { path: '/data/c.parquet', state: { view_mode: null, current_page: null, active_filter: null } },
+        { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: 'x > 1', sort: { column: 'x', direction: 'desc' } } },
+        { path: '/data/b.parquet', state: { view_mode: 'query', current_page: null, active_filter: null, sort: null } },
+        { path: '/data/c.parquet', state: { view_mode: null, current_page: null, active_filter: null, sort: null } },
       ],
       active: '/data/b.parquet',
     });
@@ -268,14 +268,19 @@ describe('sessionSnapshot', () => {
 
 describe('restoredTabState', () => {
   it('maps the saved fields back and leaves the rest to the tab', () => {
-    expect(restoredTabState({ view_mode: 'query', current_page: 3, active_filter: 'x > 1' }))
+    expect(restoredTabState({ view_mode: 'query', current_page: 3, active_filter: 'x > 1', sort: null }))
       .toEqual({ viewMode: 'query', currentPage: 3, activeFilter: 'x > 1' });
-    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null })).toEqual({});
+    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null, sort: { column: 'x', direction: 'desc' } }))
+      .toEqual({ sort: { column: 'x', direction: 'desc' } });
+    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null, sort: null })).toEqual({});
   });
 
   it('drops values the store could not have meant', () => {
-    expect(restoredTabState({ view_mode: 'chart', current_page: 0, active_filter: '' })).toEqual({});
-    expect(restoredTabState({ view_mode: 'browse', current_page: 1.5, active_filter: null })).toEqual({ viewMode: 'browse' });
+    expect(restoredTabState({ view_mode: 'chart', current_page: 0, active_filter: '', sort: null })).toEqual({});
+    expect(restoredTabState({ view_mode: 'browse', current_page: 1.5, active_filter: null, sort: null })).toEqual({ viewMode: 'browse' });
+    // A hand-edited store: no column, or a direction that is neither.
+    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null, sort: { column: '', direction: 'asc' } })).toEqual({});
+    expect(restoredTabState({ view_mode: null, current_page: null, active_filter: null, sort: { column: 'x', direction: 'up' as 'asc' } })).toEqual({});
   });
 });
 

@@ -213,7 +213,7 @@ export interface SessionSnapshot {
 
 /**
  * The tabs in order, the active one's path and, per tab, the state worth
- * keeping across a relaunch: view mode, page and filter. Search, selection
+ * keeping across a relaunch: view mode, page, filter and sort. Search, selection
  * and scroll are left out — they are transient, and leaving them out also
  * keeps them from triggering a save.
  */
@@ -230,6 +230,7 @@ function persistedTabState(state: TabState | undefined): SessionTabState {
     current_page: state?.currentPage ?? null,
     // The grid's "no filter" is the empty string.
     active_filter: state?.activeFilter || null,
+    sort: state?.sort ?? null,
   };
 }
 
@@ -245,5 +246,9 @@ export function restoredTabState(saved: SessionTab['state']): TabState {
     state.currentPage = saved.current_page;
   }
   if (typeof saved.active_filter === 'string' && saved.active_filter !== '') state.activeFilter = saved.active_filter;
+  const sort = saved.sort;
+  if (sort && typeof sort.column === 'string' && sort.column !== '' && (sort.direction === 'asc' || sort.direction === 'desc')) {
+    state.sort = { column: sort.column, direction: sort.direction };
+  }
   return state;
 }

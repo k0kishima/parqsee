@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { copyPath, revealInFinder } from "../../../lib/reveal";
 import { useTranslation } from "react-i18next";
-import { exportData, exportDefaultDir } from "../api";
+import { exportData, exportDefaultDir, type SortSpec } from "../api";
 import { getFileName, stripParquetExtension } from "../../../lib/path";
 import { ExportRange, resolveExportRange } from "../lib/export-range";
 import { pageWindow } from "../lib/page-window";
@@ -17,6 +17,8 @@ interface ExportModalProps {
   /** Rows matching the active filter — what the grid is paginating over. */
   totalRows: number;
   activeFilter: string;
+  /** The order the grid is showing; the export walks the same sequence. */
+  sort: SortSpec | null;
   currentPage: number;
   rowsPerPage: number;
 }
@@ -27,6 +29,7 @@ export function ExportModal({
   filePath,
   totalRows,
   activeFilter,
+  sort,
   currentPage,
   rowsPerPage,
 }: ExportModalProps) {
@@ -133,7 +136,8 @@ export function ExportModal({
         ...exportWindow,
         // Ranges address the filtered result, so the backend has to apply the
         // same condition the grid is showing.
-        filter: activeFilter || undefined
+        filter: activeFilter || undefined,
+        sort: sort ?? undefined,
       });
 
       setDone({ rows: exportedRows, path: savePath });
@@ -235,6 +239,13 @@ export function ExportModal({
             <p className="mb-2 text-xs text-tertiary">
               {t('export.filterNotice')}
               <span className="ml-1 font-mono break-all">{activeFilter}</span>
+            </p>
+          )}
+          {sort && (
+            <p className="mb-2 text-xs text-tertiary">
+              {t('export.sortNotice')}
+              <span className="ml-1 font-mono break-all">{sort.column}</span>
+              <span className="ml-1">{t(`viewer.sort.${sort.direction}`)}</span>
             </p>
           )}
           <div className="space-y-2">
