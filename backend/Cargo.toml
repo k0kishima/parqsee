@@ -28,7 +28,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Arrow's JSON floats must survive decoding before IPC without losing a bit;
+# otherwise an exact-value profile filter can select zero rows.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 parquet = "58"
 arrow = "58"
 tokio = { version = "1.47.1", features = ["full"] }
@@ -73,4 +75,3 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSString",
     "NSURL",
 ] }
-

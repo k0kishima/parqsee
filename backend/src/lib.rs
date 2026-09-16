@@ -287,6 +287,7 @@ pub fn run() {
             commands::workspace::save_session,
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
+            commands::data::profile_column,
             commands::data::export_data,
             commands::data::export_default_dir,
             commands::data::evict_cache,

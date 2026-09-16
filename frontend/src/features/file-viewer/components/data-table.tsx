@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
+import { ChartBar } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ColumnInfo } from '../api';
 import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
@@ -19,7 +21,19 @@ interface DataTableProps {
   density: RowDensity;
   /** The horizontally/vertically scrolling container; owned by the parent. */
   scrollerRef: RefObject<HTMLDivElement>;
+  /** The column whose profile panel is open, if any; its header is marked. */
+  profiledColumn?: string | null;
+  /** The header's chart button; without it the header has none. */
+  onProfileColumn?: (name: string) => void;
 }
+
+/**
+ * Width the chart button adds to a header, counted into the column's
+ * measured width so a short name is not clipped by it: the button sits in
+ * the cell's right padding and reaches this far past it (`pr-7` on the
+ * cell against the `px-4` of the rest).
+ */
+export const PROFILE_BUTTON_WIDTH = 12;
 
 interface VisibleColumn {
   index: number;
@@ -141,7 +155,10 @@ export const DataTable = React.memo(function DataTable({
   typeDisplay,
   density,
   scrollerRef,
+  profiledColumn = null,
+  onProfileColumn,
 }: DataTableProps) {
+  const { t } = useTranslation();
   const typeLabels = useMemo(
     () => columns.map(col => formatTypeLabel(col, typeDisplay)),
     [columns, typeDisplay]
@@ -151,9 +168,9 @@ export const DataTable = React.memo(function DataTable({
     () => measureColumnWidths(
       columns.map((col, i) => ({ name: col.name, typeLabel: typeLabels[i] })),
       rows,
-      { format: formatCellValue }
+      { format: formatCellValue, headerExtra: onProfileColumn ? PROFILE_BUTTON_WIDTH : 0 }
     ),
-    [columns, typeLabels, rows]
+    [columns, typeLabels, rows, onProfileColumn]
   );
 
   const virt = useColumnVirtualizer(widths, scrollerRef);
@@ -223,15 +240,31 @@ export const DataTable = React.memo(function DataTable({
               <th
                 key={index}
                 title={name}
-                className={`px-4 ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : ''
+                className={`relative px-4 ${onProfileColumn ? 'pr-7' : ''} ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
                   }`}
               >
+                {/* The name stays the cell's first element: the e2e harness
+                    reads the headers by it. */}
                 <div className="font-semibold">
                   {matchedColumns.has(index) ? highlight(name, searchTerm) : name}
                 </div>
                 <div className="font-normal text-xs mt-0.5 text-slate-500 dark:text-gray-400">
                   {typeLabels[index]}
                 </div>
+                {onProfileColumn && (
+                  <button
+                    type="button"
+                    onClick={() => onProfileColumn(name)}
+                    aria-pressed={profiledColumn === name}
+                    aria-label={t('viewer.profile.open', { column: name })}
+                    title={t('viewer.profile.open', { column: name })}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors hover:bg-slate-200 dark:hover:bg-gray-600 ${profiledColumn === name
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                  >
+                    <ChartBar size={14} />
+                  </button>
+                )}
               </th>
             ))}
             {padRight > 0 && <th aria-hidden="true" />}

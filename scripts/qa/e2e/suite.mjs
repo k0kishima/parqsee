@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, ACTIVE_PANEL, FIX, OUT, ROOT } from './lib.mjs';
 import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
@@ -107,7 +107,7 @@ await scenario('S1-fidelity', async ({ page }) => {
 
   await openFile(page, `${FIX}/wide.parquet`);
   const hc1 = await visibleHeader(page);
-  await page.evaluate(() => { const s = [...document.querySelectorAll('.overflow-auto')].find(e => e.offsetParent && e.querySelector('table')); s.scrollLeft = 50000; });
+  await page.evaluate(() => { const s = [...document.querySelectorAll('.overflow-auto')].find(e => e.offsetParent && e.querySelector('table')); s.scrollLeft = s.scrollWidth; });
   await page.waitForTimeout(300);
   const hc2 = await visibleHeader(page);
   check('S1.wide.virtual', hc1[0] === 'col_000' && hc2.includes('col_599'), `first=${hc1.slice(0, 2)} after scroll=${hc2.slice(-2)} rendered=${hc2.length}`);
@@ -1053,8 +1053,13 @@ await scenario('S13-sample', async ({ page, bridge }) => {
   await waitGrid(page);
   check('S13.path', bridge.log.some(l => l.cmd === 'open_parquet_file' && l.args.path === S13_SAMPLE), `open_parquet_file paths: ${bridge.log.filter(l => l.cmd === 'open_parquet_file').map(l => l.args.path)}`);
   check('S13.grid', (await summary(page))?.startsWith('1,500 rows') && (await footer(page))?.startsWith('Showing 1 to 50'), `summary=${await summary(page)} footer=${await footer(page)}`);
+  // The grid renders only the columns in view; the last ones are read
+  // after scrolling to the far right.
   const cols = await visibleHeader(page);
-  check('S13.columns', cols[0] === 'order_id' && cols.includes('unit_price') && cols.includes('shipped_at'), `columns=${cols}`);
+  await page.evaluate(() => { const s = [...document.querySelectorAll('.overflow-auto')].find(e => e.offsetParent && e.querySelector('table')); s.scrollLeft = s.scrollWidth; });
+  await page.waitForTimeout(300);
+  const lastCols = await visibleHeader(page);
+  check('S13.columns', cols[0] === 'order_id' && cols.includes('unit_price') && lastCols.includes('shipped_at'), `columns=${cols} last=${lastCols}`);
   check('S13.notRecent', !bridge.log.some(l => l.cmd === 'remember_file' && l.args.path === S13_SAMPLE) && (await bridge.call('list_recent_files')).every(f => f.name !== 'sample.parquet'), `recent=${(await bridge.call('list_recent_files')).map(f => f.name)}`);
 
   // Clicking the link again with the sample open only activates its tab.
@@ -1177,6 +1182,109 @@ await scenario('S14-free-restore', async ({ page, bridge }) => {
   check('S14r.session', sessionPaths(await bridge.call('list_session_tabs')).length === 5, `saved=${sessionPaths(await bridge.call('list_session_tabs'))}`);
   await screenshot(page, { path: `${OUT}/shots/S14r.png` });
 }, { dataDir: S14_DATA, iap: { ...FREE_STORE } });
+
+// ---------------------------------------------------------------- S19 column profile
+await scenario('S19-profile', async ({ page, bridge }) => {
+  const profileButton = (col) => act(page).locator(`thead th button[aria-label="Profile column ${col}"]`);
+  const panel = () => act(page).locator('aside[aria-label^="Profile of "]');
+  const bars = () => panel().locator('ul button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')));
+  // Polled in the page, scoped to the active tab: a hidden tab keeps its
+  // panel in the DOM.
+  const PANEL_BARS = `${ACTIVE_PANEL} aside[aria-label^="Profile of "] ul button`;
+  const waitBars = (expected, timeout = 30000) => page.waitForFunction(
+    ([sel, want]) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label')).join('|') === want,
+    [PANEL_BARS, expected], { timeout }
+  );
+  const waitBarsAtLeast = (n, timeout = 60000) => page.waitForFunction(
+    ([sel, want]) => document.querySelectorAll(sel).length >= want, [PANEL_BARS, n], { timeout }
+  );
+  const waitFirstBar = (label, timeout = 60000) => page.waitForFunction(
+    ([sel, want]) => document.querySelector(sel)?.getAttribute('aria-label') === want, [PANEL_BARS, label], { timeout }
+  );
+  const profiled = (col, filter) => bridge.log.some(l => l.cmd === 'profile_column' && l.args.column === col && (filter === undefined ? l.args.filter == null : l.args.filter === filter));
+  const filterInputs = () => act(page).locator('form input[type=text]');
+
+  // Every value of a small text column, NULL included, commonest first.
+  await openFile(page, `${FIX}/dict.parquet`);
+  await profileButton('cat').click();
+  await waitBars('a: 2|b: 1|c: 1|NULL: 1');
+  check('S19.values', profiled('cat'), `profile_column calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args))}`);
+  const stats = await panel().locator('dd').allTextContents();
+  check('S19.stats', stats.join('|') === '5|1 20%|3', stats.join('|'));
+  check('S19.headerMarked', await profileButton('cat').getAttribute('aria-pressed') === 'true');
+
+  // A click on a value filters by it; the grid and the panel both follow.
+  await panel().locator('button[aria-label="a: 2"]').click();
+  await waitGrid(page);
+  check('S19.valueFilter', (await footer(page)) === 'Showing 1 to 2 of 2 entries' && await filterInputs().first().inputValue() === 'a', `footer=${await footer(page)} value=${await filterInputs().first().inputValue()}`);
+  await waitBars('a: 2');
+  check('S19.reprofiled', profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.filter))}`);
+  // A restored predicate must survive a click on another column's chart.
+  await page.waitForTimeout(600);
+  await page.reload();
+  await waitGrid(page);
+  await profileButton('n').click();
+  await waitBars('1: 1|3: 1');
+  await panel().locator('button[aria-label="1: 1"]').click();
+  await waitGrid(page);
+  check('S19.restoredFilter', bridge.log.some(l => l.cmd === 'count_parquet_data' && l.args.filter === `"cat" = 'a' AND "n" = 1`), 'restored cat predicate retained while selecting n');
+  await act(page).locator('button[title="Clear"]').click();
+  await waitGrid(page);
+  await profileButton('cat').click();
+  await waitBars('a: 2|b: 1|c: 1|NULL: 1');
+
+  // The NULL row filters with IS NULL.
+  await panel().locator('button[aria-label="NULL: 1"]').click();
+  await waitGrid(page);
+  check('S19.nullFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && (await visibleGrid(page))[0][0] === 'NULL', `footer=${await footer(page)} first=${(await visibleGrid(page))[0]}`);
+  await act(page).locator('button[title="Clear"]').click();
+  await waitGrid(page);
+
+  // The header button toggles; another column's button switches.
+  await waitBars('a: 2|b: 1|c: 1|NULL: 1');
+  await page.evaluate(() => { window.__delays.profile_column = 600; });
+  await profileButton('n').click();
+  check('S19.noStaleBars', (await bars()).length === 0, 'old column bars are not clickable while the new request is pending');
+  await waitBars('1: 1|2: 1|3: 1|4: 1|5: 1');
+  await page.evaluate(() => { window.__delays.profile_column = 0; });
+  await profileButton('n').click();
+  check('S19.toggleClosed', (await panel().count()) === 0, `panels=${await panel().count()}`);
+
+  // A hundred thousand ids are binned on round edges; a bucket filters to
+  // its range, and the next profile bins that range again.
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await profileButton('id').click();
+  await waitBarsAtLeast(20);
+  const buckets = await bars();
+  check('S19.histogram', buckets.length === 20 && buckets[0] === '0 – 5,000: 5,000' && buckets[19] === '95,000 – 100,000: 5,000', `${buckets[0]} … ${buckets[19]} (${buckets.length})`);
+  await panel().locator('ul button').first().click();
+  await waitGrid(page);
+  check('S19.bucketFilter', (await footer(page)).includes('of 5,000 ') && await filterInputs().count() === 2, `footer=${await footer(page)} rows=${await filterInputs().count()}`);
+  await waitFirstBar('0 – 500: 500');
+  await panel().locator('ul button').first().click();
+  await waitGrid(page);
+  // The narrower range replaced the wider one instead of stacking on it.
+  check('S19.drillDown', (await footer(page)).includes('of 500 ') && await filterInputs().count() === 2, `footer=${await footer(page)} rows=${await filterInputs().count()}`);
+  check('S19.drillDownFilter', bridge.log.some(l => l.cmd === 'count_parquet_data' && l.args.filter === '"id" >= 0 AND "id" < 500'), `filters=${JSON.stringify(bridge.log.filter(l => l.cmd === 'count_parquet_data').map(l => l.args.filter).slice(-3))}`);
+
+  // Floats that are not finite are listed as the grid shows them.
+  await openFile(page, `${FIX}/nan.parquet`);
+  await profileButton('x').click();
+  await waitBarsAtLeast(4, 30000);
+  const nonFinite = await bars();
+  check('S19.nonFinite', ['NaN: 1', 'Infinity: 1', '-Infinity: 1', '1: 1'].every(v => nonFinite.includes(v)), nonFinite.join('|'));
+  await panel().locator('button[aria-label="NaN: 1"]').click();
+  await waitGrid(page);
+  check('S19.nanFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && (await visibleGrid(page))[0][1] === 'NaN', await footer(page));
+
+  await openFile(page, `${FIX}/text_binary.parquet`);
+  await profileButton('s').click();
+  await waitBarsAtLeast(2);
+  await panel().getByRole('button', { name: '"": 1', exact: true }).click();
+  await waitGrid(page);
+  check('S19.emptyFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && bridge.log.some(l => l.cmd === 'count_parquet_data' && l.args.filter === `"s" = ''`), await footer(page));
+  await screenshot(page, { path: `${OUT}/shots/S19.png` });
+});
 
 await (await import('./exploratory.mjs')).exploratoryScenarios();
 

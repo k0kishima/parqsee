@@ -11,6 +11,9 @@ It features:
   user opens (⇧⌘O), remembered across launches
 - Fast Rust backend (Arrow / Parquet / DataFusion) for file processing
 - Tabbed browsing with pagination, filtering and in-page search
+- A column profile beside the grid: counts and a chart of a column's
+  values under the active filter, each bar a click away from becoming a
+  filter condition
 - SQL query view (DataFusion) over the open file
 - CSV / JSON export
 - Recent files history and the open tabs, persisted with security-scoped
@@ -117,7 +120,19 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   not through the index, which would cycle back through the Welcome route
 - `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
-- `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal
+- `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal,
+  and the column profile (`ColumnProfilePanel`, opened by the chart button on a
+  column header): row / NULL / distinct counts under the active filter and a bar
+  chart of the values, every one listed or binned past twenty; a click on a
+  value, a bucket or the NULL row goes into the filter bar through its
+  `FilterBarHandle.addConditions` and applies at once, replacing a condition on
+  the same column with the same operator (also interchanging `<` / `<=` at
+  day-end) so a narrower bucket does not stack on the wider one. Restored
+  form-generated filters become editable rows; unrecognized SQL remains a
+  visible, parenthesized base predicate. Explicit empty values from a chart
+  are distinct from unfilled form rows. Changing file, column or filter
+  clears the old chart before another bar can be clicked. The panel is not
+  part of the tab's saved state
 - `query` — SQL editor and result grid
 - `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
@@ -207,6 +222,7 @@ Argument names are camelCase on the JS side.
 | `save_session` | `(tabs, active?)` → `void` | Replace the saved session with the open tabs (`{path, state}` each) and the active one's path; written by the webview on change |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
+| `profile_column` | `(path, column, filter?)` → `ColumnProfile` | The column's row / NULL / distinct counts under the filter and its chart: every value with its count when there are at most 20 distinct values, else equal-width buckets on round edges (whole days / seconds for temporal columns) for numbers and dates and the 20 commonest values for the rest, with what is not shown counted as `other`. Bucket counts use the same typed predicates as drill-down; day-end time buckets include their final representable instant. Unsafe double ranges and decimals with more than 15 digits of precision fall back to top values. Two or three scans of the file through the single-partition session (`services/profile.rs`) |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
@@ -577,7 +593,9 @@ screen's sample link, the Free ⓘ pill, the restore notice, the upgrade
 prompt's states, Recent Files' Clear all and its fold past five, the
 Recent Files panel (search, same-name folders) and its button in the top
 row, the viewer's view
-options, the tab bar's right-click menu, the workspace
+options, the column profile panel (values, buckets and NULL as
+conditions, the partial-list note, a late answer discarded), its button
+on the header and the filter bar's `addConditions`, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
@@ -588,6 +606,14 @@ system-language guess and
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN, the read-only SQL view, result truncation, export,
+the column profile in `services::profile` (the full list and the commonest
+values, integer / float / date / timestamp bins and their edge labels as
+filter literals, NaN and the infinities kept out of the bins, nested
+columns, quoted names, explicit empty values, Float16 including non-finite
+values, Time32/Time64 through day-end, Date64 and timezone timestamps
+including a DST transition, and exact drill-down round trips at 20/21 distinct
+values; large integers, high-precision decimals and extreme finite floats
+exercise the top-values fallback),
 the bookmark store, a listing's probe running off the FileAccess lock, the
 Open Recent menu's items in `services::recent_menu`, the
 URL-to-path conversion and the launch handover in
@@ -631,7 +657,9 @@ from the Welcome screen, not in Recent Files, back after a relaunch), the
 free tier (S14, over the harness's scripted store: two files dropped
 into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
-Purchases) or the SQL view — see its README for setup (`cargo build --example bridge`,
+Purchases), the column profile (S19: values and NULL as conditions, the
+bins of a hundred thousand ids and a drill-down into one, non-finite
+floats including a NaN click, empty strings, restored filters and stale bars) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

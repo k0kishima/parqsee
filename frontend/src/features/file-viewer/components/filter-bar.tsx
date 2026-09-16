@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
@@ -8,6 +8,31 @@ interface FilterBarProps {
     columns: ColumnInfo[];
     onFilterChange: (filter: string) => void;
     activeFilter: string;
+}
+
+/** A condition another part of the viewer asks the bar to add. */
+export interface FilterCondition {
+    column: string;
+    operator: FilterOperator;
+    /** The value as the user would type it; ignored by a unary operator. */
+    value: string;
+}
+
+/**
+ * What the bar does on request from outside its form: the column profile
+ * panel adds the value or the bucket that was clicked as a condition. An
+ * imperative handle rather than a prop, because it is an action with a
+ * moment — a prop would have to be cleared again after each use.
+ */
+export interface FilterBarHandle {
+    /**
+     * Add the conditions and apply the filter at once. Rows that are not
+     * filled in are dropped, and so is a row on the same column with the
+     * same operator: a click on a narrower bucket replaces the range the
+     * previous click set instead of stacking on it. The upper-bound operators
+     * < and <= also replace each other when a time bucket ends at day-end.
+     */
+    addConditions: (conditions: FilterCondition[]) => void;
 }
 
 export const FILTER_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"] as const;
@@ -40,6 +65,8 @@ export function operatorTakesValue(operator: FilterOperator): boolean {
 }
 
 export interface FilterRow {
+    /** A profile click or restored literal can deliberately select an empty value. */
+    explicitValue?: boolean;
     id: number;
     column: string;
     operator: FilterOperator;
@@ -119,6 +146,7 @@ function invalidValueOf(filter: FilterRow, kind: ColumnKind): InvalidFilterValue
     if (!filter.column || OPERATOR_FORM[filter.operator] !== 'compare') return null;
     const value = filter.value.trim();
     if (!value) return null;
+    if (filter.explicitValue && kind === 'float' && ['NaN', 'Infinity', '-Infinity'].includes(value)) return null;
     const literal = KIND_LITERAL[kind];
     switch (literal) {
         case 'number': return isNumericLiteral(value) ? null : { column: filter.column, value, expects: 'number' };
@@ -145,8 +173,13 @@ export function findInvalidFilterValue(filters: FilterRow[], columns: ColumnInfo
 function conditionOf(filter: FilterRow, kind: ColumnKind): string | null {
     if (!filter.column) return null;
     const form = OPERATOR_FORM[filter.operator];
-    if (form !== 'unary' && !filter.value.trim()) return null;
+    if (form !== 'unary' && !filter.value.trim() && !filter.explicitValue) return null;
 
+    if (kind === 'float' && filter.value.trim() === 'NaN' &&
+        (filter.operator === '=' || filter.operator === '!=')) {
+        // NaN equality is not portable across Arrow's comparison kernels.
+        return `${filter.operator === '!=' ? 'NOT ' : ''}isnan(CAST(${quoteIdentifier(filter.column)} AS DOUBLE))`;
+    }
     const literal = KIND_LITERAL[kind];
     // The grid shows binary as lowercase hex, so that is what gets typed
     // back in; compare the same rendering rather than the raw bytes. The
@@ -180,13 +213,99 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
         .join(" AND ");
 }
 
-export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
+/**
+ * Read only the SQL this form emits. A round trip through the generator
+ * verifies every condition; older or hand-written SQL remains an opaque
+ * base predicate rather than being discarded or partially interpreted.
+ */
+function restoreFilter(expression: string, columns: ColumnInfo[]): { filters: FilterRow[]; base: string } {
+    const filters: FilterRow[] = [];
+    let rest = expression;
+    const identifier = '"(?:[^"]|"")*"';
+    const target = `(${identifier}|encode\\(CAST\\(${identifier} AS BYTEA\\), 'hex'\\)|CAST\\(${identifier} AS TEXT\\))`;
+    const rowPattern = new RegExp(`^${target} (IS NOT NULL|IS NULL|>=|<=|!=|=|>|<|LIKE)(?: ('(?:[^']|'')*'|(?!AND(?: |$))[^ ]+))?(?= AND |$)`);
+    while (rest) {
+        const nan = rest.match(/^(NOT )?isnan\(CAST\("((?:[^"]|"")*)" AS DOUBLE\)\)(?= AND |$)/);
+        if (nan) {
+            const name = nan[2].replace(/""/g, '"');
+            const row: FilterRow = { ...newFilterRow(name), operator: nan[1] ? '!=' : '=', value: 'NaN', explicitValue: true };
+            if (kindOf(columns, name) !== 'float') break;
+            filters.push(row);
+            rest = rest.slice(nan[0].length);
+            if (rest.startsWith(' AND ')) rest = rest.slice(5);
+            continue;
+        }
+        const match = rest.match(rowPattern);
+        if (!match) break;
+        const name = match[1].match(/"((?:[^"]|"")*)"/)?.[1].replace(/""/g, '"');
+        const operator = match[2];
+        const raw = match[3];
+        if (!name || !columns.some(c => c.name === name) || !isFilterOperator(operator)) break;
+        const value = raw?.startsWith("'") ? raw.slice(1, -1).replace(/''/g, "'") : raw ?? '';
+        const row = { ...newFilterRow(name), operator, value, explicitValue: true };
+        if (conditionOf(row, kindOf(columns, name)) !== match[0]) break;
+        filters.push(row);
+        rest = rest.slice(match[0].length);
+        if (rest.startsWith(' AND ')) rest = rest.slice(5);
+        else break;
+    }
+    if (rest || buildFilterExpression(filters, columns) !== expression) {
+        return { filters: [newFilterRow(columns[0]?.name)], base: expression };
+    }
+    return { filters: filters.length ? filters : [newFilterRow(columns[0]?.name)], base: '' };
+}
+
+function withBase(base: string, expression: string): string {
+    return base && expression ? `(${base}) AND ${expression}` : base || expression;
+}
+
+export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function FilterBar(
+    { columns, onFilterChange, activeFilter },
+    ref
+) {
     const { t } = useTranslation();
 
     // Initialize with one row. A lazy initializer: taking a serial is impure
     // and must not run on every render (react.dev/reference/rules).
-    const [filters, setFilters] = useState<FilterRow[]>(() => [newFilterRow(columns[0]?.name)]);
+    const [initial] = useState(() => restoreFilter(activeFilter, columns));
+    const [filters, setFilters] = useState<FilterRow[]>(initial.filters);
+    const [baseFilter, setBaseFilter] = useState(initial.base);
+    const submitted = useRef(activeFilter);
+    const [previousActive, setPreviousActive] = useState(activeFilter);
+    if (previousActive !== activeFilter) {
+        setPreviousActive(activeFilter);
+        // Our own submission already has editable rows. External changes,
+        // including rollback after a failed query, must restore their rows.
+        if (activeFilter !== submitted.current) {
+            const restored = restoreFilter(activeFilter, columns);
+            setFilters(restored.filters);
+            setBaseFilter(restored.base);
+        }
+    }
+    const apply = useCallback((expression: string) => {
+        submitted.current = expression;
+        onFilterChange(expression);
+    }, [onFilterChange]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
+
+    useImperativeHandle(ref, () => ({
+        addConditions(conditions) {
+            const replaced = (row: FilterRow) =>
+                conditions.some(c => c.column === row.column && (
+                    c.operator === row.operator ||
+                    (['<', '<='].includes(c.operator) && ['<', '<='].includes(row.operator))
+                ));
+            const kept = filters.filter(row =>
+                conditionOf(row, kindOf(columns, row.column)) !== null && !replaced(row)
+            );
+            const added = conditions.map(c => ({ ...newFilterRow(c.column), operator: c.operator, value: c.value, explicitValue: true }));
+            const next = [...kept, ...added];
+            setFilters(next);
+            const problem = findInvalidFilterValue(next, columns);
+            setInvalid(problem);
+            if (!problem) apply(withBase(baseFilter, buildFilterExpression(next, columns)));
+        },
+    }), [filters, columns, apply, baseFilter]);
 
     // Point rows at the first column when the columns change and theirs is
     // gone. Adjusted during render from the previous columns, not in an
@@ -194,7 +313,12 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     const [prevColumns, setPrevColumns] = useState(columns);
     if (prevColumns !== columns) {
         setPrevColumns(columns);
-        if (columns.length > 0) {
+        if (prevColumns.length === 0 && columns.length > 0 && baseFilter === activeFilter &&
+            filters.every(f => conditionOf(f, kindOf(columns, f.column)) === null)) {
+            const restored = restoreFilter(activeFilter, columns);
+            setFilters(restored.filters);
+            setBaseFilter(restored.base);
+        } else if (columns.length > 0) {
             setFilters(prevFilters => prevFilters.map(f => {
                 if (!columns.find(c => c.name === f.column)) {
                     return { ...f, column: columns[0].name };
@@ -214,7 +338,8 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
         if (newFilters.length === 0) {
             setFilters([newFilterRow(columns[0]?.name)]);
             // Also clear the filter
-            onFilterChange("");
+            setBaseFilter("");
+            apply("");
         } else {
             setFilters(newFilters);
             // We don't automatically submit on remove; user must press Apply
@@ -223,13 +348,14 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     };
 
     const handleChange = (id: number, patch: Partial<Omit<FilterRow, 'id'>>) => {
-        setFilters(filters.map(f => (f.id === id ? { ...f, ...patch } : f)));
+        setFilters(filters.map(f => (f.id === id ? { ...f, ...patch, explicitValue: patch.value === undefined ? f.explicitValue : false } : f)));
     };
 
     const handleClear = () => {
         setFilters([newFilterRow(columns[0]?.name)]);
         setInvalid(null);
-        onFilterChange("");
+        setBaseFilter("");
+        apply("");
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -237,7 +363,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
         const problem = findInvalidFilterValue(filters, columns);
         setInvalid(problem);
         if (problem) return;
-        onFilterChange(buildFilterExpression(filters, columns));
+        apply(withBase(baseFilter, buildFilterExpression(filters, columns)));
     };
 
     const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
@@ -252,6 +378,7 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
     // e2e suite included.
     return (
         <div className="px-6 py-2 bg-slate-50 dark:bg-gray-800/50">
+            {baseFilter && <p className="text-xs text-tertiary mb-2 break-words">{t('viewer.restoredFilter')}: <code>{baseFilter}</code></p>}
             <form onSubmit={handleSubmit} className="grid grid-cols-[auto_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
@@ -361,4 +488,4 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
             </form>
         </div>
     );
-}
+});

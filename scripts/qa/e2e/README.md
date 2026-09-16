@@ -179,8 +179,10 @@ to the harness.
 ## Writing checks
 
 - Scope every locator to the active tab with `activePanel(page)` from `lib.mjs` (`ACTIVE_PANEL` when you need the selector as a string).
-  Hidden tabs keep their DOM (h1, footer, Export button, search input), so an
-  unscoped `text=` locator matches the wrong tab.
+  Hidden tabs keep their DOM (h1, footer, Export button, search input, an
+  open column profile), so an unscoped `text=` locator matches the wrong
+  tab — and so does a `document.querySelectorAll` inside
+  `page.waitForFunction`; prefix its selector with `ACTIVE_PANEL` (S19).
 - Use the fixtures by name from `FIX`; regenerate rather than hand-edit them.
 - After changing the backend, rebuild the bridge — a stale binary is the
   usual reason a "fix" does not show up here.

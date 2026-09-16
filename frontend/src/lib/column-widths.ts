@@ -67,6 +67,8 @@ export interface MeasureOptions {
   /** Font the cell values are rendered in. Values are not measured one by
    * one; an average glyph width for the font is multiplied by the length. */
   valueFont?: 'mono' | 'sans';
+  /** Width in px the header carries beside its text (a button), if any. */
+  headerExtra?: number;
 }
 
 const SAMPLE = '0123456789.-abcdefghijklmnopqrstuvwxyz_';
@@ -78,7 +80,7 @@ const SAMPLE = '0123456789.-abcdefghijklmnopqrstuvwxyz_';
 export function measureColumnWidths(
   columns: ColumnWidthInput[],
   rows: RowData[],
-  { format = formatCellValue, valueFont = 'mono' }: MeasureOptions = {}
+  { format = formatCellValue, valueFont = 'mono', headerExtra = 0 }: MeasureOptions = {}
 ): number[] {
   const ctx = getContext();
   const fonts = resolveFonts();
@@ -97,8 +99,8 @@ export function measureColumnWidths(
 
   return columns.map((col, c) => {
     const content = Math.max(
-      textWidth(ctx, fonts.header, col.name),
-      col.typeLabel ? textWidth(ctx, fonts.type, col.typeLabel) : 0,
+      textWidth(ctx, fonts.header, col.name) + headerExtra,
+      col.typeLabel ? textWidth(ctx, fonts.type, col.typeLabel) + headerExtra : 0,
       maxChars[c] * charWidth
     );
     const width = Math.ceil(content) + CELL_HORIZONTAL_PADDING + 1; // +1 for border-r
