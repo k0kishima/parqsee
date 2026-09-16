@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::models::SortSpec;
 use crate::services::parquet::{
     build_page_query, json_unsafe_to_strings, nested_to_json_strings, order_by_terms,
-    plan_query_checked, range_reader, where_clause, ParquetCache,
+    plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache,
 };
 
 /// Rows are decoded and written one batch at a time, so exports run in
@@ -151,15 +151,33 @@ async fn export_data_with(
 
     // Resolving the sort needs the file's columns; a sort by a column the
     // file no longer has is refused here, before any file is created.
-    let order_by = match sort {
+    let order_by = match sort.as_ref() {
         Some(sort) => {
             let metadata = cache.get_or_create_metadata(&source_path).await?;
-            Some(order_by_terms(&sort, &metadata.columns)?)
+            Some(order_by_terms(sort, &metadata.columns)?)
         }
         None => None,
     };
 
     let result = match (where_clause(filter.as_deref()), order_by) {
+        // Current-page exports share the grid's mirrored window. Bound the
+        // materialized range; large ranges and full exports still stream.
+        (_, Some(_)) if limit.is_some_and(|n| n <= EXPORT_BATCH_SIZE) => {
+            let batches = sorted_page_batches(
+                cache, &source_path, offset.unwrap_or(0), limit.unwrap(),
+                filter, sort.expect("ORDER BY requires a sort"),
+            ).await?;
+            let staging = staging_path.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut writer = RowWriter::create(format, &staging)?;
+                let mut rows = 0;
+                for batch in batches {
+                    rows += writer.write(&batch)?;
+                }
+                writer.finish()?;
+                Ok(rows)
+            }).await.map_err(|e| format!("Export task failed: {}", e))?
+        }
         (None, None) => {
             // Decode and write on the blocking pool: a multi-GB export must
             // not hold an async worker, or concurrent page reads would stall
@@ -792,6 +810,30 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("gone"), "{err}");
         assert!(!out.exists());
+    }
+
+    #[tokio::test]
+    async fn sorted_page_exports_match_slices_of_the_full_export() {
+        let src = write_fixture("sorted_windows");
+        let cache = ParquetCache::new();
+        for direction in [SortDirection::Asc, SortDirection::Desc] {
+            for filter in [None, Some("id > 1".to_string())] {
+                let sort = Some(SortSpec { column: "name".into(), direction });
+                let full = temp_path("sorted_full.json");
+                export_data(&cache, src.to_string_lossy().into_owned(), full.to_string_lossy().into_owned(),
+                    "json".into(), None, None, filter.clone(), sort.clone()).await.unwrap();
+                let expected: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&full).unwrap()).unwrap();
+                for (offset, limit) in [(0, 2), (2, 1), (3, 10), (4, 2), (0, 0)] {
+                    let out = temp_path("sorted_page.json");
+                    let n = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
+                        "json".into(), Some(offset), Some(limit), filter.clone(), sort.clone()).await.unwrap();
+                    let actual: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+                    let want = expected.iter().skip(offset).take(limit).cloned().collect::<Vec<_>>();
+                    assert_eq!(actual, want, "{direction:?} {filter:?} offset={offset} limit={limit}");
+                    assert_eq!(n, want.len());
+                }
+            }
+        }
     }
 
     #[tokio::test]

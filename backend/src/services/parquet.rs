@@ -1185,7 +1185,7 @@ pub async fn read_data(
     sort: Option<SortSpec>,
 ) -> Result<Vec<Value>, String> {
     if let Some(sort) = sort {
-        return sorted_page(cache, path, offset, limit, filter, sort).await;
+        return batches_to_rows(&sorted_page_batches(cache, path, offset, limit, filter, sort).await?);
     }
     let batches = match where_clause(filter.as_deref()) {
         None => {
@@ -1315,14 +1315,14 @@ pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usi
 /// reversed order, read from the other end and turned around
 /// (`mirrored_window`). The filtered count that decides which half a page
 /// is in is a scan of its own, cheap beside the sort.
-async fn sorted_page(
+pub(crate) async fn sorted_page_batches(
     cache: &ParquetCache,
     path: &str,
     offset: usize,
     limit: usize,
     filter: Option<String>,
     sort: SortSpec,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<RecordBatch>, String> {
     let metadata = cache.get_or_create_metadata(path).await?;
     let total = match where_clause(filter.as_deref()) {
         Some(_) => count_data(cache, path, filter.clone()).await?,
@@ -1353,11 +1353,19 @@ async fn sorted_page(
         }
         Err(e) => return Err(e),
     };
-    let mut rows = batches_to_rows(&batches)?;
     if mirrored {
-        rows.reverse();
+        // Reverse Arrow rows before any JSON conversion so exports retain
+        // the original types and exact values. Reverse batch order as well.
+        batches.iter().rev().map(|batch| {
+            let indices = arrow::array::UInt64Array::from_iter_values((0..batch.num_rows() as u64).rev());
+            let columns = batch.columns().iter()
+                .map(|column| arrow::compute::take(column.as_ref(), &indices, None))
+                .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+            RecordBatch::try_new(batch.schema(), columns).map_err(|e| e.to_string())
+        }).collect()
+    } else {
+        Ok(batches)
     }
-    Ok(rows)
 }
 
 /// The single value of a `SELECT COUNT(*)` result; an empty result counts as 0.
