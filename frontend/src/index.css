@@ -89,3 +89,24 @@
     background-color: var(--btn-secondary-hover);
   }
 }
+
+/*
+ * A condition that arrived from the column profile panel — a click on a
+ * bar rather than something typed — lights up once and fades, so the eye
+ * finds it while the panel that was clicked may already be gone. A colour
+ * fade, not motion, so it plays under prefers-reduced-motion too. The
+ * class is taken off again on animationend.
+ */
+@keyframes filter-arrived {
+  from { background-color: var(--filter-arrived-bg); box-shadow: 0 0 0 2px var(--filter-arrived-ring); }
+  to { background-color: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+.filter-arrived {
+  --filter-arrived-bg: var(--color-blue-100);
+  --filter-arrived-ring: var(--color-blue-400);
+  animation: filter-arrived 1.5s ease-out;
+}
+.dark .filter-arrived {
+  --filter-arrived-bg: var(--color-blue-900);
+  --filter-arrived-ring: var(--color-blue-500);
+}

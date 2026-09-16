@@ -135,6 +135,32 @@ describe('FilterBar rows', () => {
       expect(onFilterChange).toHaveBeenLastCalledWith(`encode(CAST("bin" AS BYTEA), 'hex') = '' AND "id" = 5`);
     });
 
+    it('lights the rows it added and focuses the first, until the animation ends', () => {
+      const { add } = renderWithHandle();
+      add([
+        { column: 'id', operator: '>=', value: '0' },
+        { column: 'id', operator: '<', value: '50' },
+      ]);
+
+      const inputs = valueInputs();
+      expect(inputs).toHaveLength(2);
+      expect(inputs[0]).toHaveFocus();
+      inputs.forEach(input => expect(input).toHaveClass('filter-arrived'));
+      // Every control of the row is lit, not only the value.
+      expect(screen.getAllByRole('combobox').filter(c => c.classList.contains('filter-arrived'))).toHaveLength(4);
+
+      fireEvent.animationEnd(inputs[0]);
+      expect(inputs[0]).not.toHaveClass('filter-arrived');
+      expect(inputs[1]).toHaveClass('filter-arrived');
+    });
+
+    it('focuses the operator of a row whose operator takes no value', () => {
+      const { add } = renderWithHandle();
+      add([{ column: 'name', operator: 'IS NULL', value: '' }]);
+      expect(screen.getAllByRole('combobox')[1]).toHaveFocus();
+      expect(screen.getAllByRole('combobox')[1]).toHaveValue('IS NULL');
+    });
+
     it('takes the place of the blank row and applies at once', () => {
       const { onFilterChange, add } = renderWithHandle();
       add([{ column: 'name', operator: '=', value: 'a' }]);
