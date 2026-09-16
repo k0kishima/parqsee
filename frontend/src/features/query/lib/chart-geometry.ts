@@ -1,8 +1,15 @@
 import type { ChartModel } from './chart-types';
 import { barDomain, linearScale, linearTicks, tickLabels, type LinearScale } from './chart-scales';
 
-/** Pixels around the plot for the axes and their labels. */
-export const PLOT_MARGIN = { top: 24, right: 24, bottom: 64, left: 80 } as const;
+/**
+ * Pixels above and below the plot for the top tick's label and the X
+ * labels. Horizontal coordinates are the plot's own: the Y axis is drawn
+ * in a separate SVG beside the scrolling plot, so nothing here is offset
+ * for it.
+ */
+export const PLOT_MARGIN = { top: 24, bottom: 64 } as const;
+/** The width of the Y axis SVG beside the plot. */
+export const Y_AXIS_WIDTH = 80;
 
 export interface BarMark {
   rowIndex: number;
@@ -59,9 +66,8 @@ export function barGeometry(model: ChartModel, viewport: { width: number; height
   const seriesCount = model.series.length;
   const plotHeight = Math.max(0, viewport.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom);
   const groupWidth = Math.max(MIN_GROUP_WIDTH, seriesCount * (MIN_BAR_WIDTH + BAR_GAP) + GROUP_PADDING);
-  const viewportPlot = Math.max(0, viewport.width - PLOT_MARGIN.left - PLOT_MARGIN.right);
   // Spread the groups over the viewport when they fit, else give each its minimum.
-  const pitch = Math.max(groupWidth, model.rows.length > 0 ? viewportPlot / model.rows.length : groupWidth);
+  const pitch = Math.max(groupWidth, model.rows.length > 0 ? Math.max(0, viewport.width) / model.rows.length : groupWidth);
   const contentWidth = pitch * model.rows.length;
   const barWidth = Math.max(MIN_BAR_WIDTH, (pitch - GROUP_PADDING - BAR_GAP * (seriesCount - 1)) / seriesCount);
 
@@ -74,10 +80,10 @@ export function barGeometry(model: ChartModel, viewport: { width: number; height
   const groups: BarGroup[] = model.rows.map((row, i) => ({
     rowIndex: row.rowIndex,
     label: row.label,
-    x: PLOT_MARGIN.left + i * pitch,
+    x: i * pitch,
     width: pitch,
   }));
-  const groupStart = (rowIndex: number) => PLOT_MARGIN.left + rowIndex * pitch + GROUP_PADDING / 2;
+  const groupStart = (rowIndex: number) => rowIndex * pitch + GROUP_PADDING / 2;
   const marks: BarMark[] = model.points.map(point => {
     const top = yScale(point.y);
     return {

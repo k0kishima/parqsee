@@ -10,6 +10,29 @@
 /* Manual dark mode implementation for Tailwind v4 */
 @layer base {
   :root {
+    /*
+     * The SQL view's charts. Eight series colors in a fixed order — a
+     * ninth series wraps around, and the legend numbers every series so
+     * two that share a color are still told apart — stepped separately
+     * for each surface: the dark set is not a lightened light set. Both
+     * sets pass the categorical checks (lightness band, chroma floor,
+     * adjacent-pair color-vision separation, contrast against the
+     * surface) on the surface the results area actually paints; three
+     * light slots sit under 3:1 on white, which the legend's text labels
+     * and the table view make up for. Marks never carry text in their
+     * own color.
+     */
+    --chart-series-1: #2a78d6;
+    --chart-series-2: #eb6834;
+    --chart-series-3: #1baf7a;
+    --chart-series-4: #eda100;
+    --chart-series-5: #e87ba4;
+    --chart-series-6: #008300;
+    --chart-series-7: #4a3aa7;
+    --chart-series-8: #e34948;
+    --chart-axis: var(--color-slate-400);
+    --chart-grid: var(--color-slate-200);
+    --chart-focus: var(--color-slate-900);
     --bg-primary: var(--color-white);
     --bg-secondary: var(--color-slate-50);
     --bg-tertiary: var(--color-slate-100);
@@ -31,6 +54,17 @@
   }
   
   .dark {
+    --chart-series-1: #3987e5;
+    --chart-series-2: #d95926;
+    --chart-series-3: #199e70;
+    --chart-series-4: #c98500;
+    --chart-series-5: #d55181;
+    --chart-series-6: #008300;
+    --chart-series-7: #9085e9;
+    --chart-series-8: #e66767;
+    --chart-axis: var(--color-slate-500);
+    --chart-grid: var(--color-slate-700);
+    --chart-focus: var(--color-slate-100);
     --bg-primary: var(--color-slate-800);
     --bg-secondary: var(--color-slate-900);
     --bg-tertiary: var(--color-slate-950);

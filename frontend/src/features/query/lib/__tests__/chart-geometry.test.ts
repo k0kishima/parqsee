@@ -42,7 +42,8 @@ describe('barGeometry', () => {
 
   it('spreads few groups over the viewport and lets many overflow it at a readable width', () => {
     const few = barGeometry(buildChartModel(result([{ x: 'a', y: 1 }, { x: 'b', y: 2 }])), viewport, 'en')!;
-    expect(few.contentWidth).toBeCloseTo(viewport.width - PLOT_MARGIN.left - PLOT_MARGIN.right);
+    expect(few.contentWidth).toBeCloseTo(viewport.width);
+    expect(few.groups[0].x).toBe(0);
     const rows = Array.from({ length: 200 }, (_, i) => ({ x: `r${i}`, y: i }));
     const many = barGeometry(buildChartModel(result(rows)), viewport, 'en')!;
     expect(many.contentWidth).toBeGreaterThan(viewport.width);

@@ -1,19 +1,35 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { QueryResult } from '../types';
+import type { ChartKind, ChartModel } from '../lib/chart-types';
+import { IMPLEMENTED_CHART_KINDS, QueryChart, useProblemText } from './query-chart';
 import { useColumnVirtualizer, useRowVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { ROW_DENSITY_CLASSES } from '../../../lib/settings-storage';
 
+export type ResultMode = 'table' | 'chart';
+
+/** The chart's controls, owned by `QueryView` so they outlive a re-render of the results. */
+export interface ChartControls {
+    model: ChartModel;
+    mode: ResultMode;
+    onModeChange: (mode: ResultMode) => void;
+    /** The kind drawn: the user's choice while it is available, else the inferred one. */
+    kind: ChartKind | null;
+    onKindChange: (kind: ChartKind) => void;
+    notice: string | null;
+}
+
 interface QueryResultsProps {
     result?: QueryResult;
     error?: string;
     isLoading: boolean;
+    chart?: ChartControls;
 }
 
-export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading }) => {
+export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading, chart }) => {
     const { t } = useTranslation();
 
     if (isLoading) {
@@ -56,11 +72,77 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
                         </span>
                     )}
                 </span>
-                <span>{t('viewer.query.duration', { ms: result.execution_time_ms })}</span>
+                <span className="flex items-center gap-3">
+                    <span>{t('viewer.query.duration', { ms: result.execution_time_ms })}</span>
+                    {chart && <ResultModeToggle chart={chart} />}
+                </span>
             </div>
-            <ResultGrid result={result} />
+            {chart && chart.mode === 'chart'
+                ? <ChartPane chart={chart} />
+                : <ResultGrid result={result} />}
         </div>
     );
+};
+
+const segmentClass = (pressed: boolean) =>
+    `px-2 py-0.5 text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+        pressed ? 'bg-selected border-blue-300 text-primary dark:border-blue-700' : 'border-primary text-secondary hover:bg-tertiary'
+    }`;
+
+/** Table / Chart, and while the chart shows, the kinds that have a renderer. */
+const ResultModeToggle: React.FC<{ chart: ChartControls }> = ({ chart }) => {
+    const { t } = useTranslation();
+    const problemText = useProblemText();
+    return (
+        <>
+            <span role="group" aria-label={t('viewer.query.chart.resultView')} className="inline-flex gap-1">
+                {(['table', 'chart'] as const).map(mode => (
+                    <button key={mode} type="button" aria-pressed={chart.mode === mode} onClick={() => chart.onModeChange(mode)} className={segmentClass(chart.mode === mode)}>
+                        {t(`viewer.query.chart.${mode}`)}
+                    </button>
+                ))}
+            </span>
+            {chart.mode === 'chart' && (
+                <span role="group" aria-label={t('viewer.query.chart.chartType')} className="inline-flex gap-1">
+                    {IMPLEMENTED_CHART_KINDS.map(kind => {
+                        const availability = chart.model.availability[kind];
+                        const reasonId = `chart-kind-${kind}-reason`;
+                        return (
+                            <span key={kind} className="inline-flex flex-col">
+                                <button
+                                    type="button"
+                                    aria-pressed={chart.kind === kind}
+                                    // Disabled in the accessible sense only: it stays focusable so the reason can be read.
+                                    aria-disabled={!availability.available}
+                                    aria-describedby={availability.available ? undefined : reasonId}
+                                    title={availability.available ? undefined : problemText(availability.reason)}
+                                    onClick={() => { if (availability.available) chart.onKindChange(kind); }}
+                                    className={`${segmentClass(chart.kind === kind)} ${availability.available ? '' : 'opacity-50 cursor-not-allowed'}`}
+                                >
+                                    {t(`viewer.query.chart.${kind}`)}
+                                </button>
+                                {!availability.available && <span id={reasonId} className="sr-only">{problemText(availability.reason)}</span>}
+                            </span>
+                        );
+                    })}
+                </span>
+            )}
+        </>
+    );
+};
+
+/** The chart, or why there is none: a problem with the result shows in place of the plot, and the table stays a click away. */
+const ChartPane: React.FC<{ chart: ChartControls }> = ({ chart }) => {
+    const problemText = useProblemText();
+    if (chart.kind === null) {
+        const problem = chart.model.problem ?? { code: 'noValidPoints' as const };
+        return (
+            <div className="flex-1 flex items-center justify-center p-6 text-center text-sm text-tertiary">
+                <p role="status">{problemText(problem)}</p>
+            </div>
+        );
+    }
+    return <QueryChart model={chart.model} kind={chart.kind} notice={chart.notice} />;
 };
 
 /** Row pitch assumed until the first rows have been measured. */

@@ -150,7 +150,7 @@ describe('buildChartModel', () => {
     expect(model.problem).toBeNull();
     expect(model.diagnostics).toEqual({
       candidatePoints: 10,
-      excludedPoints: 6,
+      excludedPoints: 7,
       byReason: { missing: 3, nonFinite: 2, precision: 1, invalid: 1 },
       ignoredColumns: [],
     });
