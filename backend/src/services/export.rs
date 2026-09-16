@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::models::SortSpec;
 use crate::services::parquet::{
     build_page_query, json_unsafe_to_strings, nested_to_json_strings, order_by_terms,
-    plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache,
+    plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache, ResultCachePolicy,
 };
 
 /// Rows are decoded and written one batch at a time, so exports run in
@@ -160,13 +160,22 @@ async fn export_data_with(
     };
 
     let result = match (where_clause(filter.as_deref()), order_by) {
-        // Current-page exports share the grid's mirrored window. Bound the
-        // materialized range; large ranges and full exports still stream.
+        // Small sorted ranges (including current pages) share the grid's
+        // mirrored window. Reuse existing results without evicting grid pages
+        // to cache custom export ranges. Larger ranges and full exports stream.
         (_, Some(_)) if limit.is_some_and(|n| n <= EXPORT_BATCH_SIZE) => {
             let batches = sorted_page_batches(
                 cache, &source_path, offset.unwrap_or(0), limit.unwrap(),
                 filter, sort.expect("ORDER BY requires a sort"),
-            ).await?;
+                ResultCachePolicy::ReuseOnly,
+            ).await.map_err(|e| {
+                if e.contains("Resources exhausted") {
+                    "This sorted export needs more memory than the app allows. Export a smaller \
+                     range or narrow the rows with a filter.".to_string()
+                } else {
+                    e
+                }
+            })?;
             let staging = staging_path.clone();
             tokio::task::spawn_blocking(move || {
                 let mut writer = RowWriter::create(format, &staging)?;
@@ -809,6 +818,19 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.contains("gone"), "{err}");
+        assert!(!out.exists());
+    }
+
+    #[tokio::test]
+    async fn a_sorted_range_memory_error_has_export_specific_guidance() {
+        let src = write_fixture("sort_export_memory");
+        let out = temp_path("sort_export_memory.csv");
+        let cache = ParquetCache::new().with_memory_limit(1);
+        let err = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
+            "csv".into(), Some(1), Some(1), None,
+            Some(SortSpec { column: "name".into(), direction: SortDirection::Asc })).await.unwrap_err();
+        assert!(err.contains("sorted export"), "{err}");
+        assert!(!err.contains("SQL view"), "{err}");
         assert!(!out.exists());
     }
 

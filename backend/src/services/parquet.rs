@@ -26,7 +26,7 @@ use crate::services::access::FileAccess;
 /// query on it: the sorted grid's top-k heap, the SQL view's aggregates
 /// and sorts. Operators that can spill (aggregates, a full sort) go to the
 /// disk manager's temp directory past it; a top-k cannot and fails with
-/// "Resources exhausted", which `sorted_page_batches` turns into a message that
+/// "Resources exhausted", which the grid turns into a message that
 /// names the way out. Measured on a 58M-row, 7-column file in release:
 /// the sorted page at offset 1M peaked at 2.1 GB of process memory, at
 /// 5M at 3.3 GB, at the middle (29M) at 12.9 GB — the heap holds
@@ -38,6 +38,12 @@ pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 // Shared across files, not an additional allowance for every open tab.
 const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const RESULT_CACHE_ENTRIES: usize = 64;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResultCachePolicy {
+    Populate,
+    ReuseOnly,
+}
 
 #[derive(Clone, PartialEq, Eq)]
 struct FileVersion {
@@ -1218,7 +1224,17 @@ pub async fn read_data(
     sort: Option<SortSpec>,
 ) -> Result<Vec<Value>, String> {
     if let Some(sort) = sort {
-        return batches_to_rows(&sorted_page_batches(cache, path, offset, limit, filter, sort).await?);
+        let batches = sorted_page_batches(cache, path, offset, limit, filter, sort, ResultCachePolicy::Populate)
+            .await.map_err(|e| {
+                if e.contains("Resources exhausted") {
+                    "This page is too deep into the sort for a file this large: sorting it \
+                     needs more memory than the app allows itself. Narrow the rows with a \
+                     filter, page from the other end, or sort in the SQL view.".to_string()
+                } else {
+                    e
+                }
+            })?;
+        return batches_to_rows(&batches);
     }
     let batches = match where_clause(filter.as_deref()) {
         None => {
@@ -1247,12 +1263,21 @@ pub async fn count_data(
     path: &str,
     filter: Option<String>,
 ) -> Result<usize, String> {
+    count_data_with_policy(cache, path, filter, ResultCachePolicy::Populate).await
+}
+
+async fn count_data_with_policy(
+    cache: &ParquetCache,
+    path: &str,
+    filter: Option<String>,
+    policy: ResultCachePolicy,
+) -> Result<usize, String> {
     let query = match where_clause(filter.as_deref()) {
         Some(f) => format!("SELECT COUNT(*) FROM t WHERE {}", f),
         None => "SELECT COUNT(*) FROM t".to_string(),
     };
 
-    let batches = execute_browse_query(cache, path, &query).await?;
+    let batches = execute_browse_query(cache, path, &query, policy).await?;
     count_from_batches(&batches)
 }
 
@@ -1281,6 +1306,7 @@ async fn execute_browse_query(
     cache: &ParquetCache,
     path: &str,
     query: &str,
+    policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
     let ctx = cache.get_or_create_session(path).await?;
     let session_id = ctx.session_id();
@@ -1318,7 +1344,7 @@ async fn execute_browse_query(
     // Include keys as well as arrays; do not retain an unbounded filter string.
     let bytes = batches.iter().map(RecordBatch::get_array_memory_size).sum::<usize>()
         + path.len() + session_id.len() + query.len();
-    if reusable && page_sized && bytes <= RESULT_CACHE_BYTES {
+    if policy == ResultCachePolicy::Populate && reusable && page_sized && bytes <= RESULT_CACHE_BYTES {
         let sessions = cache.sessions.lock().map_err(|e| e.to_string())?;
         if sessions.get(path).is_some_and(|ctx| ctx.session_id() == session_id) {
             let mut results = cache.results.lock().map_err(|e| e.to_string())?;
@@ -1388,12 +1414,13 @@ pub(crate) async fn sorted_page_batches(
     limit: usize,
     filter: Option<String>,
     sort: SortSpec,
+    policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
     let metadata = cache.get_or_create_metadata(path).await?;
     let version = FileVersion::read(path)?;
     // Even without a filter, cached UI metadata may describe an older file.
     // COUNT(*) is answered from Parquet metadata and versioned like pages.
-    let total = count_data(cache, path, filter.clone()).await?;
+    let total = count_data_with_policy(cache, path, filter.clone(), policy).await?;
     let (sort, offset, limit, mirrored) = match mirrored_window(offset, limit, total) {
         Some((offset, limit)) => (
             SortSpec {
@@ -1408,17 +1435,7 @@ pub(crate) async fn sorted_page_batches(
     };
     let order_by = order_by_terms(&sort, &metadata.columns)?;
     let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
-    let batches = match execute_browse_query(cache, path, &query).await {
-        Ok(batches) => batches,
-        // The top-k heap for a page this deep outgrew `SESSION_MEMORY_LIMIT`.
-        Err(e) if e.contains("Resources exhausted") => {
-            return Err("This page is too deep into the sort for a file this large: sorting it \
-                 needs more memory than the app allows itself. Narrow the rows with a \
-                 filter, page from the other end, or sort in the SQL view."
-                .to_string());
-        }
-        Err(e) => return Err(e),
-    };
+    let batches = execute_browse_query(cache, path, &query, policy).await?;
     // A key per query is insufficient if the file changes between the count
     // and page queries: refuse a window computed for a different version.
     version.check(path)?;
@@ -1950,7 +1967,7 @@ mod tests {
         ] {
             let plan = super::plan_query_checked(&ctx, query).await.unwrap();
             assert!(!super::reusable_plan(&plan).unwrap(), "{query}");
-            super::execute_browse_query(&cache, &file, query).await.unwrap();
+            super::execute_browse_query(&cache, &file, query, super::ResultCachePolicy::Populate).await.unwrap();
             assert!(!cache.results.lock().unwrap().iter().any(|r| r.query == query));
         }
     }
@@ -2011,11 +2028,33 @@ mod tests {
         std::fs::File::options().write(true).open(&path).unwrap().set_times(
             std::fs::FileTimes::new().set_modified(before.modified + Duration::from_secs(2)),
         ).unwrap();
+        assert_eq!(before.size, super::FileVersion::read(&file).unwrap().size,
+            "the timestamp must invalidate even a same-size overwrite");
         assert!(before.check(&file).unwrap_err().contains("file changed"));
         let rows = super::read_data(&cache, &file, 0, 1, None, sort.clone()).await.unwrap();
         assert_eq!(rows[0]["id"], 4);
         std::fs::remove_file(&path).unwrap();
         assert!(super::read_data(&cache, &file, 0, 1, None, sort).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn export_reads_reuse_pages_without_inserting_custom_ranges() {
+        let path = temp_path("export_cache_policy.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        let sort = SortSpec { column: "id".into(), direction: SortDirection::Asc };
+        let first = super::sorted_page_batches(&cache, &file, 0, 1, None, sort.clone(),
+            super::ResultCachePolicy::Populate).await.unwrap();
+        let keys = || cache.results.lock().unwrap().iter().map(|r| r.query.clone()).collect::<Vec<_>>();
+        let before = keys();
+        let hit = super::sorted_page_batches(&cache, &file, 0, 1, None, sort.clone(),
+            super::ResultCachePolicy::ReuseOnly).await.unwrap();
+        assert!(Arc::ptr_eq(first[0].column(0), hit[0].column(0)));
+        let other = super::sorted_page_batches(&cache, &file, 1, 1, Some("id > 0".into()), sort,
+            super::ResultCachePolicy::ReuseOnly).await.unwrap();
+        assert_eq!(super::batches_to_rows(&other).unwrap()[0]["id"], 2);
+        assert_eq!(keys(), before);
     }
 
     /// Glob characters are legal in file names; they must not be treated as

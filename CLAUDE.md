@@ -344,23 +344,31 @@ command's answer carries the higher `revision`, since the two can cross.
    does and the middle page is the worst. And every file's session runs
    under a memory pool of `SESSION_MEMORY_LIMIT` (2 GiB): operators that
    can spill (the SQL view's aggregates and full sorts) go to disk past
-   it, a top-k cannot and fails, which `sorted_page_batches` reports as a page
+   it, a top-k cannot and fails, which the grid reports as a page
    too deep to sort with the ways out (a filter, the other end, the SQL
    view). On that file the sorted pages within about 1–2M rows of either
    end answer and the deeper ones fail with a peak near 2.3 GB instead of
    taking the app down (`a_sort_past_the_memory_limit_fails_cleanly`).
    Counts and sorted pages share a bounded LRU in `ParquetCache`: at most
-   64 results and 32 MiB across all files, keyed by path, session identity
-   and SQL. The frontend count and the sort's mirrored-window count reuse
+   64 results and 32 MiB across all files, keyed by path, session identity,
+   file size/modification time and SQL. Hits stat the file; changed versions
+   invalidate older results. The count/page sequence checks its version at
+   both ends and refuses results if the file changed during the read. Even
+   unfiltered sorts obtain their count from the versioned query path rather
+   than cached UI metadata. Schema/UI metadata still refresh explicitly.
+   The frontend count and the sort's mirrored-window count reuse
    the same result. Refresh/close evicts entries; a query from an evicted
    session cannot insert them again. Stable/volatile functions (including
    those in subqueries) bypass caching. Results over 8192 rows or the byte
    budget are not cached. Page arrays are compacted before caching so a
    100-row slice does not retain the whole top-k allocation; string/binary
    views also compact their backing blocks. SQL-view queries are not cached.
-   Current-page exports (a limit of at most 8192 rows) use the same Arrow
-   page reader, including mirroring and cached results, preserving native
-   types until the export writer converts them. Larger ranges still stream.
+   Sorted exports with a limit of at most 8192 rows (current pages and small
+   custom ranges) use the same Arrow page reader, including mirroring and
+   existing cached results. They do not insert new count/page results, so
+   custom ranges do not displace grid entries, and memory errors have export
+   guidance. Native types survive until the export writer converts them.
+   Unsorted exports, larger sorted ranges and full exports still stream.
    If the first read of a deep page still hurts, the next step is a
    cached permutation per (file, filter, column, direction) paged through
    the parquet reader's row selection, not a smaller key. A full sorted
