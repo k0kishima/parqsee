@@ -26,7 +26,7 @@ use crate::services::access::FileAccess;
 /// query on it: the sorted grid's top-k heap, the SQL view's aggregates
 /// and sorts. Operators that can spill (aggregates, a full sort) go to the
 /// disk manager's temp directory past it; a top-k cannot and fails with
-/// "Resources exhausted", which `sorted_page` turns into a message that
+/// "Resources exhausted", which `sorted_page_batches` turns into a message that
 /// names the way out. Measured on a 58M-row, 7-column file in release:
 /// the sorted page at offset 1M peaked at 2.1 GB of process memory, at
 /// 5M at 3.3 GB, at the middle (29M) at 12.9 GB — the heap holds
@@ -1172,10 +1172,10 @@ pub fn build_page_query(
 /// debug. With a filter or a sort the page is the DataFusion query the
 /// export shares, so what is exported is what the grid shows. Both paths
 /// read row groups in file order, so the two paginate the same sequence.
-/// A sort is an `ORDER BY` over the whole file for every page, a scan per
-/// page — the price of a sort key the file does not have; see
-/// `order_by_terms` for what keeps its pages consistent and `sorted_page`
-/// for how the deep pages are kept as cheap as the first.
+/// An uncached sort is an `ORDER BY` over the whole file for that page;
+/// counts and compact page batches share a bounded cache. See
+/// `order_by_terms` for what keeps its pages consistent and `sorted_page_batches`
+/// for how far-half pages are read from the nearer end.
 pub async fn read_data(
     cache: &ParquetCache,
     path: &str,
@@ -1338,7 +1338,7 @@ pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usi
 /// as is for the near half, and for the far half the same window of the
 /// reversed order, read from the other end and turned around
 /// (`mirrored_window`). The filtered count that decides which half a page
-/// is in is a scan of its own, cheap beside the sort.
+/// is in is shared with the frontend's count through the result cache.
 pub(crate) async fn sorted_page_batches(
     cache: &ParquetCache,
     path: &str,
@@ -1735,7 +1735,7 @@ mod tests {
             .await
             .expect("narrow decimals must not fail the read");
         assert_eq!(rows[0]["small"], "123.45");
-        assert!(rows[1].get("small").map_or(true, |v| v.is_null()));
+        assert!(rows[1].get("small").is_none_or(|v| v.is_null()));
         assert_eq!(rows[0]["medium"], "-0.0001");
         assert_eq!(rows[1]["medium"], "12345678901234.5678");
         assert_eq!(rows[0]["prices"][0], "1.50");

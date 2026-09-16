@@ -324,7 +324,7 @@ command's answer carries the higher `revision`, since the two can cross.
    order, so adding a filter never reorders the grid
    (`unfiltered_pages_match_the_sql_path` pins this).
    A sort is the one thing that does reorder it, and it is the expensive
-   path by design: each page is its own `ORDER BY ... LIMIT/OFFSET` query
+   path by design: each uncached page is its own `ORDER BY ... LIMIT/OFFSET` query
    over the whole file, and the file has no row id, so the `ORDER BY`
    names the sort column and then every other sortable column in the same
    direction (`order_by_terms`). Without those tie-breakers the heap's
@@ -339,21 +339,32 @@ command's answer carries the higher `revision`, since the two can cross.
    2.1 GB, the last page in 180 s and 11 GB. Two things keep that in
    bounds. A page past the midpoint is read from the other end — the
    descending order is the exact reverse of the ascending one, so
-   `sorted_page` takes the mirrored window of the reversed order and turns
+   `sorted_page_batches` takes the mirrored window of the reversed order and turns
    it around (`mirrored_window`); the last page now costs what the first
    does and the middle page is the worst. And every file's session runs
    under a memory pool of `SESSION_MEMORY_LIMIT` (2 GiB): operators that
    can spill (the SQL view's aggregates and full sorts) go to disk past
-   it, a top-k cannot and fails, which `sorted_page` reports as a page
+   it, a top-k cannot and fails, which `sorted_page_batches` reports as a page
    too deep to sort with the ways out (a filter, the other end, the SQL
    view). On that file the sorted pages within about 1–2M rows of either
    end answer and the deeper ones fail with a peak near 2.3 GB instead of
    taking the app down (`a_sort_past_the_memory_limit_fails_cleanly`).
-   If the per-page scan ever hurts on large files, the next step is a
+   Counts and sorted pages share a bounded LRU in `ParquetCache`: at most
+   64 results and 32 MiB across all files, keyed by path, session identity
+   and SQL. The frontend count and the sort's mirrored-window count reuse
+   the same result. Refresh/close evicts entries; a query from an evicted
+   session cannot insert them again. Stable/volatile functions (including
+   those in subqueries) bypass caching. Results over 8192 rows or the byte
+   budget are not cached. Page arrays are compacted before caching so a
+   100-row slice does not retain the whole top-k allocation; string/binary
+   views also compact their backing blocks. SQL-view queries are not cached.
+   Current-page exports (a limit of at most 8192 rows) use the same Arrow
+   page reader, including mirroring and cached results, preserving native
+   types until the export writer converts them. Larger ranges still stream.
+   If the first read of a deep page still hurts, the next step is a
    cached permutation per (file, filter, column, direction) paged through
-   the parquet reader's row selection, not a smaller key. A sorted export
-   is the same query without the limit: a full sort of the file, spilled
-   to disk past the pool.
+   the parquet reader's row selection, not a smaller key. A full sorted
+   export runs the query without a limit and spills to disk past the pool.
 4. In the SQL view and in filters, the open file is always registered as table `t`.
 5. Settings and recent files are persisted in `localStorage`. `lib/settings-storage.ts`
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`
