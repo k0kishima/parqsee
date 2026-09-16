@@ -2,7 +2,7 @@ use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::Mutex as AsyncMutex;
@@ -35,9 +35,22 @@ use crate::services::access::FileAccess;
 /// within reach of it are the far majority a viewer pages to.
 pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
+// Shared across files, not an additional allowance for every open tab.
+const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
+const RESULT_CACHE_ENTRIES: usize = 64;
+
+struct CachedResult {
+    path: String,
+    session_id: String,
+    query: String,
+    batches: Vec<RecordBatch>,
+    bytes: usize,
+}
+
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
+    results: Mutex<VecDeque<CachedResult>>,
     /// Per-path gates make a cache fill and eviction one atomic transition
     /// without serializing operations for unrelated files.
     session_gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
@@ -63,6 +76,7 @@ impl ParquetCache {
         Self {
             sessions: Mutex::new(HashMap::new()),
             metadata: Mutex::new(HashMap::new()),
+            results: Mutex::new(VecDeque::new()),
             session_gates: Mutex::new(HashMap::new()),
             metadata_gates: Mutex::new(HashMap::new()),
             access,
@@ -285,6 +299,7 @@ impl ParquetCache {
 
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(path);
+            self.results.lock().map_err(|e| e.to_string())?.retain(|r| r.path != path);
         }
         if let Ok(mut metadata_cache) = self.metadata.lock() {
             metadata_cache.remove(path);
@@ -1204,8 +1219,74 @@ pub async fn count_data(
         None => "SELECT COUNT(*) FROM t".to_string(),
     };
 
-    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    let batches = execute_browse_query(cache, path, &query).await?;
     count_from_batches(&batches)
+}
+
+/// Only deterministic browse queries are reusable. Stable functions (now,
+/// current_date, etc.) are stable within a query, not across page loads.
+fn reusable_plan(plan: &datafusion::logical_expr::LogicalPlan) -> Result<bool, String> {
+    use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
+    use datafusion::logical_expr::{Expr, Volatility};
+    let mut reusable = true;
+    plan.apply_with_subqueries(|node| {
+        node.apply_expressions(|expr| {
+            expr.apply(|expr| {
+                if let Expr::ScalarFunction(function) = expr {
+                    reusable &= function.func.signature().volatility == Volatility::Immutable;
+                }
+                Ok(TreeNodeRecursion::Continue)
+            })
+        })
+    }).map_err(|e| e.to_string())?;
+    Ok(reusable)
+}
+
+/// Bounded LRU of Arrow batches. Session identity prevents an in-flight read
+/// from repopulating the cache after Refresh/close evicts that session.
+async fn execute_browse_query(
+    cache: &ParquetCache,
+    path: &str,
+    query: &str,
+) -> Result<Vec<RecordBatch>, String> {
+    let ctx = cache.get_or_create_session(path).await?;
+    let session_id = ctx.session_id();
+    {
+        let mut results = cache.results.lock().map_err(|e| e.to_string())?;
+        if let Some(index) = results.iter().position(|r| {
+            r.path == path && r.session_id == session_id && r.query == query
+        }) {
+            let result = results.remove(index).expect("cache entry exists");
+            let batches = result.batches.clone();
+            results.push_back(result);
+            return Ok(batches);
+        }
+    }
+    let plan = plan_query_checked(&ctx, query).await?;
+    let reusable = reusable_plan(&plan)?;
+    let batches = ctx.execute_logical_plan(plan).await
+        .map_err(|e| format!("SQL execution failed: {}", e))?
+        .collect().await.map_err(|e| format!("Failed to collect results: {}", e))?;
+    // Include keys as well as arrays; do not retain an unbounded filter string.
+    let bytes = batches.iter().map(RecordBatch::get_array_memory_size).sum::<usize>()
+        + path.len() + session_id.len() + query.len();
+    if reusable && bytes <= RESULT_CACHE_BYTES {
+        let sessions = cache.sessions.lock().map_err(|e| e.to_string())?;
+        if sessions.get(path).is_some_and(|ctx| ctx.session_id() == session_id) {
+            let mut results = cache.results.lock().map_err(|e| e.to_string())?;
+            results.retain(|r| !(r.path == path && r.session_id == session_id && r.query == query));
+            let mut used = results.iter().map(|r| r.bytes).sum::<usize>();
+            while results.len() >= RESULT_CACHE_ENTRIES || used + bytes > RESULT_CACHE_BYTES {
+                if let Some(old) = results.pop_front() {
+                    used -= old.bytes;
+                }
+            }
+            results.push_back(CachedResult {
+                path: path.into(), session_id, query: query.into(), batches: batches.clone(), bytes,
+            });
+        }
+    }
+    Ok(batches)
 }
 
 /// The window of the reversed sequence that holds page `[offset, offset +
@@ -1727,6 +1808,49 @@ mod tests {
                 .unwrap(),
             3
         );
+    }
+
+    #[tokio::test]
+    async fn counts_are_reused_and_refresh_invalidates_them() {
+        let path = temp_path("cached_count.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        let filter = Some("id > 1".into());
+        assert_eq!(super::count_data(&cache, &file, filter.clone()).await.unwrap(), 2);
+        // A hit must not open the source again.
+        let moved = path.with_extension("saved");
+        std::fs::rename(&path, &moved).unwrap();
+        assert_eq!(super::count_data(&cache, &file, filter.clone()).await.unwrap(), 2);
+        std::fs::rename(&moved, &path).unwrap();
+        cache.evict(&file).await.unwrap();
+        assert!(cache.results.lock().unwrap().is_empty());
+        let batch = RecordBatch::try_from_iter(vec![("id", Arc::new(Int64Array::from(vec![9])) as ArrayRef)]).unwrap();
+        write_parquet(&path, &batch, None);
+        assert_eq!(super::count_data(&cache, &file, filter).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn result_cache_is_bounded_and_excludes_time_and_randomness() {
+        let path = temp_path("bounded_count.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        for i in 0..super::RESULT_CACHE_ENTRIES + 2 {
+            super::count_data(&cache, &file, Some(format!("id > {i}"))).await.unwrap();
+        }
+        assert_eq!(cache.results.lock().unwrap().len(), super::RESULT_CACHE_ENTRIES);
+        let ctx = cache.get_or_create_session(&file).await.unwrap();
+        for query in [
+            "SELECT COUNT(*) FROM t WHERE random() < 0.5",
+            "SELECT COUNT(*) FROM t WHERE now() > TIMESTAMP '2000-01-01'",
+            "SELECT COUNT(*) FROM t WHERE id IN (SELECT id FROM t WHERE random() < 0.5)",
+        ] {
+            let plan = super::plan_query_checked(&ctx, query).await.unwrap();
+            assert!(!super::reusable_plan(&plan).unwrap(), "{query}");
+            super::execute_browse_query(&cache, &file, query).await.unwrap();
+            assert!(!cache.results.lock().unwrap().iter().any(|r| r.query == query));
+        }
     }
 
     /// Glob characters are legal in file names; they must not be treated as
