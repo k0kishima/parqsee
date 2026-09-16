@@ -17,14 +17,15 @@ cluster and no upload.
 - **Real types** — every column shows its Parquet type; decimals, 64-bit
   integers and non-finite floats are rendered as stored, not rounded through a
   JavaScript number.
-- **Filter and search** — conditions over any column, or a search across the
-  page you are looking at. Adding a filter never reorders the rows.
+- **Filter, sort and search** — conditions over any column, a sort by any
+  column from its header, or a search across the page you are looking at.
+  Adding a filter never reorders the rows.
 - **SQL over the file** — the open file is table `t`; run a read-only
   DataFusion query and read the result in the same grid.
 - **Export** — the whole file, the current page or the filtered rows to CSV or
   JSON, streamed at constant memory.
 - **Tabs and a file explorer** — open a folder and browse its Parquet files;
-  the open tabs come back at the next launch with their page and filter.
+  the open tabs come back at the next launch with their page, filter and sort.
 - **Opens from Finder** — double-click a `.parquet` file, or drop it on the
   window or the Dock icon.
 - **Dark mode, English and Japanese**, following the system appearance.
@@ -198,7 +199,9 @@ Read it before changing the backend.
 - A release build is the one to judge speed by: `pnpm tauri dev` is a debug
   build and scans roughly twenty times slower.
 - An unfiltered page is read by skipping row groups; a filter turns the page
-  into a DataFusion query, so a filter over a huge file is the slow case.
+  into a DataFusion query, so a filter over a huge file is the slow case. A
+  sort is slower still: every page sorts the whole file, and the pages near
+  the end cost the most.
 - Close tabs you are done with: each one keeps a session and the file's
   metadata cached.
 
