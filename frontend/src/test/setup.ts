@@ -1,6 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
+// jsdom has no AnimationEvent, and React decides at load time from its
+// absence to listen for the vendor-prefixed `webkitAnimationEnd` instead of
+// `animationend` — which `fireEvent.animationEnd` dispatches, so an
+// `onAnimationEnd` handler would never run in a test. Declaring the class
+// before react-dom loads makes React listen for the standard name.
+if (!('AnimationEvent' in window)) {
+  Object.defineProperty(window, 'AnimationEvent', { value: class AnimationEvent extends Event {}, configurable: true, writable: true });
+}
+
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

@@ -127,7 +127,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   value, a bucket or the NULL row goes into the filter bar through its
   `FilterBarHandle.addConditions` and applies at once, replacing a condition on
   the same column with the same operator (also interchanging `<` / `<=` at
-  day-end) so a narrower bucket does not stack on the wider one. Restored
+  day-end) so a narrower bucket does not stack on the wider one. The rows
+  that arrive this way light up once (`.filter-arrived` in `index.css`) and
+  the first takes focus, since the click's effect lands in the grid, the
+  footer and the bar at once with nothing to say so; a value or the NULL
+  row also closes the panel — one value leaves nothing to chart — while a
+  bucket keeps it open for the drill-down. Restored
   form-generated filters become editable rows; unrecognized SQL remains a
   visible, parenthesized base predicate. Explicit empty values from a chart
   are distinct from unfilled form rows. Changing file, column or filter

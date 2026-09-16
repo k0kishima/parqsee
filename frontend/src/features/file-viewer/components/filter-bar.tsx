@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
@@ -31,6 +31,12 @@ export interface FilterBarHandle {
      * same operator: a click on a narrower bucket replaces the range the
      * previous click set instead of stacking on it. The upper-bound operators
      * < and <= also replace each other when a time bucket ends at day-end.
+     *
+     * The new rows light up once (`.filter-arrived`) and the first one
+     * takes focus: the click happened in a panel beside the grid, and its
+     * effect lands here, in the grid and in the footer at once with nothing
+     * to say so — and the button that was clicked may be gone, the panel
+     * closing on a value, so focus has to land somewhere anyway.
      */
     addConditions: (conditions: FilterCondition[]) => void;
 }
@@ -288,6 +294,23 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     }, [onFilterChange]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
 
+    // Rows that came in through addConditions and are still lit; a row's
+    // id leaves the list when its animation ends.
+    const [arrived, setArrived] = useState<number[]>([]);
+    const settleRow = (id: number) => setArrived(ids => (ids.includes(id) ? ids.filter(i => i !== id) : ids));
+    // The row to focus once it is rendered. The wrapper has `display:
+    // contents`, but it is still a DOM node, so its controls are reachable.
+    const rowElements = useRef(new Map<number, HTMLDivElement>());
+    const [focusRow, setFocusRow] = useState<number | null>(null);
+    useEffect(() => {
+        if (focusRow === null) return;
+        const row = rowElements.current.get(focusRow);
+        // The value input, or the operator when the operator takes none.
+        const target = row?.querySelector<HTMLElement>('input:enabled') ?? row?.querySelectorAll<HTMLElement>('select')[1];
+        target?.focus();
+        setFocusRow(null);
+    }, [focusRow]);
+
     useImperativeHandle(ref, () => ({
         addConditions(conditions) {
             const replaced = (row: FilterRow) =>
@@ -301,6 +324,8 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
             const added = conditions.map(c => ({ ...newFilterRow(c.column), operator: c.operator, value: c.value, explicitValue: true }));
             const next = [...kept, ...added];
             setFilters(next);
+            setArrived(ids => [...ids, ...added.map(row => row.id)]);
+            if (added.length > 0) setFocusRow(added[0].id);
             const problem = findInvalidFilterValue(next, columns);
             setInvalid(problem);
             if (!problem) apply(withBase(baseFilter, buildFilterExpression(next, columns)));
@@ -383,9 +408,15 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
                     const isLast = index === filters.length - 1;
+                    const lit = arrived.includes(filter.id) ? ' filter-arrived' : '';
 
                     return (
-                        <div key={filter.id} className="contents">
+                        <div
+                            key={filter.id}
+                            className="contents"
+                            ref={el => { if (el) rowElements.current.set(filter.id, el); else rowElements.current.delete(filter.id); }}
+                            onAnimationEnd={() => settleRow(filter.id)}
+                        >
                             {index === 0 ? (
                                 <div className="flex items-center gap-2">
                                     <Filter size={14} className="text-slate-400 dark:text-gray-400" />
@@ -403,7 +434,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                             <select
                                 value={filter.column}
                                 onChange={(e) => handleChange(filter.id, { column: e.target.value })}
-                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}${lit}`}
                             >
                                 {columns.map(col => (
                                     <option key={col.name} value={col.name}>{col.name}</option>
@@ -417,7 +448,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                     const operator = e.target.value;
                                     if (isFilterOperator(operator)) handleChange(filter.id, { operator });
                                 }}
-                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}${lit}`}
                             >
                                 {FILTER_OPERATORS.map(op => (
                                     <option key={op} value={op}>{op}</option>
@@ -431,7 +462,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 onChange={(e) => handleChange(filter.id, { value: e.target.value })}
                                 disabled={!needsValue}
                                 placeholder={!needsValue ? "" : t('viewer.filterValuePlaceholder', { defaultValue: 'Value' })}
-                                className={`w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg} ${!needsValue ? 'opacity-50 cursor-not-allowed' : ''}${lit}`}
                             />
 
                             <div className="flex items-center gap-1">
