@@ -324,7 +324,15 @@ impl ParquetCache {
 
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(path);
-            self.results.lock().map_err(|e| e.to_string())?.retain(|r| r.path != path);
+            let mut results = self.results.lock().unwrap_or_else(|poisoned| {
+                // Cached data is disposable. Recover without skipping the
+                // metadata cleanup and sandbox grant release below.
+                let mut results = poisoned.into_inner();
+                results.clear();
+                self.results.clear_poison();
+                results
+            });
+            results.retain(|r| r.path != path);
         }
         if let Ok(mut metadata_cache) = self.metadata.lock() {
             metadata_cache.remove(path);
@@ -2364,6 +2372,28 @@ mod tests {
         // count below starts from that (1 start, 1 stop).
         assert_eq!((fake.starts(), fake.stops()), (1, 1));
         (ParquetCache::with_access(access), fake)
+    }
+
+    #[tokio::test]
+    async fn eviction_releases_access_even_if_the_result_cache_is_poisoned() {
+        let path = temp_path("poisoned_results.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let (cache, fake) = cache_over_recorded_file(&file);
+        cache.get_or_create_metadata(&file).await.unwrap();
+        super::count_data(&cache, &file, None).await.unwrap();
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = cache.results.lock().unwrap();
+            panic!("inject a poisoned result cache");
+        }));
+        assert!(poisoned.is_err());
+        cache.evict(&file).await.unwrap();
+        assert!(fake.active().is_empty());
+        assert!(cache.metadata.lock().unwrap().is_empty());
+        assert!(cache.results.lock().unwrap().is_empty());
+        assert_eq!(super::count_data(&cache, &file, None).await.unwrap(), 3);
+        cache.evict(&file).await.unwrap();
+        assert!(fake.active().is_empty());
     }
 
     /// A recorded file whose contents are no longer a Parquet file.
