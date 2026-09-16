@@ -29,10 +29,11 @@ interface DataTableProps {
 
 /**
  * Width the chart button adds to a header, counted into the column's
- * measured width so a short name is not clipped by it: the icon plus the
- * gap before it.
+ * measured width so a short name is not clipped by it: the button sits in
+ * the cell's right padding and reaches this far past it (`pr-7` on the
+ * cell against the `px-4` of the rest).
  */
-export const PROFILE_BUTTON_WIDTH = 26;
+export const PROFILE_BUTTON_WIDTH = 12;
 
 interface VisibleColumn {
   index: number;
@@ -239,33 +240,31 @@ export const DataTable = React.memo(function DataTable({
               <th
                 key={index}
                 title={name}
-                className={`px-4 ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
+                className={`relative px-4 ${onProfileColumn ? 'pr-7' : ''} ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
                   }`}
               >
-                <div className="flex items-start gap-1">
-                  <div className="min-w-0 flex-1 overflow-hidden text-ellipsis">
-                    <div className="font-semibold">
-                      {matchedColumns.has(index) ? highlight(name, searchTerm) : name}
-                    </div>
-                    <div className="font-normal text-xs mt-0.5 text-slate-500 dark:text-gray-400">
-                      {typeLabels[index]}
-                    </div>
-                  </div>
-                  {onProfileColumn && (
-                    <button
-                      type="button"
-                      onClick={() => onProfileColumn(name)}
-                      aria-pressed={profiledColumn === name}
-                      aria-label={t('viewer.profile.open', { column: name })}
-                      title={t('viewer.profile.open', { column: name })}
-                      className={`shrink-0 p-0.5 rounded transition-colors hover:bg-slate-200 dark:hover:bg-gray-600 ${profiledColumn === name
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-                    >
-                      <ChartBar size={14} />
-                    </button>
-                  )}
+                {/* The name stays the cell's first element: the e2e harness
+                    reads the headers by it. */}
+                <div className="font-semibold">
+                  {matchedColumns.has(index) ? highlight(name, searchTerm) : name}
                 </div>
+                <div className="font-normal text-xs mt-0.5 text-slate-500 dark:text-gray-400">
+                  {typeLabels[index]}
+                </div>
+                {onProfileColumn && (
+                  <button
+                    type="button"
+                    onClick={() => onProfileColumn(name)}
+                    aria-pressed={profiledColumn === name}
+                    aria-label={t('viewer.profile.open', { column: name })}
+                    title={t('viewer.profile.open', { column: name })}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors hover:bg-slate-200 dark:hover:bg-gray-600 ${profiledColumn === name
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                  >
+                    <ChartBar size={14} />
+                  </button>
+                )}
               </th>
             ))}
             {padRight > 0 && <th aria-hidden="true" />}
