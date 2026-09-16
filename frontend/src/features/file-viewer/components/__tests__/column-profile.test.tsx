@@ -29,7 +29,7 @@ const histogram: ColumnProfile = {
   distinct_count: 90,
   chart: {
     shape: 'histogram',
-    buckets: [{ lower: '0', upper: '0.5', count: 60 }, { lower: '0.5', upper: '1', count: 37 }],
+    buckets: [{ lower: '0', upper: '0.5', upper_inclusive: false, count: 60 }, { lower: '0.5', upper: '1', upper_inclusive: false, count: 37 }],
     other: 3,
   },
 };
@@ -88,6 +88,24 @@ describe('ColumnProfilePanel', () => {
     renderPanel(cat);
     expect(await screen.findByText('viewer.profile.topValues')).toBeInTheDocument();
     expect(screen.getByText('viewer.profile.otherValues')).toBeInTheDocument();
+  });
+
+  it('includes the last instant of a time bucket in the filter', async () => {
+    mockProfileColumn.mockResolvedValue({ ...histogram, chart: { shape: 'histogram', other: 0,
+      buckets: [{ lower: '23:59:58', upper: '23:59:59.999999', upper_inclusive: true, count: 2 }] } });
+    const { onAddConditions } = renderPanel({ ...price, kind: 'temporal' });
+    await userEvent.click(await screen.findByRole('button', { name: '23:59:58 – ≤ 23:59:59.999999: 2' }));
+    expect(onAddConditions).toHaveBeenCalledWith([
+      { column: 'price', operator: '>=', value: '23:59:58' },
+      { column: 'price', operator: '<=', value: '23:59:59.999999' },
+    ]);
+  });
+
+  it('labels an empty string visibly while keeping the empty filter value', async () => {
+    mockProfileColumn.mockResolvedValue({ ...topValues, chart: { shape: 'top_values', other: 0, values: [{ value: '', count: 2 }] } });
+    const { onAddConditions } = renderPanel(cat);
+    await userEvent.click(await screen.findByRole('button', { name: '"": 2' }));
+    expect(onAddConditions).toHaveBeenCalledWith([{ column: 'cat', operator: '=', value: '' }]);
   });
 
   it('keeps the counts for a column with no chart', async () => {

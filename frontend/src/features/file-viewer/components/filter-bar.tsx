@@ -29,7 +29,8 @@ export interface FilterBarHandle {
      * Add the conditions and apply the filter at once. Rows that are not
      * filled in are dropped, and so is a row on the same column with the
      * same operator: a click on a narrower bucket replaces the range the
-     * previous click set instead of stacking on it.
+     * previous click set instead of stacking on it. The upper-bound operators
+     * < and <= also replace each other when a time bucket ends at day-end.
      */
     addConditions: (conditions: FilterCondition[]) => void;
 }
@@ -145,6 +146,7 @@ function invalidValueOf(filter: FilterRow, kind: ColumnKind): InvalidFilterValue
     if (!filter.column || OPERATOR_FORM[filter.operator] !== 'compare') return null;
     const value = filter.value.trim();
     if (!value) return null;
+    if (filter.explicitValue && kind === 'float' && ['NaN', 'Infinity', '-Infinity'].includes(value)) return null;
     const literal = KIND_LITERAL[kind];
     switch (literal) {
         case 'number': return isNumericLiteral(value) ? null : { column: filter.column, value, expects: 'number' };
@@ -274,7 +276,10 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     useImperativeHandle(ref, () => ({
         addConditions(conditions) {
             const replaced = (row: FilterRow) =>
-                conditions.some(c => c.column === row.column && c.operator === row.operator);
+                conditions.some(c => c.column === row.column && (
+                    c.operator === row.operator ||
+                    (['<', '<='].includes(c.operator) && ['<', '<='].includes(row.operator))
+                ));
             const kept = filters.filter(row =>
                 conditionOf(row, kindOf(columns, row.column)) !== null && !replaced(row)
             );

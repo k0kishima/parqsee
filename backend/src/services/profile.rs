@@ -13,7 +13,9 @@
 //! is listed in full whatever its type (a status code, a boolean, a year),
 //! and past that numbers and dates are binned into equal-width buckets while
 //! text and binary keep their `TOP_VALUES` commonest values with the rest
-//! counted as `other`.
+//! counted as `other`. Integers outside the safe double range, decimals with
+//! more than fifteen digits of precision and unrepresentable bucket edges
+//! also use top values, keeping drill-down literals exact.
 //!
 //! The session runs single-partition (see `ParquetCache::get_or_create_session`),
 //! so every query here is a single-threaded scan; the webview only asks
@@ -183,20 +185,6 @@ enum Axis {
     Temporal(DataType),
 }
 
-/// The SQL that turns the column into the number the buckets are computed
-/// over. A double for numbers; the raw unit count for temporal columns —
-/// arrow casts `Date32` and `Time32` to a 32-bit integer only, the rest go
-/// straight to a 64-bit one.
-fn axis_expr(axis: &Axis, col: &str) -> String {
-    match axis {
-        Axis::Number => format!("CAST({col} AS DOUBLE)"),
-        Axis::Temporal(DataType::Date32 | DataType::Time32(_)) => {
-            format!("CAST(CAST({col} AS INT) AS BIGINT)")
-        }
-        Axis::Temporal(_) => format!("CAST({col} AS BIGINT)"),
-    }
-}
-
 /// The raw units per bucket-edge granularity: one day for dates, one
 /// second for times and timestamps, so edges are labelled without a time
 /// of day / fractional seconds and compare as typed.
@@ -240,7 +228,11 @@ fn edge_label(axis: &Axis, edge: f64, width: f64) -> Result<String, String> {
         Axis::Number => {
             let decimals = (-width.log10().floor()).max(0.0) as i32;
             let scale = 10f64.powi(decimals);
-            Ok(((edge * scale).round() / scale).to_string())
+            let scaled = edge * scale;
+            if !scale.is_finite() || !scaled.is_finite() {
+                return Err("Bucket label exceeds floating-point precision".into());
+            }
+            Ok((scaled.round() / scale).to_string())
         }
         Axis::Temporal(data_type) => {
             let raw = Int64Array::from(vec![edge as i64]);
@@ -250,7 +242,13 @@ fn edge_label(axis: &Axis, edge: f64, width: f64) -> Result<String, String> {
             };
             let narrowed = arrow::compute::cast(&raw, &through).map_err(|e| e.to_string())?;
             let typed = arrow::compute::cast(&narrowed, data_type).map_err(|e| e.to_string())?;
-            arrow::util::display::array_value_to_string(&typed, 0).map_err(|e| e.to_string())
+            let label = arrow::util::display::array_value_to_string(&typed, 0)
+                .map_err(|e| e.to_string())?;
+            // Arrow's display formatter can return an error *as text*.
+            if label.starts_with("ERROR:") || label.is_empty() {
+                return Err("Bucket edge is outside the temporal type's range".into());
+            }
+            Ok(label)
         }
     }
 }
@@ -298,8 +296,8 @@ async fn histogram(
     let mut conditions = vec![format!("{col} IS NOT NULL")];
     if kind == ColumnKind::Float {
         // NaN and the infinities have no place on the axis. `x - x` is 0 for
-        // every finite value and NaN for the rest, and NaN compares equal to
-        // nothing, so this keeps exactly the finite ones — without relying
+        // every finite value and NaN for the rest. NaN is unequal to zero
+        // under either IEEE or total ordering, so this works without relying
         // on how the comparison kernels order NaN.
         let x = format!("CAST({col} AS DOUBLE)");
         conditions.push(format!("({x} - {x}) = 0"));
@@ -313,6 +311,11 @@ async fn histogram(
     );
     let (batches, schema) = execute_sql_with_cache(cache, path, &range_query).await?;
     let data_type = schema.field(0).data_type().clone();
+    // A double cannot safely choose decimal boundaries at arbitrary precision.
+    // Keep exact rendered values for those columns instead of fabricating bins.
+    if matches!(&data_type, DataType::Decimal128(precision, _) | DataType::Decimal256(precision, _) if *precision > 15) {
+        return top_values(cache, path, col, filter, non_null).await;
+    }
     let axis = if kind == ColumnKind::Temporal { Axis::Temporal(data_type) } else { Axis::Number };
     let Some(batch) = batches.iter().find(|b| b.num_rows() > 0) else {
         return Ok(ProfileChart::Histogram { buckets: Vec::new(), other: non_null });
@@ -336,45 +339,70 @@ async fn histogram(
     };
     let (min, max) = (as_f64(0)?, as_f64(1)?);
 
-    let width = bucket_width(&axis, kind, max - min);
+    let range = max - min;
+    // A finite input can still overflow subtraction, or lose all low bits
+    // when an integer becomes a double. In either case top values preserve
+    // the original literals and remain useful for drilling down.
+    let safe_integer = 9_007_199_254_740_991.0;
+    if !range.is_finite()
+        || (matches!(kind, ColumnKind::Integer | ColumnKind::Decimal)
+            && (min.abs() > safe_integer || max.abs() > safe_integer))
+    {
+        return top_values(cache, path, col, filter, non_null).await;
+    }
+    let width = bucket_width(&axis, kind, range);
+    if !width.is_finite() || width <= 0.0 || !(min / width).is_finite() {
+        return top_values(cache, path, col, filter, non_null).await;
+    }
     let edges = bucket_edges(min, max, width);
-    let first = edges[0].0;
-
-    // Which bucket each row falls in, counted. For the temporal axis the
-    // arithmetic is integer division on whole units, so an edge that is a
-    // whole day never lands a row on the wrong side of it through rounding.
-    let bucket_expr = match &axis {
-        Axis::Number => format!("FLOOR(({} - {}) / {})", axis_expr(&axis, col), first, width),
-        Axis::Temporal(_) => format!("({} - {}) / {}", axis_expr(&axis, col), first as i64, width as i64),
-    };
-    let buckets_query = format!(
-        "SELECT {bucket_expr} AS \"b\", COUNT(*) AS \"n\" FROM t{} GROUP BY \"b\" ORDER BY \"b\"",
-        where_sql(filter, &conditions)
-    );
-    let (batches, _) = execute_sql_with_cache(cache, path, &buckets_query).await?;
-    let mut counts = vec![0usize; edges.len()];
-    for row in batches_to_rows(&batches)? {
-        let index = row
-            .get("b")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| "The profile query returned no bucket column".to_string())?;
-        // A value on the far edge can round into one bucket past the last;
-        // it belongs to the last one.
-        let index = (index.max(0.0) as usize).min(edges.len() - 1);
-        counts[index] += count_of(&row, "n")?;
+    if edges.iter().any(|(lo, hi)| !lo.is_finite() || !hi.is_finite() || lo >= hi)
+        || edges[0].0 > min || edges.last().unwrap().1 <= max
+    {
+        return top_values(cache, path, col, filter, non_null).await;
     }
 
-    let buckets = edges
-        .iter()
-        .zip(counts)
-        .map(|((lower, upper), count)| {
-            Ok(HistogramBucket {
-                lower: edge_label(&axis, *lower, width)?,
-                upper: edge_label(&axis, *upper, width)?,
-                count,
-            })
+    let day_end = match &axis {
+        Axis::Temporal(data_type @ (DataType::Time32(_) | DataType::Time64(_))) =>
+            Some(86_400 * granularity(data_type)),
+        _ => None,
+    };
+    let labelled = edges.iter().map(|(lower, upper)| {
+        // 24:00 is not an Arrow time value. Use the last representable
+        // instant of the day with <=, including subsecond values at its end.
+        let upper_inclusive = day_end.is_some_and(|end| *upper >= end as f64);
+        let upper = if upper_inclusive { (day_end.unwrap() - 1) as f64 } else { *upper };
+        Ok(HistogramBucket {
+            lower: edge_label(&axis, *lower, width)?,
+            upper: edge_label(&axis, upper, width)?,
+            upper_inclusive,
+            count: 0,
         })
-        .collect::<Result<Vec<_>, String>>()?;
+    }).collect::<Result<Vec<_>, String>>();
+    let Ok(mut buckets) = labelled else {
+        return top_values(cache, path, col, filter, non_null).await;
+    };
+    if buckets.iter().any(|b| b.lower == b.upper && !b.upper_inclusive) {
+        return top_values(cache, path, col, filter, non_null).await;
+    }
+
+    // Count with exactly the predicates the filter bar submits, on the
+    // original column type. FLOOR on doubles could disagree with the
+    // displayed labels, especially for decimals or adjacent float values.
+    let literal = |label: &str| match axis {
+        Axis::Number => label.to_string(),
+        Axis::Temporal(_) => format!("'{}'", label.replace('\'', "''")),
+    };
+    let aggregates = buckets.iter().map(|b| {
+        let op = if b.upper_inclusive { "<=" } else { "<" };
+        format!("COUNT(*) FILTER (WHERE {col} >= {} AND {col} {op} {})",
+            literal(&b.lower), literal(&b.upper))
+    }).collect::<Vec<_>>().join(", ");
+    let query = format!("SELECT {aggregates} FROM t{}", where_sql(filter, &conditions));
+    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    for (index, bucket) in buckets.iter_mut().enumerate() {
+        bucket.count = count_cell(&batches, index)?;
+    }
+
     let binned: usize = buckets.iter().map(|b| b.count).sum();
     Ok(ProfileChart::Histogram { buckets, other: non_null.saturating_sub(binned) })
 }
@@ -596,6 +624,95 @@ mod tests {
         assert_eq!(profile(&path, "MixedCase", None).await.distinct_count, Some(3));
         let err = profile_column(&ParquetCache::new(), &path, "missing", None).await.unwrap_err();
         assert!(err.contains("no column named \"missing\""), "{err}");
+    }
+
+    /// Exercise the same literals a bar click sends, through the grid's
+    /// count service rather than repeating the histogram's arithmetic.
+    async fn assert_chart_round_trip(path: &str, p: &ColumnProfile) {
+        let cache = ParquetCache::new();
+        let col = quote_identifier(&p.column);
+        let quoted = |s: &str| format!("'{}'", s.replace('\'', "''"));
+        let literal = |value: &Value| -> String {
+            let text = value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string());
+            match p.kind {
+                ColumnKind::Integer | ColumnKind::Decimal | ColumnKind::Boolean => text,
+                ColumnKind::Float if !["NaN", "Infinity", "-Infinity"].contains(&text.as_str()) => text,
+                _ => quoted(&text),
+            }
+        };
+        let predicates: Vec<(String, usize)> = match &p.chart {
+            ProfileChart::TopValues { values, other } => {
+                assert_eq!(values.iter().map(|v| v.count).sum::<usize>() + other + p.null_count, p.total_rows);
+                values.iter().map(|v| {
+                    let target = if p.kind == ColumnKind::Binary {
+                        format!("encode(CAST({col} AS BYTEA), 'hex')")
+                    } else { col.clone() };
+                    (format!("{target} = {}", literal(&v.value)), v.count)
+                }).collect()
+            }
+            ProfileChart::Histogram { buckets, other } => {
+                assert_eq!(buckets.iter().map(|b| b.count).sum::<usize>() + other + p.null_count, p.total_rows);
+                buckets.iter().map(|b| {
+                    let lo = literal(&Value::String(b.lower.clone()));
+                    let hi = literal(&Value::String(b.upper.clone()));
+                    let op = if b.upper_inclusive { "<=" } else { "<" };
+                    (format!("{col} >= {lo} AND {col} {op} {hi}"), b.count)
+                }).collect()
+            }
+            ProfileChart::Unsupported => panic!("expected a chart"),
+        };
+        for (predicate, expected) in predicates {
+            let actual = crate::services::parquet::count_data(&cache, path, Some(predicate.clone())).await.unwrap();
+            assert_eq!(actual, expected, "{predicate}");
+        }
+    }
+
+    #[tokio::test]
+    async fn large_integers_and_high_precision_decimals_keep_exact_values() {
+        use arrow::array::Decimal128Array;
+        let integers = (0..30).map(|i| (1i64 << 60) + i).collect::<Vec<_>>();
+        let amounts = integers.iter().map(|i| *i as i128).collect::<Vec<_>>();
+        let path = fixture("exact.parquet", vec![
+            ("id", Arc::new(Int64Array::from(integers))),
+            ("amount", Arc::new(Decimal128Array::from(amounts).with_precision_and_scale(30, 2).unwrap())),
+        ]);
+        for col in ["id", "amount"] {
+            let p = profile(&path, col, None).await;
+            assert_eq!(top_values(&p.chart).1, 10);
+            assert_chart_round_trip(&path, &p).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn extreme_finite_floats_fall_back_to_values_without_invalid_sql() {
+        for (name, xs) in [
+            ("tiny.parquet", (0..30).map(|i| i as f64 * 1e-310).collect::<Vec<_>>()),
+            ("huge.parquet", (0..30).map(|i| -1e308 + i as f64 * 6e306).collect()),
+        ] {
+            let path = fixture(name, vec![("x", Arc::new(Float64Array::from(xs)))]);
+            let p = profile(&path, "x", None).await;
+            assert!(matches!(p.chart, ProfileChart::TopValues { .. }));
+            assert_chart_round_trip(&path, &p).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn times_include_the_last_instant_without_rendering_twenty_four_hours() {
+        use arrow::array::{Time32MillisecondArray, Time64MicrosecondArray};
+        let ms = (0..30).map(|i| 86_370_999 + i * 1_000).collect::<Vec<_>>();
+        let us = (0..30).map(|i| 86_370_999_999 + i * 1_000_000).collect::<Vec<_>>();
+        let path = fixture("day_end.parquet", vec![
+            ("ms", Arc::new(Time32MillisecondArray::from(ms))),
+            ("us", Arc::new(Time64MicrosecondArray::from(us))),
+        ]);
+        for col in ["ms", "us"] {
+            let p = profile(&path, col, None).await;
+            let ProfileChart::Histogram { buckets, other } = &p.chart else { panic!("expected bins") };
+            assert_eq!(*other, 0);
+            assert!(buckets.last().unwrap().upper_inclusive);
+            assert!(buckets.last().unwrap().upper.starts_with("23:59:59.999"));
+            assert_chart_round_trip(&path, &p).await;
+        }
     }
 
     #[test]

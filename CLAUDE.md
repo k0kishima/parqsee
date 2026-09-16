@@ -126,8 +126,13 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   chart of the values, every one listed or binned past twenty; a click on a
   value, a bucket or the NULL row goes into the filter bar through its
   `FilterBarHandle.addConditions` and applies at once, replacing a condition on
-  the same column with the same operator so a narrower bucket does not stack
-  on the wider one. The panel is not part of the tab's saved state
+  the same column with the same operator (also interchanging `<` / `<=` at
+  day-end) so a narrower bucket does not stack on the wider one. Restored
+  form-generated filters become editable rows; unrecognized SQL remains a
+  visible, parenthesized base predicate. Explicit empty values from a chart
+  are distinct from unfilled form rows. Changing file, column or filter
+  clears the old chart before another bar can be clicked. The panel is not
+  part of the tab's saved state
 - `query` — SQL editor and result grid
 - `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
@@ -217,7 +222,7 @@ Argument names are camelCase on the JS side.
 | `save_session` | `(tabs, active?)` → `void` | Replace the saved session with the open tabs (`{path, state}` each) and the active one's path; written by the webview on change |
 | `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
-| `profile_column` | `(path, column, filter?)` → `ColumnProfile` | The column's row / NULL / distinct counts under the filter and its chart: every value with its count when there are at most 20 distinct values, else equal-width buckets on round edges (whole days / seconds for temporal columns) for numbers and dates and the 20 commonest values for the rest, with what is not shown counted as `other`. Bucket edges are literals a filter on the column accepts. Two or three scans of the file through the single-partition session (`services/profile.rs`) |
+| `profile_column` | `(path, column, filter?)` → `ColumnProfile` | The column's row / NULL / distinct counts under the filter and its chart: every value with its count when there are at most 20 distinct values, else equal-width buckets on round edges (whole days / seconds for temporal columns) for numbers and dates and the 20 commonest values for the rest, with what is not shown counted as `other`. Bucket counts use the same typed predicates as drill-down; day-end time buckets include their final representable instant. Unsafe double ranges and decimals with more than 15 digits of precision fall back to top values. Two or three scans of the file through the single-partition session (`services/profile.rs`) |
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |

@@ -128,7 +128,7 @@ function ProfileRequest({ filePath, column, filter, onClose, onAddConditions }: 
   const filterBucket = (bucket: HistogramBucket) =>
     onAddConditions([
       { column: columnName, operator: '>=', value: bucket.lower },
-      { column: columnName, operator: '<', value: bucket.upper },
+      { column: columnName, operator: bucket.upper_inclusive ? '<=' : '<', value: bucket.upper },
     ]);
 
   const nullRow = (max: number) =>
@@ -160,11 +160,12 @@ function ProfileRequest({ filePath, column, filter, onClose, onAddConditions }: 
             <ul className="space-y-0.5">
               {chart.values.map(value => {
                 const text = formatCellValue(value.value) ?? '';
+                const label = text.trim() === '' ? JSON.stringify(text) : text;
                 return (
                   <BarRow
                     key={text}
-                    label={text}
-                    name={text}
+                    label={label}
+                    name={label}
                     count={value.count}
                     max={max}
                     action={t('viewer.profile.filterValue')}
@@ -187,7 +188,7 @@ function ProfileRequest({ filePath, column, filter, onClose, onAddConditions }: 
             <h3 className="text-xs font-semibold uppercase tracking-wider text-tertiary">{t('viewer.profile.distribution')}</h3>
             <ul className="space-y-0.5">
               {chart.buckets.map(bucket => {
-                const name = `${formatEdge(bucket.lower)} – ${formatEdge(bucket.upper)}`;
+                const name = `${formatEdge(bucket.lower)} – ${bucket.upper_inclusive ? '≤ ' : ''}${formatEdge(bucket.upper)}`;
                 return (
                   <BarRow
                     key={bucket.lower}

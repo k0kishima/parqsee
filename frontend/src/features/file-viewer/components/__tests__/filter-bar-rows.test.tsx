@@ -170,5 +170,20 @@ describe('FilterBar rows', () => {
       expect(onFilterChange).toHaveBeenLastCalledWith(`"id" >= 20 AND "id" < 40`);
       expect(valueInputs()).toHaveLength(2);
     });
+
+    it('replaces an inclusive upper bound with an exclusive one and vice versa', () => {
+      const { onFilterChange, add } = renderWithHandle();
+      for (const operator of ['<', '<=', '<'] as const) {
+        add([{ column: 'id', operator, value: '40' }]);
+        expect(onFilterChange).toHaveBeenLastCalledWith(`"id" ${operator} 40`);
+        expect(valueInputs()).toHaveLength(1);
+      }
+    });
+
+    it.each(['NaN', 'Infinity', '-Infinity'])('accepts the explicit float value %s from a chart', value => {
+      const { onFilterChange, add } = renderWithHandle('', [{ ...columns[0], kind: 'float' }]);
+      add([{ column: 'id', operator: '=', value }]);
+      expect(onFilterChange).toHaveBeenLastCalledWith(`"id" = '${value}'`);
+    });
   });
 });

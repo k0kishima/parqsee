@@ -231,16 +231,19 @@ pub struct ValueCount {
     pub count: usize,
 }
 
-/// One bucket of a histogram: `lower <= value < upper`. Both ends are SQL
+/// One bucket: `lower <= value < upper`, or `<= upper` when
+/// `upper_inclusive` is set. Both ends are SQL
 /// literals a filter on the column accepts as typed — bare numbers, or a
 /// date / time / timestamp in the text arrow renders it with — so a click on
-/// the bucket becomes `col >= lower AND col < upper` without another
-/// rendering step.
+/// the bucket becomes a pair of comparisons without another
+/// rendering step. The last time-of-day bucket uses an inclusive upper
+/// bound at the final representable instant of the day.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "ipc/")]
 pub struct HistogramBucket {
     pub lower: String,
     pub upper: String,
+    pub upper_inclusive: bool,
     pub count: usize,
 }
 
