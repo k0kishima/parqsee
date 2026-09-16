@@ -1419,6 +1419,90 @@ await scenario('S20-chart-ja-dark', async ({ page }) => {
   await screenshot(page, { path: `${OUT}/shots/S20-ja-dark.png` });
 }, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
 
+// ---------------------------------------------------------------- S21 column sort
+const S21_DATA = path.join(OUT, 'data', 's21');
+const S21_OUT = `${OUT}/e2e_sort_exports`;
+const N21 = 100_000;
+await scenario('S21-sort', async ({ page, bridge }) => {
+  const mr = `${FIX}/multi_rowgroup.parquet`;
+  fs.rmSync(S21_OUT, { recursive: true, force: true }); fs.mkdirSync(S21_OUT, { recursive: true });
+  await openFile(page, mr);
+  const sortButton = (col) => act(page).locator(`thead th[title="${col}"] button[title="Sort by ${col}"]`);
+  const ariaSort = (col) => act(page).locator(`thead th[title="${col}"]`).getAttribute('aria-sort');
+  const lastSort = () => JSON.stringify(bridge.log.filter(l => l.cmd === 'read_parquet_data').at(-1)?.args.sort ?? null);
+  const ascending = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] <= x);
+
+  // grp has seven values over 100,000 rows, so every page is a run of
+  // ties: the first page is all 0s, in id order (the tie-break), and the
+  // second continues the same sequence.
+  await sortButton('grp').click(); await waitGrid(page);
+  const p1 = await visibleGrid(page);
+  check('S21.asc', (await ariaSort('grp')) === 'ascending' && lastSort() === '{"column":"grp","direction":"asc"}', `aria-sort=${await ariaSort('grp')} sort=${lastSort()}`);
+  check('S21.ties', p1.every(r => r[1] === '0') && p1.map(r => r[0]).join(',') === Array.from({ length: 50 }, (_, i) => String(i * 7)).join(','), `grp=${[...new Set(p1.map(r => r[1]))]} ids=${p1.slice(0, 4).map(r => r[0])}…`);
+  await act(page).locator('button:has-text("Next")').click(); await waitGrid(page);
+  const p2 = await visibleGrid(page);
+  check('S21.page2', p2[0][0] === '350' && p2[49][0] === String(99 * 7) && p2.every(r => r[1] === '0'), `first=${p2[0]?.slice(0, 2)} last=${p2[49]?.slice(0, 2)}`);
+  check('S21.headersRead', (await headerCols(page)).slice(0, 2).join(',') === 'id,grp', `headers=${await headerCols(page)}`);
+
+  // A second click reverses the whole sequence, tie-break included, and
+  // starts over from the first page.
+  const maxGrp6 = N21 - 1 - ((N21 - 1 - 6) % 7);
+  await sortButton('grp').click(); await waitGrid(page);
+  const d = await visibleGrid(page);
+  check('S21.desc', (await ariaSort('grp')) === 'descending' && d[0][1] === '6' && d[0][0] === String(maxGrp6) && d[1][0] === String(maxGrp6 - 7) && (await footer(page))?.startsWith('Showing 1 to 50'), `first=${d[0]?.slice(0, 2)} second=${d[1]?.slice(0, 2)} footer=${await footer(page)}`);
+
+  // Another column starts ascending and takes the mark with it.
+  await sortButton('val').click(); await waitGrid(page);
+  const v = (await visibleGrid(page)).map(r => Number(r[3]));
+  check('S21.otherColumn', (await ariaSort('val')) === 'ascending' && (await ariaSort('grp')) === null && ascending(v) && v[0] < 0.001, `val aria=${await ariaSort('val')} grp aria=${await ariaSort('grp')} first=${v.slice(0, 3)}`);
+
+  // Under a filter the sort walks the filtered rows.
+  const form = act(page).locator('form').first();
+  await form.locator('select').nth(0).selectOption('grp');
+  await form.locator('input[type=text]').fill('3');
+  await form.locator('button[type=submit]').click(); await waitGrid(page);
+  const f = await visibleGrid(page);
+  check('S21.filtered', f.every(r => r[1] === '3') && (await footer(page)) === 'Showing 1 to 50 of 14,286 entries' && ascending(f.map(r => Number(r[3]))) && (await ariaSort('val')) === 'ascending', `grp=${[...new Set(f.map(r => r[1]))]} footer=${await footer(page)}`);
+  await act(page).locator('button[title="Clear"]').click(); await waitGrid(page);
+
+  // A third click on the column returns to file order.
+  await sortButton('val').click(); await waitGrid(page);
+  check('S21.valDesc', (await ariaSort('val')) === 'descending', `aria=${await ariaSort('val')}`);
+  await sortButton('val').click(); await waitGrid(page);
+  const o = await visibleGrid(page);
+  check('S21.fileOrder', (await ariaSort('val')) === null && lastSort() === 'null' && o.map(r => r[0]).join(',') === Array.from({ length: 50 }, (_, i) => String(i)).join(','), `aria=${await ariaSort('val')} sort=${lastSort()} ids=${o.slice(0, 3).map(r => r[0])}`);
+
+  // The export walks the sorted sequence: the current page of id
+  // descending is the last 50 ids, highest first.
+  await sortButton('id').click(); await waitGrid(page);
+  await sortButton('id').click(); await waitGrid(page);
+  await act(page).locator('button:has-text("Export")').first().click();
+  const modal = act(page).locator('.fixed').filter({ hasText: 'Export Data' });
+  await modal.locator('h2:has-text("Export Data")').waitFor();
+  check('S21.exportNotice', await modal.locator('text=Sorted by:').isVisible() && (await modal.locator('p', { hasText: 'Sorted by:' }).textContent())?.includes('id') && (await modal.locator('p', { hasText: 'Sorted by:' }).textContent())?.includes('descending'), await modal.locator('p', { hasText: 'Sorted by:' }).textContent().catch(() => null));
+  await modal.locator('input[value=current]').check();
+  await page.evaluate((p) => { window.__dialog.save = p; }, `${S21_OUT}/id_desc_page1.csv`);
+  await modal.locator('button:has-text("Export")').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.fixed h2')].some(h => h.textContent === 'Export Complete'), null, { timeout: 60000 });
+  await act(page).locator('.fixed').filter({ hasText: 'Export Complete' }).locator('button:has-text("Close")').click();
+  const csv = fs.readFileSync(`${S21_OUT}/id_desc_page1.csv`, 'utf8').split('\n').filter(Boolean);
+  check('S21.export', csv.length === 51 && csv[1].startsWith(`${N21 - 1},`) && csv[50].startsWith(`${N21 - 50},`), `rows=${csv.length - 1} first=${csv[1]?.slice(0, 12)} last=${csv[50]?.slice(0, 12)}`);
+
+  // Saved with the tab.
+  await page.waitForTimeout(600);
+  const saved = await bridge.call('list_session_tabs');
+  check('S21.saved', JSON.stringify(saved.tabs[0]?.state.sort) === '{"column":"id","direction":"desc"}', JSON.stringify(saved.tabs.map(t => t.state)));
+}, { dataDir: S21_DATA });
+
+// "Relaunch": the tab comes back sorted.
+await scenario('S21-sort-restore', async ({ page, bridge }) => {
+  await page.waitForFunction(() => document.querySelectorAll('[title^="Close tab"]').length === 1, null, { timeout: 15000 }).catch(() => {});
+  await waitGrid(page);
+  const r = await visibleGrid(page);
+  const aria = await act(page).locator('thead th[title="id"]').getAttribute('aria-sort');
+  check('S21r.sorted', aria === 'descending' && r[0]?.[0] === String(N21 - 1) && (await footer(page))?.startsWith('Showing 1 to 50'), `aria=${aria} first=${r[0]?.[0]} footer=${await footer(page)} read=${JSON.stringify(bridge.log.filter(l => l.cmd === 'read_parquet_data').at(-1)?.args)}`);
+}, { dataDir: S21_DATA });
+
 await (await import('./exploratory.mjs')).exploratoryScenarios();
 
 finishSuite();
