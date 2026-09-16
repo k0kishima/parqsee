@@ -92,6 +92,7 @@
       "of": "/ {{total}}",
       "rowsPerPage": "件/ページ"
     },
+    "restoredFilter": "復元されたフィルタ",
     "filter": "フィルター",
     "filterPlaceholder": "抽出条件 (例: id > 5)",
     "filterValuePlaceholder": "値...",
