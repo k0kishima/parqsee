@@ -1292,6 +1292,133 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await screenshot(page, { path: `${OUT}/shots/S19.png` });
 });
 
+// ---------------------------------------------------------------- S20 SQL result chart
+// Everything the chart needs comes from the real backend: the column
+// chart types on the result, the string spellings of big integers and
+// non-finite floats. VALUES keeps the data in the query so nothing
+// depends on a fixture's schema.
+const chartSql = (page) => {
+  const ta = act(page).locator('textarea');
+  const run = async (q) => {
+    await ta.fill(q);
+    await act(page).locator('button:has-text("Run")').click();
+    await page.waitForTimeout(200);
+    await page.waitForFunction(() => ![...document.querySelectorAll('span')].some(s => s.textContent === 'Executing query...'));
+    await page.waitForTimeout(100);
+  };
+  const modeGroup = () => act(page).getByRole('group', { name: 'Result view' });
+  const kindGroup = () => act(page).getByRole('group', { name: 'Chart type' });
+  const svg = () => act(page).locator('svg[data-chart-kind]');
+  const marks = () => act(page).locator('[data-mark]');
+  const detail = () => act(page).locator('[data-chart-detail]');
+  const detailText = () => detail().locator('[aria-live]').textContent();
+  // The browse grid's table is in the panel too, only hidden; the results sit under `.z-0`.
+  const table = () => act(page).locator('.z-0 table');
+  const pressed = async (locator) => (await locator.getAttribute('aria-pressed')) === 'true';
+  const fillOf = (locator) => locator.evaluate(el => getComputedStyle(el).fill);
+  return { ta, run, modeGroup, kindGroup, svg, marks, detail, detailText, pressed, fillOf, table };
+};
+
+await scenario('S20-chart', async ({ page }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  const c = chartSql(page);
+
+  await c.run(`SELECT * FROM (VALUES ('A', 2, 3), ('B', -1, 4)) AS v(x, y1, y2)`);
+  check('S20.tableFirst', await c.table().isVisible() && await c.pressed(c.modeGroup().getByRole('button', { name: 'Table', exact: true })) && (await c.kindGroup().count()) === 0,
+    `table=${await c.table().isVisible()} kindGroups=${await c.kindGroup().count()}`);
+
+  await c.modeGroup().getByRole('button', { name: 'Chart', exact: true }).click();
+  await c.svg().waitFor();
+  check('S20.bar', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await c.marks().count()) === 4 && await c.pressed(c.kindGroup().getByRole('button', { name: 'Bar', exact: true })),
+    `kind=${await c.svg().getAttribute('data-chart-kind')} marks=${await c.marks().count()}`);
+  check('S20.onlyBar', (await c.kindGroup().getByRole('button').count()) === 1, `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
+  const legend = await act(page).getByRole('button', { name: /^Series details:/ }).allTextContents();
+  check('S20.legend', legend.join('|') === '#1 y1|#2 y2', legend.join('|'));
+  // The negative bar hangs from the baseline: its top is the baseline line's y.
+  const baseline = await c.svg().locator('line[stroke="var(--chart-axis)"]').first().getAttribute('y1');
+  const negative = c.marks().locator('nth=2');
+  check('S20.negativeDown', (await negative.getAttribute('data-row-index')) === '1' && (await negative.getAttribute('data-series-index')) === '0' && Math.abs(Number(await negative.getAttribute('y')) - Number(baseline)) < 0.01,
+    `row=${await negative.getAttribute('data-row-index')} series=${await negative.getAttribute('data-series-index')} y=${await negative.getAttribute('y')} baseline=${baseline}`);
+  // The fill is the token, resolved: series 1 on the light surface.
+  check('S20.fillLight', (await c.fillOf(c.marks().first())) === 'rgb(42, 120, 214)', await c.fillOf(c.marks().first()));
+  check('S20.svgAria', ((await act(page).getByRole('img').getAttribute('aria-label')) ?? '').startsWith('Bar chart; X: x; series: 2; points: 4'), await act(page).getByRole('img').getAttribute('aria-label'));
+
+  // The keyboard walks the points from the details box.
+  await c.detail().focus();
+  await page.keyboard.press('ArrowRight');
+  check('S20.detailFirst', (await c.detailText()) === '#1 y1, row 1; x: A; y1: 2', await c.detailText());
+  await page.keyboard.press('End');
+  check('S20.detailLast', (await c.detailText()) === '#1 y1, row 2; x: B; y1: -1' && (await act(page).locator('[data-mark][data-selected]').getAttribute('data-row-index')) === '1', await c.detailText());
+  await page.keyboard.press('ArrowDown');
+  check('S20.detailSeries', (await c.detailText()) === '#2 y2, row 2; x: B; y2: 4', await c.detailText());
+  await act(page).getByRole('button', { name: 'Series details: #1 y1' }).click();
+  check('S20.legendMoves', (await c.detailText()) === '#1 y1, row 2; x: B; y1: -1', await c.detailText());
+  await c.marks().first().hover();
+  await page.waitForTimeout(100);
+  check('S20.tooltip', (await act(page).getByRole('tooltip').textContent()) === '#1 y1, row 1; x: A; y1: 2', await act(page).getByRole('tooltip').textContent().catch(() => 'none'));
+  await c.detail().focus();
+  await page.keyboard.press('Escape');
+  check('S20.escape', (await act(page).getByRole('tooltip').count()) === 0);
+  await screenshot(page, { path: `${OUT}/shots/S20.png` });
+
+  // Back to the table, values intact and no second run.
+  await c.modeGroup().getByRole('button', { name: 'Table', exact: true }).click();
+  const grid = await visibleGrid(page);
+  check('S20.tableBack', grid[0]?.join(',') === 'A,2,3' && grid[1]?.join(',') === 'B,-1,4', JSON.stringify(grid));
+
+  // What is left out is counted by reason; a big integer is precision, a NULL missing, NaN non-finite.
+  await c.run(`SELECT * FROM (VALUES ('a', 1, 0.5), ('b', NULL, CAST('NaN' AS DOUBLE)), ('c', 9007199254740993, 1.5)) AS v(x, n, f)`);
+  await c.modeGroup().getByRole('button', { name: 'Chart', exact: true }).click();
+  await c.svg().waitFor();
+  const notes = await act(page).locator('text=/Excluded points/').textContent();
+  check('S20.excluded', notes === 'Excluded points: 3 / 6 · Missing: 1 · Non-finite: 1 · Precision: 1' && (await c.marks().count()) === 3, `${notes} marks=${await c.marks().count()}`);
+
+  // No plottable value: the reason in place of the plot, the table a click away.
+  await c.run(`SELECT 'a' AS x, CAST(NULL AS INT) AS y`);
+  check('S20.noPoints', (await act(page).getByRole('status').textContent())?.startsWith('No plottable values') && (await c.svg().count()) === 0, await act(page).getByRole('status').textContent().catch(() => 'none'));
+  await c.run(`SELECT 'a' AS x`);
+  check('S20.needColumns', (await act(page).getByRole('status').textContent())?.startsWith('Select an X column'), await act(page).getByRole('status').textContent().catch(() => 'none'));
+
+  // An error shows no stale chart; the next success comes back in chart mode.
+  await c.run('SELECT bogus FROM t');
+  check('S20.errorNoChart', (await c.svg().count()) === 0 && (await act(page).locator('.whitespace-pre-wrap').first().textContent())?.includes('bogus'));
+  expectConsoleError(page, await act(page).locator('.whitespace-pre-wrap').first().textContent());
+  await c.run(`SELECT CAST(id AS VARCHAR) AS x, id AS y, 0 AS zero FROM t LIMIT 300`);
+  await c.svg().waitFor();
+  check('S20.modeKept', await c.pressed(c.modeGroup().getByRole('button', { name: 'Chart', exact: true })) && (await c.marks().count()) === 600, `marks=${await c.marks().count()}`);
+  // 300 groups do not fit: the plot scrolls sideways at a readable bar width.
+  const [scrollWidth, clientWidth] = await c.svg().evaluate(el => { const plot = el.closest('.overflow-x-auto'); return [plot.scrollWidth, plot.clientWidth]; });
+  check('S20.scrolls', scrollWidth > clientWidth && Number(await c.marks().first().getAttribute('width')) >= 6, `scroll=${scrollWidth} client=${clientWidth} barWidth=${await c.marks().first().getAttribute('width')}`);
+  check('S20.zeroHairline', (await act(page).locator('[data-mark][data-series-index="1"]').first().getAttribute('height')) === '2', `height=${await act(page).locator('[data-mark][data-series-index="1"]').first().getAttribute('height')}`);
+
+  // Another tab has its own view, on the table; this one keeps its chart.
+  await openFile(page, `${FIX}/dict.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  check('S20.otherTabTable', (await c.modeGroup().count()) === 0 && (await c.svg().count()) === 0, 'no result yet, so no toggle');
+  await page.click(`span[title="${FIX}/multi_rowgroup.parquet"]`);
+  await page.waitForTimeout(300);
+  check('S20.tabKeepsChart', (await c.svg().count()) === 1 && (await c.marks().count()) === 600, `svg=${await c.svg().count()}`);
+});
+
+await scenario('S20-chart-ja-dark', async ({ page }) => {
+  await openFile(page, `${FIX}/dict.parquet`);
+  await act(page).locator('button:has-text("クエリ")').click();
+  const c = chartSql(page);
+  await c.ta.fill(`SELECT * FROM (VALUES ('あ', 1), ('い', 2)) AS v(x, y)`);
+  await act(page).locator('button:has-text("実行")').click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('span')].some(s => s.textContent === 'クエリ実行中...'));
+  await act(page).getByRole('group', { name: '結果の表示' }).getByRole('button', { name: 'グラフ', exact: true }).click();
+  await c.svg().waitFor();
+  check('S20ja.bar', (await c.marks().count()) === 2 && await c.pressed(act(page).getByRole('group', { name: 'グラフの種類' }).getByRole('button', { name: '棒', exact: true })));
+  check('S20ja.fillDark', (await c.fillOf(c.marks().first())) === 'rgb(57, 135, 229)', await c.fillOf(c.marks().first()));
+  check('S20ja.aria', ((await act(page).getByRole('img').getAttribute('aria-label')) ?? '').startsWith('棒グラフ。X: x、系列数: 1、点数: 2'), await act(page).getByRole('img').getAttribute('aria-label'));
+  await c.detail().focus();
+  await page.keyboard.press('ArrowRight');
+  check('S20ja.detail', (await c.detailText()) === '#1 y、1 行目。x: あ、y: 1', await c.detailText());
+  await screenshot(page, { path: `${OUT}/shots/S20-ja-dark.png` });
+}, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
+
 await (await import('./exploratory.mjs')).exploratoryScenarios();
 
 finishSuite();

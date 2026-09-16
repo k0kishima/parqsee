@@ -188,6 +188,11 @@ to the harness.
   usual reason a "fix" does not show up here.
 - `cargo test` / `pnpm tauri build` and the bridge build share the target
   directory lock; don't run them concurrently.
+- The SQL view's chart (S20) is inline SVG whose fills are `var(--chart-series-n)`
+  tokens; the checks read them back through `getComputedStyle`, so a theme
+  is set through `localStorage` at launch, not toggled mid-run. Run S20
+  under `csp-server` as well: an inline `<style>` or a `data:` image in a
+  chart would pass on the dev server and break the release build.
 
 ### Exploratory regressions (S15–S18)
 

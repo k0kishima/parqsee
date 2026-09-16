@@ -1,0 +1,113 @@
+import type { ChartModel } from './chart-types';
+import { barDomain, linearScale, linearTicks, tickLabels, type LinearScale } from './chart-scales';
+
+/**
+ * Pixels above and below the plot for the top tick's label and the X
+ * labels. Horizontal coordinates are the plot's own: the Y axis is drawn
+ * in a separate SVG beside the scrolling plot, so nothing here is offset
+ * for it.
+ */
+export const PLOT_MARGIN = { top: 24, bottom: 64 } as const;
+/** The width of the Y axis SVG beside the plot. */
+export const Y_AXIS_WIDTH = 80;
+
+export interface BarMark {
+  rowIndex: number;
+  seriesOrdinal: number;
+  value: number;
+  raw: unknown;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BarGroup {
+  rowIndex: number;
+  label: string;
+  /** Left edge and width of the whole group, for the hit area and the label. */
+  x: number;
+  width: number;
+}
+
+export interface AxisTick {
+  value: number;
+  position: number;
+  label: string;
+}
+
+export interface BarGeometry {
+  /** The width the bars need; wider than the viewport when there are many groups. */
+  contentWidth: number;
+  plotHeight: number;
+  groups: BarGroup[];
+  marks: BarMark[];
+  yScale: LinearScale;
+  yTicks: AxisTick[];
+  /** The y of zero, where every bar starts. */
+  baseline: number;
+}
+
+const MIN_BAR_WIDTH = 6;
+/** Two rows would otherwise paint bars a screen wide; a bar is a length, not an area. */
+const MAX_BAR_WIDTH = 48;
+const BAR_GAP = 2;
+const GROUP_PADDING = 8;
+const MIN_GROUP_WIDTH = 28;
+
+/**
+ * Grouped vertical bars: one group per result row, one bar per series
+ * inside it, in column order. Groups are not stacked — the columns are
+ * different measures, and stacking would add them — and rows are not
+ * merged when their X repeats, since the query returned them apart. The
+ * bars keep a readable width whatever the row count, so the content grows
+ * past the viewport and scrolls rather than thinning to hairlines.
+ */
+export function barGeometry(model: ChartModel, viewport: { width: number; height: number }, locale: string): BarGeometry | null {
+  if (!model.yExtent || model.series.length === 0) return null;
+  const seriesCount = model.series.length;
+  const plotHeight = Math.max(0, viewport.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom);
+  const groupWidth = Math.max(MIN_GROUP_WIDTH, seriesCount * (MIN_BAR_WIDTH + BAR_GAP) + GROUP_PADDING);
+  // Spread the groups over the viewport when they fit, else give each its minimum.
+  const pitch = Math.max(groupWidth, model.rows.length > 0 ? Math.max(0, viewport.width) / model.rows.length : groupWidth);
+  const contentWidth = pitch * model.rows.length;
+  const barWidth = Math.min(MAX_BAR_WIDTH, Math.max(MIN_BAR_WIDTH, (pitch - GROUP_PADDING - BAR_GAP * (seriesCount - 1)) / seriesCount));
+  // Bars sit centred in their group, which matters once the width is capped.
+  const barsWidth = seriesCount * barWidth + BAR_GAP * (seriesCount - 1);
+
+  const domain = barDomain(model.yExtent);
+  const yScale = linearScale(domain, [PLOT_MARGIN.top + plotHeight, PLOT_MARGIN.top]);
+  const baseline = yScale(0);
+  const { ticks, labels } = tickLabels(linearTicks(domain, Math.max(2, Math.min(8, Math.floor(plotHeight / 50)))), locale);
+  const yTicks = ticks.map((value, i) => ({ value, position: yScale(value), label: labels[i] }));
+
+  const groups: BarGroup[] = model.rows.map((row, i) => ({
+    rowIndex: row.rowIndex,
+    label: row.label,
+    x: i * pitch,
+    width: pitch,
+  }));
+  const groupStart = (rowIndex: number) => rowIndex * pitch + (pitch - barsWidth) / 2;
+  const marks: BarMark[] = model.points.map(point => {
+    const top = yScale(point.y);
+    return {
+      rowIndex: point.rowIndex,
+      seriesOrdinal: point.seriesOrdinal,
+      value: point.y,
+      raw: point.raw,
+      x: groupStart(point.rowIndex) + point.seriesOrdinal * (barWidth + BAR_GAP),
+      y: Math.min(top, baseline),
+      width: barWidth,
+      height: Math.abs(baseline - top),
+    };
+  });
+  return { contentWidth, plotHeight, groups, marks, yScale, yTicks, baseline };
+}
+
+/**
+ * Which group labels to draw when groups are narrower than a label: every
+ * n-th, with n chosen so labels sit at least `minSpacing` px apart.
+ */
+export function labelStride(pitch: number, minSpacing = 80): number {
+  return Math.max(1, Math.ceil(minSpacing / pitch));
+}

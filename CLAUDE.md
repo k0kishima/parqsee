@@ -138,7 +138,30 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   are distinct from unfilled form rows. Changing file, column or filter
   clears the old chart before another bar can be clicked. The panel is not
   part of the tab's saved state
-- `query` — SQL editor and result grid
+- `query` — SQL editor and result grid, and the chart of the result
+  (`components/query-chart.tsx`, Table / Chart in the results header):
+  the first column is X, every numeric column after it a series in
+  column order, so the SQL is the whole axis-and-aggregation UI. The kind
+  is inferred from X's `chart_type` (labels → bar, time → line, numbers →
+  scatter; pie is never inferred) among the kinds in
+  `IMPLEMENTED_CHART_KINDS` — bar so far; a line, scatter and pie stage
+  each add a renderer under `components/charts/` and its name there.
+  `lib/chart-data.ts` builds the model once per result: values parsed by
+  chart type (integers only inside ±2^53, decimals only up to 15
+  significant digits, floats only when finite — the rest counted by
+  reason and named above the plot, never silently rounded), at most
+  10,000 plotted points across all series (`MAX_CHART_POINTS`; past it the
+  chart is refused and the SQL asked to narrow, never thinned).
+  `lib/chart-scales.ts` and `lib/chart-geometry.ts` are pure; the axis is
+  its own SVG so many groups scroll under it. One focusable "data point
+  details" box walks the points with the arrow keys instead of a tab stop
+  per mark, and the pointer, the legend and the keyboard all drive it.
+  The mode and the picked kind live in `QueryView` for the tab's life and
+  are not in the saved session (neither the SQL nor its result is): a
+  re-run of the same SQL keeps the pick, a different SQL re-infers, and
+  the same SQL whose new result cannot draw the pick re-infers and says
+  so. Series colors are the `--chart-series-1..8` tokens in `index.css`,
+  a palette validated for both surfaces
 - `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
   right, reopen the last closed tab. The bulk closes go through
@@ -231,7 +254,7 @@ Argument names are camelCase on the JS side.
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
-| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result) |
+| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's |
 | `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?, revision}`, derived from the App Store entitlements on every call; waits for the launch-time read (20 s at most, then the free tier at revision 0 with the reason, and the read arrives as `iap-status` when it lands) |
 | `iap_products` | `()` → `IapProduct[]` | The full version (one product) with the storefront's name, description and `display_price`; empty in a build without a store |
 | `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy the product `iap_products` returned; `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
@@ -599,7 +622,13 @@ prompt's states, Recent Files' Clear all and its fold past five, the
 Recent Files panel (search, same-name folders) and its button in the top
 row, the viewer's view
 options, the column profile panel (values, buckets and NULL as
-conditions, the partial-list note, a late answer discarded), its button
+conditions, the partial-list note, a late answer discarded), the SQL chart
+(`features/query`: value parsing at the safe-integer and 15-digit
+boundaries, inference and availability per X type, the point cap over all
+series, exclusion counts by reason, bar geometry; the chart's keyboard
+walk, legend, tooltip and problem states; `QueryView`'s table-first mode,
+the pick kept across a re-run and dropped on a new SQL, the notice when the
+same SQL loses the pick, a superseded run's answer ignored), its button
 on the header and the filter bar's `addConditions`, the tab bar's right-click menu, the workspace
 context (tabs, roots, recent files, the sample file, the free tier's tab limit at open
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
@@ -610,7 +639,9 @@ system-language guess and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
 `commands/file.rs`, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
-big integers / NaN, the read-only SQL view, result truncation, export,
+big integers / NaN (Decimal32/64 included), the read-only SQL view, result
+truncation, the chart type of every Arrow type and of a query's planned
+columns (`commands::query`), export,
 the column profile in `services::profile` (the full list and the commonest
 values, integer / float / date / timestamp bins and their edge labels as
 filter literals, NaN and the infinities kept out of the bins, nested
@@ -664,7 +695,7 @@ into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
 Purchases), the column profile (S19: values and NULL as conditions, the
 bins of a hundred thousand ids and a drill-down into one, non-finite
-floats including a NaN click, empty strings, restored filters and stale bars) or the SQL view — see its README for setup (`cargo build --example bridge`,
+floats including a NaN click, empty strings, restored filters and stale bars), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; run it under `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,
