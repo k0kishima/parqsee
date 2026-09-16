@@ -39,9 +39,34 @@ pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const RESULT_CACHE_ENTRIES: usize = 64;
 
+#[derive(Clone, PartialEq, Eq)]
+struct FileVersion {
+    size: u64,
+    modified: std::time::SystemTime,
+}
+
+impl FileVersion {
+    // Call only after a metadata/session fill has acquired sandbox access.
+    fn read(path: &str) -> Result<Self, String> {
+        let metadata = std::fs::metadata(path).map_err(|e| format!("Cannot stat {path}: {e}"))?;
+        Ok(Self {
+            size: metadata.len(),
+            modified: metadata.modified().map_err(|e| format!("Cannot read modification time for {path}: {e}"))?,
+        })
+    }
+
+    fn check(&self, path: &str) -> Result<(), String> {
+        if Self::read(path)? != *self {
+            return Err("The file changed while reading it. Refresh and try again.".into());
+        }
+        Ok(())
+    }
+}
+
 struct CachedResult {
     path: String,
     session_id: String,
+    version: FileVersion,
     query: String,
     batches: Vec<RecordBatch>,
     bytes: usize,
@@ -1251,22 +1276,31 @@ async fn execute_browse_query(
 ) -> Result<Vec<RecordBatch>, String> {
     let ctx = cache.get_or_create_session(path).await?;
     let session_id = ctx.session_id();
-    {
+    let version = FileVersion::read(path)?;
+    let hit = {
         let mut results = cache.results.lock().map_err(|e| e.to_string())?;
+        results.retain(|r| r.path != path || r.version == version);
         if let Some(index) = results.iter().position(|r| {
-            r.path == path && r.session_id == session_id && r.query == query
+            r.path == path && r.session_id == session_id && r.version == version && r.query == query
         }) {
             let result = results.remove(index).expect("cache entry exists");
             let batches = result.batches.clone();
             results.push_back(result);
-            return Ok(batches);
+            Some(batches)
+        } else {
+            None
         }
+    };
+    if let Some(batches) = hit {
+        version.check(path)?;
+        return Ok(batches);
     }
     let plan = plan_query_checked(&ctx, query).await?;
     let reusable = reusable_plan(&plan)?;
     let mut batches = ctx.execute_logical_plan(plan).await
         .map_err(|e| format!("SQL execution failed: {}", e))?
         .collect().await.map_err(|e| format!("Failed to collect results: {}", e))?;
+    version.check(path)?;
     // LIMIT can return a slice backed by the entire top-k output. Copy only
     // page-sized results; very large ranges remain uncached.
     let page_sized = batches.iter().map(RecordBatch::num_rows).sum::<usize>() <= 8192;
@@ -1288,7 +1322,7 @@ async fn execute_browse_query(
                 }
             }
             results.push_back(CachedResult {
-                path: path.into(), session_id, query: query.into(), batches: batches.clone(), bytes,
+                path: path.into(), session_id, version, query: query.into(), batches: batches.clone(), bytes,
             });
         }
     }
@@ -1348,10 +1382,10 @@ pub(crate) async fn sorted_page_batches(
     sort: SortSpec,
 ) -> Result<Vec<RecordBatch>, String> {
     let metadata = cache.get_or_create_metadata(path).await?;
-    let total = match where_clause(filter.as_deref()) {
-        Some(_) => count_data(cache, path, filter.clone()).await?,
-        None => usize::try_from(metadata.num_rows).unwrap_or(usize::MAX),
-    };
+    let version = FileVersion::read(path)?;
+    // Even without a filter, cached UI metadata may describe an older file.
+    // COUNT(*) is answered from Parquet metadata and versioned like pages.
+    let total = count_data(cache, path, filter.clone()).await?;
     let (sort, offset, limit, mirrored) = match mirrored_window(offset, limit, total) {
         Some((offset, limit)) => (
             SortSpec {
@@ -1377,6 +1411,9 @@ pub(crate) async fn sorted_page_batches(
         }
         Err(e) => return Err(e),
     };
+    // A key per query is insufficient if the file changes between the count
+    // and page queries: refuse a window computed for a different version.
+    version.check(path)?;
     if mirrored {
         // Reverse Arrow rows before any JSON conversion so exports retain
         // the original types and exact values. Reverse batch order as well.
@@ -1843,6 +1880,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn overwritten_files_do_not_mix_cached_counts_and_fresh_sort_windows() {
+        let path = temp_path("sort_overwrite.parquet");
+        let write = |n| {
+            let batch = RecordBatch::try_from_iter(vec![("id", Arc::new(Int64Array::from_iter_values(0..n)) as ArrayRef)]).unwrap();
+            write_parquet(&path, &batch, None);
+        };
+        write(10);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        assert_eq!(super::count_data(&cache, &file, Some("id >= 0".into())).await.unwrap(), 10);
+        write(20);
+        for filter in [Some("id >= 0".into()), None] {
+            let rows = super::read_data(&cache, &file, 6, 2, filter.clone(),
+                Some(SortSpec { column: "id".into(), direction: SortDirection::Asc })).await.unwrap();
+            assert_eq!(rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>(), vec![6, 7]);
+            assert_eq!(super::count_data(&cache, &file, filter).await.unwrap(), 20);
+        }
+        write(8);
+        let rows = super::read_data(&cache, &file, 6, 2, Some("id >= 0".into()),
+            Some(SortSpec { column: "id".into(), direction: SortDirection::Asc })).await.unwrap();
+        assert_eq!(rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>(), vec![6, 7]);
+        assert_eq!(super::count_data(&cache, &file, Some("id >= 0".into())).await.unwrap(), 8);
+    }
+
+    #[tokio::test]
     async fn counts_are_reused_and_refresh_invalidates_them() {
         let path = temp_path("cached_count.parquet");
         write_small(&path);
@@ -1850,11 +1913,10 @@ mod tests {
         let cache = ParquetCache::new();
         let filter = Some("id > 1".into());
         assert_eq!(super::count_data(&cache, &file, filter.clone()).await.unwrap(), 2);
-        // A hit must not open the source again.
-        let moved = path.with_extension("saved");
-        std::fs::rename(&path, &moved).unwrap();
+        let original = cache.results.lock().unwrap().back().unwrap().batches[0].column(0).clone();
         assert_eq!(super::count_data(&cache, &file, filter.clone()).await.unwrap(), 2);
-        std::fs::rename(&moved, &path).unwrap();
+        let reused = cache.results.lock().unwrap().back().unwrap().batches[0].column(0).clone();
+        assert!(Arc::ptr_eq(&original, &reused), "reuse the same Arrow allocation");
         cache.evict(&file).await.unwrap();
         assert!(cache.results.lock().unwrap().is_empty());
         let batch = RecordBatch::try_from_iter(vec![("id", Arc::new(Int64Array::from(vec![9])) as ArrayRef)]).unwrap();
@@ -1915,14 +1977,37 @@ mod tests {
             let sort = Some(SortSpec { column: "id".into(), direction });
             let first = super::read_data(&cache, &file, offset, 1, filter.clone(), sort.clone()).await.unwrap();
             assert_eq!(first[0]["id"], id);
-            let moved = path.with_extension("saved");
-            std::fs::rename(&path, &moved).unwrap();
+            let original = cache.results.lock().unwrap().back().unwrap().batches[0].column(0).clone();
             let hit = super::read_data(&cache, &file, offset, 1, filter, sort).await.unwrap();
-            std::fs::rename(&moved, &path).unwrap();
+            let reused = cache.results.lock().unwrap().back().unwrap().batches[0].column(0).clone();
+            assert!(Arc::ptr_eq(&original, &reused));
             assert_eq!(hit, first);
         }
         cache.evict(&file).await.unwrap();
         assert!(cache.results.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn changed_or_missing_files_do_not_return_a_cached_page() {
+        let path = temp_path("changed_page.parquet");
+        write_small(&path);
+        let file = path.to_string_lossy();
+        let cache = ParquetCache::new();
+        let sort = Some(SortSpec { column: "id".into(), direction: SortDirection::Asc });
+        let rows = super::read_data(&cache, &file, 0, 1, None, sort.clone()).await.unwrap();
+        assert_eq!(rows[0]["id"], 1);
+        let before = super::FileVersion::read(&file).unwrap();
+        let batch = RecordBatch::try_from_iter(vec![("id", Arc::new(Int64Array::from(vec![4, 5, 6])) as ArrayRef)]).unwrap();
+        write_parquet(&path, &batch, None);
+        // Force a distinct timestamp even on a filesystem with coarse times.
+        std::fs::File::options().write(true).open(&path).unwrap().set_times(
+            std::fs::FileTimes::new().set_modified(before.modified + Duration::from_secs(2)),
+        ).unwrap();
+        assert!(before.check(&file).unwrap_err().contains("file changed"));
+        let rows = super::read_data(&cache, &file, 0, 1, None, sort.clone()).await.unwrap();
+        assert_eq!(rows[0]["id"], 4);
+        std::fs::remove_file(&path).unwrap();
+        assert!(super::read_data(&cache, &file, 0, 1, None, sort).await.is_err());
     }
 
     /// Glob characters are legal in file names; they must not be treated as
