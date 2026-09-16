@@ -1219,8 +1219,18 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   check('S19.valueFilter', (await footer(page)) === 'Showing 1 to 2 of 2 entries' && await filterInputs().first().inputValue() === 'a', `footer=${await footer(page)} value=${await filterInputs().first().inputValue()}`);
   await waitBars('a: 2');
   check('S19.reprofiled', profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.filter))}`);
+  // A restored predicate must survive a click on another column's chart.
+  await page.waitForTimeout(600);
+  await page.reload();
+  await waitGrid(page);
+  await profileButton('n').click();
+  await waitBars('1: 1|3: 1');
+  await panel().locator('button[aria-label="1: 1"]').click();
+  await waitGrid(page);
+  check('S19.restoredFilter', bridge.log.some(l => l.cmd === 'count_parquet_data' && l.args.filter === `"cat" = 'a' AND "n" = 1`), 'restored cat predicate retained while selecting n');
   await act(page).locator('button[title="Clear"]').click();
   await waitGrid(page);
+  await profileButton('cat').click();
   await waitBars('a: 2|b: 1|c: 1|NULL: 1');
 
   // The NULL row filters with IS NULL.
@@ -1231,8 +1241,12 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await waitGrid(page);
 
   // The header button toggles; another column's button switches.
+  await waitBars('a: 2|b: 1|c: 1|NULL: 1');
+  await page.evaluate(() => { window.__delays.profile_column = 600; });
   await profileButton('n').click();
+  check('S19.noStaleBars', (await bars()).length === 0, 'old column bars are not clickable while the new request is pending');
   await waitBars('1: 1|2: 1|3: 1|4: 1|5: 1');
+  await page.evaluate(() => { window.__delays.profile_column = 0; });
   await profileButton('n').click();
   check('S19.toggleClosed', (await panel().count()) === 0, `panels=${await panel().count()}`);
 
@@ -1259,6 +1273,16 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await waitBarsAtLeast(4, 30000);
   const nonFinite = await bars();
   check('S19.nonFinite', ['NaN: 1', 'Infinity: 1', '-Infinity: 1', '1: 1'].every(v => nonFinite.includes(v)), nonFinite.join('|'));
+  await panel().locator('button[aria-label="NaN: 1"]').click();
+  await waitGrid(page);
+  check('S19.nanFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && (await visibleGrid(page))[0][1] === 'NaN', await footer(page));
+
+  await openFile(page, `${FIX}/text_binary.parquet`);
+  await profileButton('s').click();
+  await waitBarsAtLeast(2);
+  await panel().getByRole('button', { name: '"": 1', exact: true }).click();
+  await waitGrid(page);
+  check('S19.emptyFilter', (await footer(page)) === 'Showing 1 to 1 of 1 entries' && bridge.log.some(l => l.cmd === 'count_parquet_data' && l.args.filter === `"s" = ''`), await footer(page));
   await screenshot(page, { path: `${OUT}/shots/S19.png` });
 });
 

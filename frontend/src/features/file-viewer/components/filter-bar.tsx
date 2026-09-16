@@ -175,6 +175,11 @@ function conditionOf(filter: FilterRow, kind: ColumnKind): string | null {
     const form = OPERATOR_FORM[filter.operator];
     if (form !== 'unary' && !filter.value.trim() && !filter.explicitValue) return null;
 
+    if (kind === 'float' && filter.value.trim() === 'NaN' &&
+        (filter.operator === '=' || filter.operator === '!=')) {
+        // NaN equality is not portable across Arrow's comparison kernels.
+        return `${filter.operator === '!=' ? 'NOT ' : ''}isnan(CAST(${quoteIdentifier(filter.column)} AS DOUBLE))`;
+    }
     const literal = KIND_LITERAL[kind];
     // The grid shows binary as lowercase hex, so that is what gets typed
     // back in; compare the same rendering rather than the raw bytes. The
@@ -220,6 +225,16 @@ function restoreFilter(expression: string, columns: ColumnInfo[]): { filters: Fi
     const target = `(${identifier}|encode\\(CAST\\(${identifier} AS BYTEA\\), 'hex'\\)|CAST\\(${identifier} AS TEXT\\))`;
     const rowPattern = new RegExp(`^${target} (IS NOT NULL|IS NULL|>=|<=|!=|=|>|<|LIKE)(?: ('(?:[^']|'')*'|(?!AND(?: |$))[^ ]+))?(?= AND |$)`);
     while (rest) {
+        const nan = rest.match(/^(NOT )?isnan\(CAST\("((?:[^"]|"")*)" AS DOUBLE\)\)(?= AND |$)/);
+        if (nan) {
+            const name = nan[2].replace(/""/g, '"');
+            const row: FilterRow = { ...newFilterRow(name), operator: nan[1] ? '!=' : '=', value: 'NaN', explicitValue: true };
+            if (kindOf(columns, name) !== 'float') break;
+            filters.push(row);
+            rest = rest.slice(nan[0].length);
+            if (rest.startsWith(' AND ')) rest = rest.slice(5);
+            continue;
+        }
         const match = rest.match(rowPattern);
         if (!match) break;
         const name = match[1].match(/"((?:[^"]|"")*)"/)?.[1].replace(/""/g, '"');

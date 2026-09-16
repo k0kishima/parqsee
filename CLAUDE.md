@@ -609,7 +609,11 @@ big integers / NaN, the read-only SQL view, result truncation, export,
 the column profile in `services::profile` (the full list and the commonest
 values, integer / float / date / timestamp bins and their edge labels as
 filter literals, NaN and the infinities kept out of the bins, nested
-columns, quoted names),
+columns, quoted names, explicit empty values, Float16 including non-finite
+values, Time32/Time64 through day-end, Date64 and timezone timestamps
+including a DST transition, and exact drill-down round trips at 20/21 distinct
+values; large integers, high-precision decimals and extreme finite floats
+exercise the top-values fallback),
 the bookmark store, a listing's probe running off the FileAccess lock, the
 Open Recent menu's items in `services::recent_menu`, the
 URL-to-path conversion and the launch handover in
@@ -655,7 +659,7 @@ into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
 Purchases), the column profile (S19: values and NULL as conditions, the
 bins of a hundred thousand ids and a drill-down into one, non-finite
-floats) or the SQL view — see its README for setup (`cargo build --example bridge`,
+floats including a NaN click, empty strings, restored filters and stale bars) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

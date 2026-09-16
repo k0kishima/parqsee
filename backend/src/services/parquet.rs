@@ -480,7 +480,23 @@ pub fn range_reader(
 fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     let reader = open_file_reader(path)?;
     let file_metadata = reader.metadata().file_metadata();
-    metadata_from_schema(file_metadata.schema(), file_metadata.num_rows())
+    let mut metadata = metadata_from_schema(file_metadata.schema(), file_metadata.num_rows())?;
+    // Arrow's embedded schema can restore Date64 or Time32(Second) from
+    // otherwise unannotated integers. Filters must use the type actually
+    // decoded by Arrow/DataFusion, not treat its displayed date as a number.
+    let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
+        file_metadata.schema_descr(), file_metadata.key_value_metadata(),
+    ).map_err(|e| e.to_string())?;
+    for (column, field) in metadata.columns.iter_mut().zip(arrow_schema.fields()) {
+        if matches!(field.data_type(), DataType::Date32 | DataType::Date64 |
+            DataType::Time32(_) | DataType::Time64(_) | DataType::Timestamp(_, _))
+            && column.kind != ColumnKind::Temporal
+        {
+            column.kind = ColumnKind::Temporal;
+            column.column_type = format!("{:?}", field.data_type());
+        }
+    }
+    Ok(metadata)
 }
 
 /// Describe one top-level schema field the way the column header shows it.

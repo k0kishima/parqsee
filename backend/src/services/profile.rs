@@ -647,7 +647,10 @@ mod tests {
                     let target = if p.kind == ColumnKind::Binary {
                         format!("encode(CAST({col} AS BYTEA), 'hex')")
                     } else { col.clone() };
-                    (format!("{target} = {}", literal(&v.value)), v.count)
+                    let predicate = if p.kind == ColumnKind::Float && v.value.as_str() == Some("NaN") {
+                        format!("isnan(CAST({col} AS DOUBLE))")
+                    } else { format!("{target} = {}", literal(&v.value)) };
+                    (predicate, v.count)
                 }).collect()
             }
             ProfileChart::Histogram { buckets, other } => {
@@ -713,6 +716,77 @@ mod tests {
             assert!(buckets.last().unwrap().upper.starts_with("23:59:59.999"));
             assert_chart_round_trip(&path, &p).await;
         }
+    }
+
+    #[tokio::test]
+    async fn temporal_and_numeric_types_round_trip_on_both_sides_of_the_chart_threshold() {
+        use arrow::array::{
+            Date64Array, Decimal128Array, Float32Array, Time32SecondArray,
+            Time32MillisecondArray, Time64MicrosecondArray, Time64NanosecondArray,
+            TimestampNanosecondArray, UInt64Array,
+        };
+        for n in [20, 21] {
+            let mut columns: Vec<(&str, ArrayRef)> = vec![
+                ("date64", Arc::new(Date64Array::from((0..n).map(|i| Some((19723 + i) * 86_400_000)).chain([None]).collect::<Vec<_>>()))),
+                ("seconds", Arc::new(Time32SecondArray::from((0..n).map(|i| Some((i * 60) as i32)).chain([None]).collect::<Vec<_>>()))),
+                ("millis", Arc::new(Time32MillisecondArray::from((0..n).map(|i| Some((i * 60_000 + 999) as i32)).chain([None]).collect::<Vec<_>>()))),
+                ("micros", Arc::new(Time64MicrosecondArray::from((0..n).map(|i| Some(i * 60_000_000 + 999_999)).chain([None]).collect::<Vec<_>>()))),
+                ("nanos", Arc::new(Time64NanosecondArray::from((0..n).map(|i| Some(i * 60_000_000_000 + 999_999_999)).chain([None]).collect::<Vec<_>>()))),
+                ("timestamp_ns", Arc::new(TimestampNanosecondArray::from((0..n).map(|i| Some(1_704_164_645_999_999_999 + i * 60_000_000_000)).chain([None]).collect::<Vec<_>>()))),
+                ("decimal", Arc::new(Decimal128Array::from((0..n).map(|i| Some(i as i128 * 1_001 - 5_123)).chain([None]).collect::<Vec<_>>()).with_precision_and_scale(12, 3).unwrap())),
+                ("uint64", Arc::new(UInt64Array::from((0..n).map(|i| Some(u64::MAX - i as u64)).chain([None]).collect::<Vec<_>>()))),
+            ];
+            let floats = Float32Array::from((0..n).map(|i| Some(i as f32 * 0.25)).chain([None]).collect::<Vec<_>>());
+            columns.push(("float16", arrow::compute::cast(&floats, &DataType::Float16).unwrap()));
+            // A named zone, and the repeated local hour at the US DST fall-back.
+            for (name, zone) in [("tokyo", "Asia/Tokyo"), ("dst", "America/New_York")] {
+                columns.push((name, Arc::new(TimestampMicrosecondArray::from(
+                    (0..n).map(|i| Some(1_730_610_000_123_456 + i * 600_000_000)).chain([None]).collect::<Vec<_>>()
+                ).with_timezone(zone))));
+            }
+            let path = fixture(&format!("types_{n}.parquet"), columns);
+            for column in ["date64", "seconds", "millis", "micros", "nanos", "timestamp_ns", "decimal", "uint64", "float16", "tokyo", "dst"] {
+                let p = profile(&path, column, None).await;
+                assert_eq!(p.distinct_count, Some(n as usize), "{column}");
+                assert_eq!(p.null_count, 1, "{column}");
+                if n == 20 || column == "uint64" {
+                    assert!(matches!(p.chart, ProfileChart::TopValues { .. }), "{column}");
+                } else {
+                    assert!(matches!(p.chart, ProfileChart::Histogram { .. }), "{column}");
+                }
+                assert_chart_round_trip(&path, &p).await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn float16_non_finite_values_round_trip_or_are_reported_outside_bins() {
+        use arrow::array::Float32Array;
+        for n in [3, 25] {
+            let xs = Float32Array::from((0..n).map(|i| Some(i as f32))
+                .chain([Some(f32::NAN), Some(f32::INFINITY), Some(f32::NEG_INFINITY), None]).collect::<Vec<_>>());
+            let path = fixture(&format!("half_special_{n}.parquet"), vec![("x", arrow::compute::cast(&xs, &DataType::Float16).unwrap())]);
+            let p = profile(&path, "x", None).await;
+            assert_eq!(p.distinct_count, Some(n + 3));
+            assert_eq!(p.null_count, 1);
+            if n == 25 { assert_eq!(histogram(&p.chart).1, 3); }
+            assert_chart_round_trip(&path, &p).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_text_binary_and_quoted_names_round_trip() {
+        use arrow::array::BinaryArray;
+        let path = fixture("empty_values.parquet", vec![
+            ("a\" AND b", Arc::new(StringArray::from(vec![Some(""), Some("   "), Some("a'b"), None]))),
+            ("bin", Arc::new(BinaryArray::from(vec![Some(&b""[..]), Some(&b"\x00\xff"[..]), Some(&b" "[..]), None]))),
+        ]);
+        for column in ["a\" AND b", "bin"] {
+            assert_chart_round_trip(&path, &profile(&path, column, None).await).await;
+        }
+        let filtered = profile(&path, "bin", Some("\"a\"\" AND b\" = '' OR \"a\"\" AND b\" IS NULL")).await;
+        assert_eq!((filtered.total_rows, filtered.null_count), (2, 1));
+        assert_eq!(top_values(&filtered.chart).0, vec![(Value::String(String::new()), 1)]);
     }
 
     #[test]

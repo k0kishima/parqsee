@@ -180,10 +180,17 @@ describe('FilterBar rows', () => {
       }
     });
 
+    it('restores a NaN predicate as an editable and replaceable condition', () => {
+      const { onFilterChange, add } = renderWithHandle('isnan(CAST("id" AS DOUBLE))', [{ ...columns[0], kind: 'float' }]);
+      expect(valueInputs()[0]).toHaveValue('NaN');
+      add([{ column: 'id', operator: '=', value: '5' }]);
+      expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 5');
+    });
+
     it.each(['NaN', 'Infinity', '-Infinity'])('accepts the explicit float value %s from a chart', value => {
       const { onFilterChange, add } = renderWithHandle('', [{ ...columns[0], kind: 'float' }]);
       add([{ column: 'id', operator: '=', value }]);
-      expect(onFilterChange).toHaveBeenLastCalledWith(`"id" = '${value}'`);
+      expect(onFilterChange).toHaveBeenLastCalledWith(value === 'NaN' ? 'isnan(CAST("id" AS DOUBLE))' : `"id" = '${value}'`);
     });
   });
 });
