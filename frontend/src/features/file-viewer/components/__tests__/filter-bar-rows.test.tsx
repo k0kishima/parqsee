@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { FilterBar } from '../filter-bar';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { createRef } from 'react';
+import { FilterBar, type FilterBarHandle } from '../filter-bar';
 import type { ColumnInfo } from '../../api';
 
 const columns: ColumnInfo[] = [
@@ -61,5 +62,54 @@ describe('FilterBar rows', () => {
     expect(valueInputs()).toHaveLength(1);
     expect(valueInputs()[0]).toHaveValue('');
     expect(onFilterChange).toHaveBeenCalledWith('');
+  });
+
+  describe('addConditions from outside the form', () => {
+    function renderWithHandle() {
+      const onFilterChange = vi.fn();
+      const ref = createRef<FilterBarHandle>();
+      render(<FilterBar ref={ref} columns={columns} onFilterChange={onFilterChange} activeFilter="" />);
+      // The handle is called from outside React's own event handling, so
+      // the state it sets is flushed under act() as an event would be.
+      const add = (conditions: Parameters<FilterBarHandle['addConditions']>[0]) =>
+        act(() => ref.current!.addConditions(conditions));
+      return { onFilterChange, add };
+    }
+
+    it('takes the place of the blank row and applies at once', () => {
+      const { onFilterChange, add } = renderWithHandle();
+      add([{ column: 'name', operator: '=', value: 'a' }]);
+
+      expect(onFilterChange).toHaveBeenCalledWith(`"name" = 'a'`);
+      expect(valueInputs()).toHaveLength(1);
+      expect(valueInputs()[0]).toHaveValue('a');
+    });
+
+    it('keeps a filled-in row and adds behind it', () => {
+      const { onFilterChange, add } = renderWithHandle();
+      fireEvent.change(valueInputs()[0], { target: { value: '5' } });
+      add([
+        { column: 'name', operator: '>=', value: 'a' },
+        { column: 'name', operator: '<', value: 'm' },
+      ]);
+
+      expect(onFilterChange).toHaveBeenCalledWith(`"id" = 5 AND "name" >= 'a' AND "name" < 'm'`);
+      expect(valueInputs()).toHaveLength(3);
+    });
+
+    it('replaces a row on the same column with the same operator, so a narrower range does not stack', () => {
+      const { onFilterChange, add } = renderWithHandle();
+      add([
+        { column: 'id', operator: '>=', value: '0' },
+        { column: 'id', operator: '<', value: '100' },
+      ]);
+      add([
+        { column: 'id', operator: '>=', value: '20' },
+        { column: 'id', operator: '<', value: '40' },
+      ]);
+
+      expect(onFilterChange).toHaveBeenLastCalledWith(`"id" >= 20 AND "id" < 40`);
+      expect(valueInputs()).toHaveLength(2);
+    });
   });
 });

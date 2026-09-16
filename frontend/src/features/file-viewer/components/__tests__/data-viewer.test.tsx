@@ -8,10 +8,12 @@ const mockOpenParquetFile = vi.fn();
 const mockReadParquetData = vi.fn();
 const mockCountParquetData = vi.fn();
 const mockEvictCache = vi.fn();
+const mockProfileColumn = vi.fn();
 vi.mock('../../api', () => ({
   openParquetFile: (...args: unknown[]) => mockOpenParquetFile(...args),
   readParquetData: (...args: unknown[]) => mockReadParquetData(...args),
   countParquetData: (...args: unknown[]) => mockCountParquetData(...args),
+  profileColumn: (...args: unknown[]) => mockProfileColumn(...args),
   // The real wrapper swallows the rejection; the double must too, or the
   // "could not be evicted" case below would test an impossible state.
   // api/__tests__/evict-cache-quietly.test.ts pins the real one.
@@ -127,5 +129,50 @@ describe('DataViewer search commands', () => {
     isActiveRef.current = true;
     act(() => dispatchAppCommand('find'));
     expect(screen.getByPlaceholderText('viewer.searchPlaceholder')).toHaveFocus();
+  });
+});
+
+describe('DataViewer column profile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenParquetFile.mockResolvedValue(metadata);
+    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
+    mockCountParquetData.mockResolvedValue(5);
+    mockEvictCache.mockResolvedValue(undefined);
+    mockProfileColumn.mockResolvedValue({
+      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2,
+      chart: { shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0 },
+    });
+  });
+
+  const openButton = () => screen.getByRole('button', { name: 'viewer.profile.open' });
+  const panel = () => screen.queryByRole('complementary', { name: 'viewer.profile.title' });
+
+  it("opens the column's panel from its header button, and closes it on the second click", async () => {
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(panel()).not.toBeInTheDocument();
+
+    await userEvent.click(openButton());
+    expect(panel()).toBeInTheDocument();
+    expect(openButton()).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined));
+
+    await userEvent.click(openButton());
+    expect(panel()).not.toBeInTheDocument();
+  });
+
+  it('adds the clicked value to the filter bar, reloads the grid and re-profiles under the filter', async () => {
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    await userEvent.click(openButton());
+
+    await userEvent.click(await screen.findByRole('button', { name: '7: 60' }));
+
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7'));
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" = 7'));
+    expect(screen.getByPlaceholderText('viewer.filterValuePlaceholder')).toHaveValue('7');
+    // The panel stayed mounted across the grid's reload.
+    expect(panel()).toBeInTheDocument();
   });
 });

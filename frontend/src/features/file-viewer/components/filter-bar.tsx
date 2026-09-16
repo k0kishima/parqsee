@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { forwardRef, useImperativeHandle, useState } from "react";
 import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
@@ -8,6 +8,30 @@ interface FilterBarProps {
     columns: ColumnInfo[];
     onFilterChange: (filter: string) => void;
     activeFilter: string;
+}
+
+/** A condition another part of the viewer asks the bar to add. */
+export interface FilterCondition {
+    column: string;
+    operator: FilterOperator;
+    /** The value as the user would type it; ignored by a unary operator. */
+    value: string;
+}
+
+/**
+ * What the bar does on request from outside its form: the column profile
+ * panel adds the value or the bucket that was clicked as a condition. An
+ * imperative handle rather than a prop, because it is an action with a
+ * moment — a prop would have to be cleared again after each use.
+ */
+export interface FilterBarHandle {
+    /**
+     * Add the conditions and apply the filter at once. Rows that are not
+     * filled in are dropped, and so is a row on the same column with the
+     * same operator: a click on a narrower bucket replaces the range the
+     * previous click set instead of stacking on it.
+     */
+    addConditions: (conditions: FilterCondition[]) => void;
 }
 
 export const FILTER_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"] as const;
@@ -180,13 +204,31 @@ export function buildFilterExpression(filters: FilterRow[], columns: ColumnInfo[
         .join(" AND ");
 }
 
-export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarProps) {
+export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function FilterBar(
+    { columns, onFilterChange, activeFilter },
+    ref
+) {
     const { t } = useTranslation();
 
     // Initialize with one row. A lazy initializer: taking a serial is impure
     // and must not run on every render (react.dev/reference/rules).
     const [filters, setFilters] = useState<FilterRow[]>(() => [newFilterRow(columns[0]?.name)]);
     const [invalid, setInvalid] = useState<InvalidFilterValue | null>(null);
+
+    useImperativeHandle(ref, () => ({
+        addConditions(conditions) {
+            const replaced = (row: FilterRow) =>
+                conditions.some(c => c.column === row.column && c.operator === row.operator);
+            const kept = filters.filter(row =>
+                conditionOf(row, kindOf(columns, row.column)) !== null && !replaced(row)
+            );
+            const added = conditions.map(c => ({ ...newFilterRow(c.column), operator: c.operator, value: c.value }));
+            const next = [...kept, ...added];
+            setFilters(next);
+            setInvalid(null);
+            onFilterChange(buildFilterExpression(next, columns));
+        },
+    }), [filters, columns, onFilterChange]);
 
     // Point rows at the first column when the columns change and theirs is
     // gone. Adjusted during render from the previous columns, not in an
@@ -361,4 +403,4 @@ export function FilterBar({ columns, onFilterChange, activeFilter }: FilterBarPr
             </form>
         </div>
     );
-}
+});

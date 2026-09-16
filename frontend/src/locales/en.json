@@ -132,7 +132,25 @@
         "noMatches": "No matches on this page",
         "clearSearch": "Clear search",
         "nextMatch": "Next match",
-        "previousMatch": "Previous match"
+        "previousMatch": "Previous match",
+        "profile": {
+            "open": "Profile column {{column}}",
+            "title": "Profile of {{column}}",
+            "loading": "Profiling…",
+            "rows": "Rows",
+            "nulls": "NULL",
+            "distinct": "Distinct",
+            "values": "Values",
+            "topValues": "Top {{shown}} of {{distinct}} values",
+            "distribution": "Distribution",
+            "null": "NULL",
+            "otherValues": "{{count}} more rows in other values",
+            "notBinned": "{{count}} values outside the range (NaN or infinite)",
+            "noChart": "No chart for this column type.",
+            "filterValue": "Filter by this value",
+            "filterRange": "Filter by this range",
+            "filterNull": "Filter by NULL"
+        }
     },
     "fileExplorer": {
         "searchPlaceholder": "Filter files...",
@@ -172,8 +190,8 @@
         }
     },
     "session": {
-    "saveFailed": "Could not save your tabs and viewing state. Recent changes may not be restored next time.",
-    "retrySave": "Retry",
+        "saveFailed": "Could not save your tabs and viewing state. Recent changes may not be restored next time.",
+        "retrySave": "Retry",
         "notReopened_one": "{{count}} file from the last session could not be reopened",
         "notReopened_other": "{{count}} files from the last session could not be reopened",
         "notRestoredFree_one": "{{count}} tab from the last session was not restored: the free version keeps {{limit}} tabs open at a time.",

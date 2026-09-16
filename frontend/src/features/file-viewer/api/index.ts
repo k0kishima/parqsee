@@ -4,8 +4,12 @@ import type { ColumnInfo } from '../../../bindings/ipc/ColumnInfo';
 import type { ColumnKind } from '../../../bindings/ipc/ColumnKind';
 import type { FileInfo } from '../../../bindings/ipc/FileInfo';
 import type { ParquetMetadata } from '../../../bindings/ipc/ParquetMetadata';
+import type { ColumnProfile } from '../../../bindings/ipc/ColumnProfile';
+import type { ProfileChart } from '../../../bindings/ipc/ProfileChart';
+import type { ValueCount } from '../../../bindings/ipc/ValueCount';
+import type { HistogramBucket } from '../../../bindings/ipc/HistogramBucket';
 
-export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata };
+export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata, ColumnProfile, ProfileChart, ValueCount, HistogramBucket };
 
 export interface ExportDataParams {
     sourcePath: string;
@@ -36,6 +40,15 @@ export const readParquetData = async (path: string, offset: number, limit: numbe
 
 export const countParquetData = async (path: string, filter?: string): Promise<number> => {
     return await invoke('count_parquet_data', { path, filter });
+};
+
+/**
+ * What `column` holds under `filter` (the grid's WHERE fragment): counts and
+ * a chart of its values. A scan of the file on the backend; ask when the
+ * profile panel is open, not when a file is.
+ */
+export const profileColumn = async (path: string, column: string, filter?: string): Promise<ColumnProfile> => {
+    return await invoke('profile_column', { path, column, filter });
 };
 
 export const evictCache = async (path: string): Promise<void> => {

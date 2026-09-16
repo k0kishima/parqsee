@@ -5,9 +5,10 @@ import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { ROWS_PER_PAGE_OPTIONS } from "../../../lib/settings-storage";
 import { SearchBar } from "./search-bar";
-import { FilterBar } from "./filter-bar";
+import { FilterBar, type FilterBarHandle, type FilterCondition } from "./filter-bar";
 import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
+import { ColumnProfilePanel } from "./column-profile";
 import { ViewOptions } from "./view-options";
 import { openParquetFile, readParquetData, countParquetData, evictCacheQuietly, ParquetMetadata } from "../api";
 import { TabState } from "../routes/tab-content";
@@ -75,6 +76,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
   // Filter state
   const [activeFilter, setActiveFilter] = useState(initialState?.activeFilter || "");
+  const filterBarRef = useRef<FilterBarHandle>(null);
+
+  // The column whose profile panel is open. Not part of the tab's saved
+  // state: like the search, it is a look at the file, not a view of it.
+  const [profiledColumn, setProfiledColumn] = useState<string | null>(null);
 
   // Local state for page input (Enter key / blur to confirm)
   const [pageInput, setPageInput] = useState(String(currentPage));
@@ -293,6 +299,18 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setCurrentPage(1);
   }, []);
 
+  // A second click on the column's button closes its panel.
+  const handleProfileColumn = useCallback((name: string) => {
+    setProfiledColumn(current => (current === name ? null : name));
+  }, []);
+  const closeProfile = useCallback(() => setProfiledColumn(null), []);
+  const handleAddConditions = useCallback((conditions: FilterCondition[]) => {
+    filterBarRef.current?.addConditions(conditions);
+  }, []);
+  // The panel follows the metadata: a Refresh that dropped the column
+  // closes it.
+  const profileColumn = metadata?.columns.find(c => c.name === profiledColumn) ?? null;
+
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
   const shownRows = pageWindow(currentPage, rowsPerPage, totalRows);
   const fileName = getFileName(filePath);
@@ -417,6 +435,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       {/* Filter Bar - Sequel Pro Style */}
       <div className="shadow-sm border-b border-slate-200 dark:border-gray-700">
         <FilterBar
+          ref={filterBarRef}
           columns={metadata?.columns || []}
           onFilterChange={handleFilterChange}
           activeFilter={activeFilter}
@@ -440,29 +459,48 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
             </button>
           </div>
         )}
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-              <div className="text-slate-600 dark:text-gray-400">{t('viewer.loading')}</div>
-            </div>
+        {/* The grid and, beside it, the column profile. The panel sits
+            outside the loading branch: a filter change reloads the grid
+            and re-profiles the column, and the panel keeps its place
+            while both are in flight. */}
+        <div className="flex-1 min-h-0 flex">
+          <div className="flex-1 min-w-0 flex flex-col">
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                  <div className="text-slate-600 dark:text-gray-400">{t('viewer.loading')}</div>
+                </div>
+              </div>
+            ) : (
+              <DataTable
+                columns={metadata?.columns ?? EMPTY_COLUMNS}
+                rows={data}
+                selectedRow={selectedRow}
+                onSelectRow={setSelectedRow}
+                searchTerm={searchTerm}
+                searchMatches={searchMatches}
+                currentMatchIndex={currentMatchIndex}
+                typeDisplay={settings.typeDisplay || 'logical'}
+                density={settings.rowDensity}
+                scrollerRef={tableContainerRef}
+                profiledColumn={profiledColumn}
+                onProfileColumn={handleProfileColumn}
+              />
+            )}
           </div>
-        ) : (
-          <>
-            {/* Table Container */}
-            <DataTable
-              columns={metadata?.columns ?? EMPTY_COLUMNS}
-              rows={data}
-              selectedRow={selectedRow}
-              onSelectRow={setSelectedRow}
-              searchTerm={searchTerm}
-              searchMatches={searchMatches}
-              currentMatchIndex={currentMatchIndex}
-              typeDisplay={settings.typeDisplay || 'logical'}
-              density={settings.rowDensity}
-              scrollerRef={tableContainerRef}
+          {profileColumn && (
+            <ColumnProfilePanel
+              filePath={filePath}
+              column={profileColumn}
+              filter={activeFilter}
+              onClose={closeProfile}
+              onAddConditions={handleAddConditions}
             />
-
+          )}
+        </div>
+        {!loading && (
+          <>
             {/* Footer with Pagination */}
             <div className="px-6 py-3 flex items-center justify-between border-t bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700">
               <div className="flex items-center space-x-3">

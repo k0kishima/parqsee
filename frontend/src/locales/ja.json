@@ -132,7 +132,25 @@
     "noMatches": "このページに一致はありません",
     "clearSearch": "検索をクリア",
     "nextMatch": "次の一致",
-    "previousMatch": "前の一致"
+    "previousMatch": "前の一致",
+    "profile": {
+      "open": "列 {{column}} のプロファイル",
+      "title": "{{column}} のプロファイル",
+      "loading": "集計中…",
+      "rows": "行数",
+      "nulls": "NULL",
+      "distinct": "種類数",
+      "values": "値",
+      "topValues": "{{distinct}} 種類のうち上位 {{shown}} 件",
+      "distribution": "分布",
+      "null": "NULL",
+      "otherValues": "その他の値の行が {{count}} 件",
+      "notBinned": "範囲外の値が {{count}} 件（NaN または無限大）",
+      "noChart": "この列の型にはチャートがありません。",
+      "filterValue": "この値で絞り込む",
+      "filterRange": "この範囲で絞り込む",
+      "filterNull": "NULL で絞り込む"
+    }
   },
   "fileExplorer": {
     "searchPlaceholder": "ファイルを検索...",
