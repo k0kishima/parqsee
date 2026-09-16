@@ -1,7 +1,7 @@
 use crate::commands::guarded;
 use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
-use crate::models::ColumnProfile;
+use crate::models::{ColumnProfile, SortSpec};
 use crate::services::{export, parquet, profile};
 use std::sync::Arc;
 
@@ -15,9 +15,10 @@ pub async fn read_parquet_data(
     offset: usize,
     limit: usize,
     filter: Option<String>,
+    sort: Option<SortSpec>,
 ) -> Result<Vec<serde_json::Value>, String> {
     guarded("Reading the page", async {
-        parquet::read_data(&cache, &path, offset, limit, filter).await
+        parquet::read_data(&cache, &path, offset, limit, filter, sort).await
     })
     .await
 }
@@ -72,6 +73,7 @@ pub async fn export_data(
     offset: Option<usize>,
     limit: Option<usize>,
     filter: Option<String>,
+    sort: Option<SortSpec>,
 ) -> Result<usize, String> {
     guarded("The export", async {
         let rows = export::export_data(
@@ -82,6 +84,7 @@ pub async fn export_data(
             offset,
             limit,
             filter,
+            sort,
         )
         .await?;
         access.remember_export(&export_path);

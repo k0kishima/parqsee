@@ -7,7 +7,7 @@ use std::fs::File;
 use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata};
+use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata, SortDirection, SortSpec};
 use crate::services::access::FileAccess;
 
 /// Cache for DataFusion SessionContext and Parquet metadata.
@@ -1033,17 +1033,76 @@ pub fn where_clause(filter: Option<&str>) -> Option<&str> {
     filter.map(str::trim).filter(|f| !f.is_empty())
 }
 
+/// DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
+/// nothing; the filter bar quotes the same way.
+pub fn quote_identifier(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// Whether a column can be a sort key: everything but nested values (lists,
+/// structs, maps, variants) and the types with no order (intervals). The
+/// header offers the sort button by the same kind, so a sort the webview
+/// sends always passes; the check is for a session restored from a file
+/// that has changed shape since.
+pub fn is_sortable(kind: ColumnKind) -> bool {
+    !matches!(kind, ColumnKind::Nested | ColumnKind::Other)
+}
+
+/// The `ORDER BY` terms for `sort` over a file with `columns`: the sort
+/// column first, then every other sortable column in file order, all in
+/// the same direction.
+///
+/// The tie-breakers are what make paging over a sorted grid safe. Pages
+/// are separate `ORDER BY ... LIMIT/OFFSET` queries, and DataFusion
+/// answers each with a top-k heap sized to that page's `offset + limit`,
+/// whose order among equal keys depends on the heap's shape — so two
+/// pages of `ORDER BY category` alone could show the same row twice and
+/// another never, whenever a run of equal values crossed the page boundary
+/// (a category column with five values crosses it on every page). With
+/// every sortable column in the key, rows that compare equal are identical
+/// in every value the grid can show, so whichever of them lands where, the
+/// pages read the same. Rows that differ only in a nested or unordered
+/// column are the one case this leaves open; they sort as equal and may
+/// swap places between two reads.
+///
+/// The direction applies to every term, so descending is exactly the
+/// ascending sequence reversed, NULLs included (`ASC NULLS LAST`,
+/// `DESC NULLS FIRST`, spelled out rather than left to the dialect).
+pub fn order_by_terms(sort: &SortSpec, columns: &[ColumnInfo]) -> Result<String, String> {
+    let key = columns
+        .iter()
+        .find(|c| c.name == sort.column)
+        .ok_or_else(|| format!("Cannot sort by {}: no such column", sort.column))?;
+    if !is_sortable(key.kind) {
+        return Err(format!("Cannot sort by {}: values of its type have no order", sort.column));
+    }
+    let direction = match sort.direction {
+        SortDirection::Asc => "ASC NULLS LAST",
+        SortDirection::Desc => "DESC NULLS FIRST",
+    };
+    let terms = std::iter::once(key)
+        .chain(columns.iter().filter(|c| c.name != sort.column && is_sortable(c.kind)))
+        .map(|c| format!("{} {}", quote_identifier(&c.name), direction))
+        .collect::<Vec<_>>();
+    Ok(terms.join(", "))
+}
+
 /// The one `SELECT * FROM t ...` shape the browse grid and the filtered
 /// export share. Building it in one place keeps the exported rows the same
-/// rows the grid paginates over.
+/// rows the grid paginates over. `order_by` is the term list from
+/// `order_by_terms`, or `None` for file order.
 pub fn build_page_query(
     filter: Option<&str>,
+    order_by: Option<&str>,
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> String {
     let mut query = String::from("SELECT * FROM t");
     if let Some(f) = where_clause(filter) {
         query.push_str(&format!(" WHERE {}", f));
+    }
+    if let Some(order_by) = order_by {
+        query.push_str(&format!(" ORDER BY {}", order_by));
     }
     if let Some(limit) = limit {
         query.push_str(&format!(" LIMIT {}", limit));
@@ -1054,26 +1113,44 @@ pub fn build_page_query(
     query
 }
 
-/// One page of rows. Without a filter the page comes straight from the
-/// parquet reader with the range pushed down (see `range_reader`); a
-/// `LIMIT/OFFSET` query would decode every row before the page, so the last
-/// page of a large file took seconds in release and a minute in debug. With
-/// a filter the page is the DataFusion query the filtered export shares, so
-/// what is exported is what the grid shows. Both read row groups in file
-/// order, so the two paths paginate the same sequence.
+/// The `ORDER BY` terms for `sort`, resolved against the file's columns
+/// (which `order_by_terms` needs for the tie-breakers). `None` when there
+/// is no sort.
+async fn order_by_for(
+    cache: &ParquetCache,
+    path: &str,
+    sort: Option<&SortSpec>,
+) -> Result<Option<String>, String> {
+    match sort {
+        Some(sort) => {
+            let metadata = cache.get_or_create_metadata(path).await?;
+            order_by_terms(sort, &metadata.columns).map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+/// One page of rows. Without a filter or a sort the page comes straight
+/// from the parquet reader with the range pushed down (see `range_reader`);
+/// a `LIMIT/OFFSET` query would decode every row before the page, so the
+/// last page of a large file took seconds in release and a minute in
+/// debug. With a filter or a sort the page is the DataFusion query the
+/// export shares, so what is exported is what the grid shows. Both paths
+/// read row groups in file order, so the two paginate the same sequence
+/// (and a sort, being an `ORDER BY` over the whole file for every page,
+/// costs a scan per page: the price of a sort key the file does not have —
+/// see `order_by_terms` for what keeps its pages consistent).
 pub async fn read_data(
     cache: &ParquetCache,
     path: &str,
     offset: usize,
     limit: usize,
     filter: Option<String>,
+    sort: Option<SortSpec>,
 ) -> Result<Vec<Value>, String> {
-    let batches = match where_clause(filter.as_deref()) {
-        Some(_) => {
-            let query = build_page_query(filter.as_deref(), Some(offset), Some(limit));
-            execute_sql_with_cache(cache, path, &query).await?.0
-        }
-        None => {
+    let order_by = order_by_for(cache, path, sort.as_ref()).await?;
+    let batches = match (where_clause(filter.as_deref()), order_by) {
+        (None, None) => {
             // Decoding is CPU-bound; keep it off the async workers so other
             // commands (a count, another tab's page) are not stalled behind it.
             let path = path.to_string();
@@ -1084,6 +1161,11 @@ pub async fn read_data(
             })
             .await
             .map_err(|e| format!("Page read task failed: {}", e))??
+        }
+        (_, order_by) => {
+            let query =
+                build_page_query(filter.as_deref(), order_by.as_deref(), Some(offset), Some(limit));
+            execute_sql_with_cache(cache, path, &query).await?.0
         }
     };
 
@@ -1243,7 +1325,7 @@ fn truncate_batches(batches: Vec<RecordBatch>, max: usize) -> (Vec<RecordBatch>,
 #[cfg(test)]
 mod tests {
     use super::{truncate_batches, ParquetCache};
-    use crate::models::{ColumnKind, ParquetMetadata};
+    use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata, SortDirection, SortSpec};
     use crate::services::test_support::{self, write_parquet};
     use arrow::array::{
         Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
@@ -1393,7 +1475,7 @@ mod tests {
         write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 1, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 1, None, None)
             .await
             .expect("decimals inside maps and fixed-size lists must not fail the read");
 
@@ -1443,7 +1525,7 @@ mod tests {
         write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None, None)
             .await
             .expect("narrow decimals must not fail the read");
         assert_eq!(rows[0]["small"], "123.45");
@@ -1495,7 +1577,7 @@ mod tests {
         write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 6, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 6, None, None)
             .await
             .unwrap();
         assert_eq!(rows[0]["x"], "NaN");
@@ -1515,7 +1597,7 @@ mod tests {
     async fn decimal_columns_reach_the_webview_as_exact_strings() {
         let path = write_decimal_fixture();
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None, None)
             .await
             .expect("decimal columns must not fail the read");
 
@@ -1542,7 +1624,7 @@ mod tests {
         let path = temp_path("UPPER.PARQUET");
         write_small(&path);
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None, None)
             .await
             .unwrap();
         assert_eq!(rows.len(), 3);
@@ -1568,7 +1650,7 @@ mod tests {
             let path = temp_path("globs").join(name);
             write_small(&path);
             let cache = ParquetCache::new();
-            let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None)
+            let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 10, None, None)
                 .await
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(rows.len(), 3, "{name}");
@@ -1605,7 +1687,7 @@ mod tests {
         assert!(!std::path::Path::new("/tmp/parqsee-must-not-exist.csv").exists());
 
         // The table survived the attempts, and plain reads still work.
-        let rows = super::read_data(&cache, &file, 0, 10, None).await.unwrap();
+        let rows = super::read_data(&cache, &file, 0, 10, None, None).await.unwrap();
         assert_eq!(rows.len(), 3);
         assert_eq!(
             run("SELECT * FROM t LIMIT 100;")
@@ -1653,7 +1735,7 @@ mod tests {
             ("\"id\" = 7", 1),
             ("\"hash\" = 18446744073709551615", 1),
         ] {
-            let rows = super::read_data(&cache, &file, 0, 10, Some(filter.to_string()))
+            let rows = super::read_data(&cache, &file, 0, 10, Some(filter.to_string()), None)
                 .await
                 .unwrap_or_else(|e| panic!("{filter}: {e}"));
             assert_eq!(rows.len(), expected, "{filter}");
@@ -1749,10 +1831,10 @@ mod tests {
         // (offset, limit): inside one row group, across a boundary, the tail
         // clipped by the end, an empty page past the end, and everything.
         for (offset, limit) in [(0, 3), (2, 5), (8, 5), (10, 5), (42, 1), (0, 100)] {
-            let direct = super::read_data(&cache, &file, offset, limit, None)
+            let direct = super::read_data(&cache, &file, offset, limit, None, None)
                 .await
                 .unwrap();
-            let via_sql = super::read_data(&cache, &file, offset, limit, Some("1 = 1".into()))
+            let via_sql = super::read_data(&cache, &file, offset, limit, Some("1 = 1".into()), None)
                 .await
                 .unwrap();
             assert_eq!(direct, via_sql, "offset {offset} limit {limit}");
@@ -1764,7 +1846,7 @@ mod tests {
         }
         // Spot-check the JSON-unsafe values survived the direct path too, and
         // that the NaN did not drag its finite neighbours into strings.
-        let all = super::read_data(&cache, &file, 0, n, None).await.unwrap();
+        let all = super::read_data(&cache, &file, 0, n, None, None).await.unwrap();
         assert_eq!(all[4]["x"], serde_json::json!("NaN"));
         assert_eq!(all[3]["x"], serde_json::json!(0.75));
         assert_eq!(all[1]["amount"], serde_json::json!("1.001"));
@@ -2102,7 +2184,7 @@ mod tests {
         let path = temp_path("date64.parquet");
         write_parquet(&path, &batch, None);
 
-        let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 2, None)
+        let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 2, None, None)
             .await
             .unwrap();
         assert_eq!(rows[0]["d"], "2024-02-29");
@@ -2112,21 +2194,191 @@ mod tests {
     fn page_query_covers_every_clause_combination() {
         use super::build_page_query;
         assert_eq!(
-            build_page_query(None, Some(0), Some(50)),
+            build_page_query(None, None, Some(0), Some(50)),
             "SELECT * FROM t LIMIT 50"
         );
         assert_eq!(
-            build_page_query(Some("  "), Some(100), Some(50)),
+            build_page_query(Some("  "), None, Some(100), Some(50)),
             "SELECT * FROM t LIMIT 50 OFFSET 100"
         );
         assert_eq!(
-            build_page_query(Some("\"id\" > 1"), None, None),
+            build_page_query(Some("\"id\" > 1"), None, None, None),
             "SELECT * FROM t WHERE \"id\" > 1"
         );
         assert_eq!(
-            build_page_query(Some("\"id\" > 1"), Some(25), Some(25)),
+            build_page_query(Some("\"id\" > 1"), None, Some(25), Some(25)),
             "SELECT * FROM t WHERE \"id\" > 1 LIMIT 25 OFFSET 25"
         );
+        assert_eq!(
+            build_page_query(None, Some("\"a\" ASC NULLS LAST"), Some(25), Some(25)),
+            "SELECT * FROM t ORDER BY \"a\" ASC NULLS LAST LIMIT 25 OFFSET 25"
+        );
+        assert_eq!(
+            build_page_query(Some("\"id\" > 1"), Some("\"a\" DESC NULLS FIRST"), None, None),
+            "SELECT * FROM t WHERE \"id\" > 1 ORDER BY \"a\" DESC NULLS FIRST"
+        );
+    }
+
+    fn columns_of(specs: &[(&str, ColumnKind)]) -> Vec<ColumnInfo> {
+        specs
+            .iter()
+            .map(|(name, kind)| ColumnInfo {
+                name: name.to_string(),
+                column_type: String::new(),
+                kind: *kind,
+                logical_type: None,
+                physical_type: String::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn order_by_puts_the_key_first_and_every_sortable_column_after_it() {
+        use super::order_by_terms;
+        let columns = columns_of(&[
+            ("id", ColumnKind::Integer),
+            ("Mixed \"q\"", ColumnKind::Text),
+            ("tags", ColumnKind::Nested),
+            ("span", ColumnKind::Other),
+            ("x", ColumnKind::Float),
+        ]);
+        let by = |column: &str, direction| SortSpec { column: column.into(), direction };
+
+        assert_eq!(
+            order_by_terms(&by("Mixed \"q\"", SortDirection::Asc), &columns).unwrap(),
+            "\"Mixed \"\"q\"\"\" ASC NULLS LAST, \"id\" ASC NULLS LAST, \"x\" ASC NULLS LAST"
+        );
+        assert_eq!(
+            order_by_terms(&by("x", SortDirection::Desc), &columns).unwrap(),
+            "\"x\" DESC NULLS FIRST, \"id\" DESC NULLS FIRST, \"Mixed \"\"q\"\"\" DESC NULLS FIRST"
+        );
+        let err = order_by_terms(&by("nope", SortDirection::Asc), &columns).unwrap_err();
+        assert!(err.contains("nope") && err.contains("no such column"), "{err}");
+        let err = order_by_terms(&by("tags", SortDirection::Asc), &columns).unwrap_err();
+        assert!(err.contains("tags") && err.contains("no order"), "{err}");
+    }
+
+    /// A sort key with long runs of equal values — the shape a category
+    /// column has — read page by page, each page its own `ORDER BY ... LIMIT
+    /// / OFFSET` query. The pages must join up into one sequence: no row
+    /// twice, none missing, ties in a fixed order. A nested column rides
+    /// along outside the key, and NULLs go last ascending, first descending.
+    #[tokio::test]
+    async fn sorted_pages_join_up_without_repeating_or_losing_a_row() {
+        use parquet::file::properties::WriterProperties;
+
+        let n: usize = 61;
+        let grp = |i: usize| match i % 3 {
+            0 => Some("b"),
+            1 => Some("a"),
+            _ => None,
+        };
+        let mut tags = ListBuilder::new(Int32Builder::new());
+        for i in 0..n as i32 {
+            tags.values().append_value(i);
+            tags.append(true);
+        }
+        let tags = tags.finish();
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("grp", DataType::Utf8, true),
+            Field::new("id", DataType::Int64, false),
+            Field::new("tags", tags.data_type().clone(), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from((0..n).map(grp).collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(Int64Array::from((0..n as i64).collect::<Vec<_>>())),
+                Arc::new(tags),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("sorted_pages.parquet");
+        let props = WriterProperties::builder()
+            .set_max_row_group_row_count(Some(8))
+            .build();
+        write_parquet(&path, &batch, Some(props));
+
+        let cache = ParquetCache::new();
+        let file = path.to_string_lossy().to_string();
+        let sort = |direction| {
+            Some(SortSpec {
+                column: "grp".into(),
+                direction,
+            })
+        };
+        let ids = |rows: &[serde_json::Value]| rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>();
+
+        // Ascending by (grp NULLS LAST, id): every "a" row, then every "b"
+        // row, then the NULLs, each run in id order.
+        let mut expected: Vec<(u8, i64)> = (0..n)
+            .map(|i| (grp(i).map_or(2, |g| if g == "a" { 0 } else { 1 }), i as i64))
+            .collect();
+        expected.sort();
+        let expected: Vec<i64> = expected.into_iter().map(|(_, id)| id).collect();
+
+        for page_size in [7usize, 10, 100] {
+            let mut joined = Vec::new();
+            let mut offset = 0;
+            loop {
+                let page = super::read_data(&cache, &file, offset, page_size, None, sort(SortDirection::Asc))
+                    .await
+                    .unwrap();
+                if page.is_empty() {
+                    break;
+                }
+                joined.extend(page);
+                offset += page_size;
+            }
+            assert_eq!(ids(&joined), expected, "pages of {page_size}");
+            // The nested column came along with its row.
+            for row in &joined {
+                assert_eq!(row["tags"][0], row["id"]);
+            }
+        }
+
+        // Descending is the ascending sequence reversed, NULLs first.
+        let desc = super::read_data(&cache, &file, 0, n, None, sort(SortDirection::Desc))
+            .await
+            .unwrap();
+        let mut reversed = expected.clone();
+        reversed.reverse();
+        assert_eq!(ids(&desc), reversed);
+        assert!(desc[0]["grp"].is_null());
+
+        // Under a filter the sort walks the filtered rows the same way.
+        let filter = Some("\"id\" % 2 = 0".to_string());
+        let mut joined = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = super::read_data(&cache, &file, offset, 5, filter.clone(), sort(SortDirection::Asc))
+                .await
+                .unwrap();
+            if page.is_empty() {
+                break;
+            }
+            joined.extend(page);
+            offset += 5;
+        }
+        let expected_even: Vec<i64> = expected.iter().copied().filter(|id| id % 2 == 0).collect();
+        assert_eq!(ids(&joined), expected_even);
+
+        // A sort the file cannot answer names the column rather than failing
+        // deep inside the query.
+        let err = super::read_data(
+            &cache,
+            &file,
+            0,
+            5,
+            None,
+            Some(SortSpec {
+                column: "gone".into(),
+                direction: SortDirection::Asc,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("gone"), "{err}");
     }
 
     #[tokio::test]
@@ -2158,7 +2410,7 @@ mod tests {
         write_parquet(&path, &batch, None);
 
         let cache = ParquetCache::new();
-        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None)
+        let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 2, None, None)
             .await
             .unwrap();
 

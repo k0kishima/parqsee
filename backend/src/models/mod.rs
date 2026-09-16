@@ -97,6 +97,28 @@ pub struct SessionTabState {
     /// The SQL `WHERE` fragment the browse grid applies.
     #[serde(default)]
     pub active_filter: Option<String>,
+    /// The column the browse grid is sorted by, if any.
+    #[serde(default)]
+    pub sort: Option<SortSpec>,
+}
+
+/// The order the browse grid shows its rows in: one column, ascending or
+/// descending. What the header's sort button sets, and what a page read
+/// and an export carry so they walk the same sequence. `None` anywhere a
+/// sort is optional means file order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ipc/")]
+pub struct SortSpec {
+    pub column: String,
+    pub direction: SortDirection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "ipc/")]
+pub enum SortDirection {
+    Asc,
+    Desc,
 }
 
 /// A tab from the last session, as the webview reopens it at launch.

@@ -31,7 +31,7 @@
 //! (`launch({ iap })` in lib.mjs), so nothing of it reaches this binary.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
 use parqsee_lib::commands::query::run_query;
-use parqsee_lib::models::SessionTabInput;
+use parqsee_lib::models::{SessionTabInput, SortSpec};
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
@@ -66,6 +66,14 @@ fn opt_s(args: &Value, key: &str) -> Option<String> {
 }
 fn opt_u(args: &Value, key: &str) -> Option<usize> {
     args.get(key).and_then(|v| v.as_u64()).map(|v| v as usize)
+}
+/// The `sort` argument of a page read or an export, absent or null for
+/// file order; a malformed one is an error, as it would be over IPC.
+fn opt_sort(args: &Value) -> Result<Option<SortSpec>, String> {
+    match args.get("sort") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => serde_json::from_value(v.clone()).map_err(|e| format!("bad sort: {e}")),
+    }
 }
 
 async fn dispatch(
@@ -121,6 +129,7 @@ async fn dispatch(
                 opt_u(&args, "offset").ok_or("missing offset")?,
                 opt_u(&args, "limit").ok_or("missing limit")?,
                 opt_s(&args, "filter"),
+                opt_sort(&args)?,
             )
             .await?
         ),
@@ -142,6 +151,7 @@ async fn dispatch(
                 opt_u(&args, "offset"),
                 opt_u(&args, "limit"),
                 opt_s(&args, "filter"),
+                opt_sort(&args)?,
             )
             .await?;
             access.remember_export(&export_path);

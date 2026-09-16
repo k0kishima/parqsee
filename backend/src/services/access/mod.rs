@@ -1166,6 +1166,7 @@ mod tests {
             view_mode: Some("browse".into()),
             current_page: Some(page),
             active_filter: None,
+            sort: None,
         }
     }
 
