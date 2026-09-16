@@ -49,6 +49,8 @@ export interface BarGeometry {
 }
 
 const MIN_BAR_WIDTH = 6;
+/** Two rows would otherwise paint bars a screen wide; a bar is a length, not an area. */
+const MAX_BAR_WIDTH = 48;
 const BAR_GAP = 2;
 const GROUP_PADDING = 8;
 const MIN_GROUP_WIDTH = 28;
@@ -69,7 +71,9 @@ export function barGeometry(model: ChartModel, viewport: { width: number; height
   // Spread the groups over the viewport when they fit, else give each its minimum.
   const pitch = Math.max(groupWidth, model.rows.length > 0 ? Math.max(0, viewport.width) / model.rows.length : groupWidth);
   const contentWidth = pitch * model.rows.length;
-  const barWidth = Math.max(MIN_BAR_WIDTH, (pitch - GROUP_PADDING - BAR_GAP * (seriesCount - 1)) / seriesCount);
+  const barWidth = Math.min(MAX_BAR_WIDTH, Math.max(MIN_BAR_WIDTH, (pitch - GROUP_PADDING - BAR_GAP * (seriesCount - 1)) / seriesCount));
+  // Bars sit centred in their group, which matters once the width is capped.
+  const barsWidth = seriesCount * barWidth + BAR_GAP * (seriesCount - 1);
 
   const domain = barDomain(model.yExtent);
   const yScale = linearScale(domain, [PLOT_MARGIN.top + plotHeight, PLOT_MARGIN.top]);
@@ -83,7 +87,7 @@ export function barGeometry(model: ChartModel, viewport: { width: number; height
     x: i * pitch,
     width: pitch,
   }));
-  const groupStart = (rowIndex: number) => rowIndex * pitch + GROUP_PADDING / 2;
+  const groupStart = (rowIndex: number) => rowIndex * pitch + (pitch - barsWidth) / 2;
   const marks: BarMark[] = model.points.map(point => {
     const top = yScale(point.y);
     return {

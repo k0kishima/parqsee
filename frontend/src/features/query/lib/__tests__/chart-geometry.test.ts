@@ -37,6 +37,9 @@ describe('barGeometry', () => {
     const [a1, a2] = geometry.marks.filter(m => m.rowIndex === 0);
     expect(a2.x).toBeGreaterThan(a1.x + a1.width);
     expect(a2.x + a2.width).toBeLessThanOrEqual(geometry.groups[0].x + geometry.groups[0].width);
+    // Two groups over 600px: the bars are capped, not a screen wide, and centred in the group.
+    expect(a1.width).toBe(48);
+    expect(a1.x - geometry.groups[0].x).toBeCloseTo(geometry.groups[0].x + geometry.groups[0].width - (a2.x + a2.width));
     expect(geometry.yTicks.map(t => t.label)).toEqual(['-1', '0', '1', '2', '3', '4']);
   });
 
