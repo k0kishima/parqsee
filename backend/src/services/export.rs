@@ -7,9 +7,10 @@ use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
+use crate::models::SortSpec;
 use crate::services::parquet::{
-    build_page_query, json_unsafe_to_strings, nested_to_json_strings, plan_query_checked,
-    range_reader, where_clause, ParquetCache,
+    build_page_query, json_unsafe_to_strings, nested_to_json_strings, order_by_terms,
+    plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache, ResultCachePolicy,
 };
 
 /// Rows are decoded and written one batch at a time, so exports run in
@@ -106,6 +107,7 @@ impl RowWriter {
 /// inside an open workspace root, while the temp directory (the container's
 /// `Data/tmp` in the sandboxed build) can always be written. The move itself
 /// is `move_into_place`, which keeps the same promise when it has to copy.
+#[allow(clippy::too_many_arguments)]
 pub async fn export_data(
     cache: &ParquetCache,
     source_path: String,
@@ -114,8 +116,20 @@ pub async fn export_data(
     offset: Option<usize>,
     limit: Option<usize>,
     filter: Option<String>,
+    sort: Option<SortSpec>,
 ) -> Result<usize, String> {
-    export_data_with(&RealFs, cache, source_path, export_path, format, offset, limit, filter).await
+    export_data_with(
+        &RealFs,
+        cache,
+        source_path,
+        export_path,
+        format,
+        offset,
+        limit,
+        filter,
+        sort,
+    )
+    .await
 }
 
 /// `export_data` with the finalisation's filesystem calls taken from `fs`;
@@ -130,15 +144,50 @@ async fn export_data_with(
     offset: Option<usize>,
     limit: Option<usize>,
     filter: Option<String>,
+    sort: Option<SortSpec>,
 ) -> Result<usize, String> {
     let format = ExportFormat::parse(&format)?;
     let staging_path = staging_path_for(&export_path).to_string_lossy().into_owned();
 
-    let result = match where_clause(filter.as_deref()) {
-        Some(filter) => {
-            export_filtered(cache, &source_path, filter, offset, limit, format, &staging_path).await
+    // Resolving the sort needs the file's columns; a sort by a column the
+    // file no longer has is refused here, before any file is created.
+    let order_by = match sort.as_ref() {
+        Some(sort) => {
+            let metadata = cache.get_or_create_metadata(&source_path).await?;
+            Some(order_by_terms(sort, &metadata.columns)?)
         }
-        None => {
+        None => None,
+    };
+
+    let result = match (where_clause(filter.as_deref()), order_by) {
+        // Small sorted ranges (including current pages) share the grid's
+        // mirrored window. Reuse existing results without evicting grid pages
+        // to cache custom export ranges. Larger ranges and full exports stream.
+        (_, Some(_)) if limit.is_some_and(|n| n <= EXPORT_BATCH_SIZE) => {
+            let batches = sorted_page_batches(
+                cache, &source_path, offset.unwrap_or(0), limit.unwrap(),
+                filter, sort.expect("ORDER BY requires a sort"),
+                ResultCachePolicy::ReuseOnly,
+            ).await.map_err(|e| {
+                if e.contains("Resources exhausted") {
+                    "This sorted export needs more memory than the app allows. Export a smaller \
+                     range or narrow the rows with a filter.".to_string()
+                } else {
+                    e
+                }
+            })?;
+            let staging = staging_path.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut writer = RowWriter::create(format, &staging)?;
+                let mut rows = 0;
+                for batch in batches {
+                    rows += writer.write(&batch)?;
+                }
+                writer.finish()?;
+                Ok(rows)
+            }).await.map_err(|e| format!("Export task failed: {}", e))?
+        }
+        (None, None) => {
             // Decode and write on the blocking pool: a multi-GB export must
             // not hold an async worker, or concurrent page reads would stall
             // behind it.
@@ -148,6 +197,19 @@ async fn export_data_with(
             })
             .await
             .map_err(|e| format!("Export task failed: {}", e))?
+        }
+        (filter, order_by) => {
+            export_query(
+                cache,
+                &source_path,
+                filter,
+                order_by.as_deref(),
+                offset,
+                limit,
+                format,
+                &staging_path,
+            )
+            .await
         }
     };
 
@@ -326,18 +388,20 @@ fn export_range(
     Ok(rows_written)
 }
 
-/// Filtered: run the same WHERE clause the grid is showing and stream the
-/// result batches out as they arrive.
-async fn export_filtered(
+/// Filtered or sorted: run the same `WHERE` clause and `ORDER BY` the grid
+/// is showing and stream the result batches out as they arrive.
+#[allow(clippy::too_many_arguments)]
+async fn export_query(
     cache: &ParquetCache,
     source_path: &str,
-    filter: &str,
+    filter: Option<&str>,
+    order_by: Option<&str>,
     offset: Option<usize>,
     limit: Option<usize>,
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let query = build_page_query(Some(filter), offset, limit);
+    let query = build_page_query(filter, order_by, offset, limit);
 
     // Planning rejects a bad filter here, before any file is created, and
     // refuses a filter that would change the session the browse grid shares
@@ -400,6 +464,7 @@ async fn export_filtered(
 #[cfg(test)]
 mod tests {
     use super::{export_data, export_data_with, staging_path_for, FinalizeFs, RealFs};
+    use crate::models::{SortDirection, SortSpec};
     use crate::services::parquet::ParquetCache;
     use arrow::array::{
         ArrayRef, Decimal128Array, Float64Array, Int64Array, ListBuilder, StringArray, StringBuilder,
@@ -536,6 +601,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
     }
@@ -584,6 +650,7 @@ mod tests {
             Some(1),
             Some(2),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -625,6 +692,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -649,6 +717,7 @@ mod tests {
             None,
             None,
             Some("\"id\" > 1".into()),
+            None,
         )
         .await
         .unwrap();
@@ -667,6 +736,7 @@ mod tests {
             Some(1),
             Some(1),
             Some("\"id\" > 1".into()),
+            None,
         )
         .await
         .unwrap();
@@ -675,6 +745,117 @@ mod tests {
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
         // The second row of the filtered result, not of the file.
         assert_eq!(lines[1], "3,\"c, d\",2.5");
+    }
+
+    /// A sorted export walks the sequence the sorted grid paginates over,
+    /// and a range addresses that sequence: exporting "the current page" of
+    /// a sorted grid writes the rows on screen.
+    #[tokio::test]
+    async fn a_sorted_export_writes_the_rows_in_the_grids_order() {
+        let src = write_fixture("sorted");
+        let cache = ParquetCache::new();
+        let by_name_desc = || {
+            Some(SortSpec {
+                column: "name".into(),
+                direction: SortDirection::Desc,
+            })
+        };
+
+        // name DESC NULLS FIRST: the null, then e, "c, d", a.
+        let out = temp_path("sorted.csv");
+        let n = export_data(
+            &cache,
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            None,
+            by_name_desc(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(n, 4);
+        let text = std::fs::read_to_string(&out).unwrap();
+        let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
+        assert_eq!(lines, ["id,name,score", "2,,1.5", "4,e,3.5", "3,\"c, d\",2.5", "1,a,0.5"]);
+
+        // The second and third rows of the sorted result, with a filter on top.
+        let out = temp_path("sorted_range.csv");
+        let n = export_data(
+            &cache,
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            Some(1),
+            Some(2),
+            Some("\"id\" > 1".into()),
+            by_name_desc(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(n, 2);
+        let text = std::fs::read_to_string(&out).unwrap();
+        let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
+        assert_eq!(lines, ["id,name,score", "4,e,3.5", "3,\"c, d\",2.5"]);
+
+        // A sort by a column the file does not have is refused before any
+        // file is created.
+        let out = temp_path("sorted_missing.csv");
+        let err = export_data(
+            &cache,
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            "csv".into(),
+            None,
+            None,
+            None,
+            Some(SortSpec {
+                column: "gone".into(),
+                direction: SortDirection::Asc,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("gone"), "{err}");
+        assert!(!out.exists());
+    }
+
+    #[tokio::test]
+    async fn a_sorted_range_memory_error_has_export_specific_guidance() {
+        let src = write_fixture("sort_export_memory");
+        let out = temp_path("sort_export_memory.csv");
+        let cache = ParquetCache::new().with_memory_limit(1);
+        let err = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
+            "csv".into(), Some(1), Some(1), None,
+            Some(SortSpec { column: "name".into(), direction: SortDirection::Asc })).await.unwrap_err();
+        assert!(err.contains("sorted export"), "{err}");
+        assert!(!err.contains("SQL view"), "{err}");
+        assert!(!out.exists());
+    }
+
+    #[tokio::test]
+    async fn sorted_page_exports_match_slices_of_the_full_export() {
+        let src = write_fixture("sorted_windows");
+        let cache = ParquetCache::new();
+        for direction in [SortDirection::Asc, SortDirection::Desc] {
+            for filter in [None, Some("id > 1".to_string())] {
+                let sort = Some(SortSpec { column: "name".into(), direction });
+                let full = temp_path("sorted_full.json");
+                export_data(&cache, src.to_string_lossy().into_owned(), full.to_string_lossy().into_owned(),
+                    "json".into(), None, None, filter.clone(), sort.clone()).await.unwrap();
+                let expected: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&full).unwrap()).unwrap();
+                for (offset, limit) in [(0, 2), (2, 1), (3, 10), (4, 2), (0, 0)] {
+                    let out = temp_path("sorted_page.json");
+                    let n = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
+                        "json".into(), Some(offset), Some(limit), filter.clone(), sort.clone()).await.unwrap();
+                    let actual: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+                    let want = expected.iter().skip(offset).take(limit).cloned().collect::<Vec<_>>();
+                    assert_eq!(actual, want, "{direction:?} {filter:?} offset={offset} limit={limit}");
+                    assert_eq!(n, want.len());
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -703,6 +884,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -728,6 +910,7 @@ mod tests {
             None,
             None,
             Some("\"no_such_column\" = 1".into()),
+            None,
         )
         .await
         .unwrap_err();
@@ -743,6 +926,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -754,6 +938,7 @@ mod tests {
             src.to_string_lossy().into_owned(),
             out.to_string_lossy().into_owned(),
             "xlsx".into(),
+            None,
             None,
             None,
             None,
@@ -786,6 +971,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -809,6 +995,7 @@ mod tests {
             src.to_string_lossy().into_owned(),
             out.to_string_lossy().into_owned(),
             "json".into(),
+            None,
             None,
             None,
             None,

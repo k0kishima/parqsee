@@ -77,7 +77,7 @@ async function openTabs(...paths: string[]) {
 const sessionTab = (path: string, state: Partial<SessionTab['state']> = {}, available = true): SessionTab => ({
   path,
   name: path.split('/').pop()!,
-  state: { view_mode: null, current_page: null, active_filter: null, ...state },
+  state: { view_mode: null, current_page: null, active_filter: null, sort: null, ...state },
   available,
 });
 
@@ -381,7 +381,7 @@ describe('WorkspaceProvider session', () => {
     vi.mocked(listSessionTabs).mockResolvedValue({
       tabs: [
         sessionTab('/data/a.parquet', { view_mode: 'query' }),
-        sessionTab('/data/b.parquet', { current_page: 3, active_filter: 'x > 1' }),
+        sessionTab('/data/b.parquet', { current_page: 3, active_filter: 'x > 1', sort: null }),
       ],
       active: '/data/b.parquet',
     });
@@ -422,7 +422,7 @@ describe('WorkspaceProvider session', () => {
     // The first save after the restore writes the pruned session.
     await settle();
     expect(saveSession).toHaveBeenLastCalledWith(
-      [{ path: '/data/ok.parquet', state: { view_mode: null, current_page: null, active_filter: null } }],
+      [{ path: '/data/ok.parquet', state: { view_mode: null, current_page: null, active_filter: null, sort: null } }],
       '/data/ok.parquet',
     );
 
@@ -454,8 +454,8 @@ describe('WorkspaceProvider session', () => {
     expect(saveSession).toHaveBeenCalledTimes(2);
     expect(saveSession).toHaveBeenLastCalledWith(
       [
-        { path: '/data/a.parquet', state: { view_mode: 'query', current_page: null, active_filter: null } },
-        { path: '/data/b.parquet', state: { view_mode: null, current_page: 3, active_filter: null } },
+        { path: '/data/a.parquet', state: { view_mode: 'query', current_page: null, active_filter: null, sort: null } },
+        { path: '/data/b.parquet', state: { view_mode: null, current_page: 3, active_filter: null, sort: null } },
       ],
       '/data/b.parquet',
     );
@@ -469,7 +469,7 @@ describe('WorkspaceProvider session', () => {
     await settle();
     expect(saveSession).toHaveBeenCalledTimes(3);
     expect(saveSession).toHaveBeenLastCalledWith(
-      [{ path: '/data/a.parquet', state: { view_mode: 'query', current_page: null, active_filter: null } }],
+      [{ path: '/data/a.parquet', state: { view_mode: 'query', current_page: null, active_filter: null, sort: null } }],
       '/data/a.parquet',
     );
   });
@@ -552,7 +552,7 @@ describe('WorkspaceProvider session', () => {
     await act(async () => { if (outcome === 'resolve') resolve(); else reject('old failure'); });
     expect(saveSession).toHaveBeenCalledTimes(2);
     expect(saveSession).toHaveBeenLastCalledWith([
-      { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: null } },
+      { path: '/data/a.parquet', state: { view_mode: null, current_page: 2, active_filter: null, sort: null } },
     ], '/data/a.parquet');
     await act(async () => { window.dispatchEvent(new Event('pagehide')); });
     expect(saveSession).toHaveBeenCalledTimes(2);
@@ -583,7 +583,7 @@ describe('WorkspaceProvider session', () => {
     await act(() => result.current.openParquetFile('/data/b.parquet'));
     await settle();
     expect(saveSession).toHaveBeenLastCalledWith(
-      [{ path: '/data/b.parquet', state: { view_mode: null, current_page: null, active_filter: null } }],
+      [{ path: '/data/b.parquet', state: { view_mode: null, current_page: null, active_filter: null, sort: null } }],
       '/data/b.parquet',
     );
   });
@@ -833,7 +833,7 @@ describe('WorkspaceProvider on the free tier', () => {
         sessionTab('/data/b.parquet'),
         sessionTab('/data/c.parquet'),
         sessionTab('/data/d.parquet', { view_mode: 'query' }),
-        sessionTab('/data/e.parquet', { current_page: 3, active_filter: 'x > 1' }),
+        sessionTab('/data/e.parquet', { current_page: 3, active_filter: 'x > 1', sort: null }),
       ],
       active: '/data/b.parquet',
     });

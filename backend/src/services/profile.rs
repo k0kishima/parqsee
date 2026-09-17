@@ -28,7 +28,7 @@ use serde_json::Value;
 
 use crate::models::{ColumnKind, ColumnProfile, HistogramBucket, ProfileChart, ValueCount};
 use crate::services::parquet::{
-    batches_to_rows, execute_sql_with_cache, where_clause, ParquetCache,
+    batches_to_rows, execute_sql_with_cache, quote_identifier, where_clause, ParquetCache,
 };
 
 /// How many values a `TopValues` chart lists, and the most distinct values
@@ -40,12 +40,6 @@ pub const TOP_VALUES: usize = 20;
 /// 5 times a power of ten (whole days for dates, whole seconds for times),
 /// so the actual count lands between half of this and one more.
 pub const HISTOGRAM_BUCKETS: usize = 20;
-
-/// DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
-/// nothing; the filter bar quotes the same way.
-fn quote_identifier(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
 
 /// ` WHERE a AND b`, with the user's filter parenthesized: it is a fragment
 /// the filter bar joined with AND, but a session restored from an older

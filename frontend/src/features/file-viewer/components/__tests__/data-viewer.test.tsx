@@ -78,7 +78,7 @@ describe('DataViewer failed-load rollback', () => {
     await applyFilter('7');
     await waitFor(() => expect(screen.queryByText('viewer.dataError')).not.toBeInTheDocument());
     expect(screen.getByTitle('common.clear')).toBeInTheDocument();
-    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7');
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7', null);
   });
 
   it('rolls the page back when a page read fails', async () => {
@@ -169,7 +169,7 @@ describe('DataViewer column profile', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '7: 60' }));
 
-    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7'));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7', null));
     const value = screen.getByPlaceholderText('viewer.filterValuePlaceholder');
     expect(value).toHaveValue('7');
     expect(value).toHaveFocus();
@@ -192,12 +192,76 @@ describe('DataViewer column profile', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '0 – 50: 60' }));
 
-    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" >= 0 AND "id" < 50'));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" >= 0 AND "id" < 50', null));
     await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50'));
     // The panel stayed mounted across the grid's reload, for the drill-down.
     expect(panel()).toBeInTheDocument();
     const values = screen.getAllByPlaceholderText('viewer.filterValuePlaceholder');
     expect(values.map(v => (v as HTMLInputElement).value)).toEqual(['0', '50']);
     expect(values[0]).toHaveFocus();
+  });
+});
+
+describe('DataViewer sort', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenParquetFile.mockResolvedValue(metadata);
+    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
+    mockCountParquetData.mockResolvedValue(5);
+    mockEvictCache.mockResolvedValue(undefined);
+  });
+
+  const renderViewer = async (initialState?: Parameters<typeof DataViewer>[0]['initialState']) => {
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={initialState} />);
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+  };
+  const sortButton = () => screen.getByTitle('viewer.sort.toggle');
+  const header = () => screen.getByTitle('id');
+
+  it('sorts ascending, then descending, then back to file order, from the first page each time', async () => {
+    await renderViewer();
+    const user = userEvent.setup();
+    // Start on page 2 so the reset is visible.
+    await user.click(screen.getByText('viewer.pagination.next'));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null));
+
+    await user.click(sortButton());
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', { column: 'id', direction: 'asc' }));
+    await waitFor(() => expect(header()).toHaveAttribute('aria-sort', 'ascending'));
+    expect(pageInput().value).toBe('1');
+
+    await user.click(sortButton());
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', { column: 'id', direction: 'desc' }));
+    await waitFor(() => expect(header()).toHaveAttribute('aria-sort', 'descending'));
+
+    await user.click(sortButton());
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', null));
+    await waitFor(() => expect(header()).not.toHaveAttribute('aria-sort'));
+  });
+
+  it('rolls the sort back when the sorted load fails, without an echo reload', async () => {
+    await renderViewer();
+    mockReadParquetData.mockRejectedValueOnce('boom: cannot sort');
+
+    await userEvent.setup().click(sortButton());
+
+    expect(await screen.findByText('viewer.dataError')).toBeInTheDocument();
+    expect(screen.getByText('boom: cannot sort')).toBeInTheDocument();
+    expect(header()).not.toHaveAttribute('aria-sort');
+    // The first load and the failed one; the rollback did not read again.
+    expect(mockReadParquetData).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a restored sort by a column the file no longer has', async () => {
+    await renderViewer({ sort: { column: 'gone', direction: 'asc' } });
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', null);
+    expect(header()).not.toHaveAttribute('aria-sort');
+  });
+
+  it('restores a sort by a column the file has', async () => {
+    await renderViewer({ sort: { column: 'id', direction: 'desc' } });
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', { column: 'id', direction: 'desc' });
+    expect(header()).toHaveAttribute('aria-sort', 'descending');
   });
 });

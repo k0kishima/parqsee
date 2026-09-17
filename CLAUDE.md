@@ -10,7 +10,8 @@ It features:
 - Drag-and-drop file loading and a built-in file explorer over folders the
   user opens (⇧⌘O), remembered across launches
 - Fast Rust backend (Arrow / Parquet / DataFusion) for file processing
-- Tabbed browsing with pagination, filtering and in-page search
+- Tabbed browsing with pagination, filtering, a sort by any column from
+  its header (ascending, descending, back to file order) and in-page search
 - A column profile beside the grid: counts and a chart of a column's
   values under the active filter, each bar a click away from becoming a
   filter condition
@@ -18,7 +19,8 @@ It features:
 - CSV / JSON export
 - Recent files history and the open tabs, persisted with security-scoped
   bookmarks so the sandboxed App Store build can reopen them at the next
-  launch (tabs come back in order, with their view mode, page and filter)
+  launch (tabs come back in order, with their view mode, page, filter and
+  sort)
 - Dark/light mode and English/Japanese localization, the native menu
   included; the app starts in the system's language
 - A bundled sample file (`Contents/Resources/sample.parquet`), opened from
@@ -121,6 +123,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
 - `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
 - `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal,
+  the sort (a click on a sortable column's name in the header cycles
+  ascending → descending → file order through `lib/sort.ts`'s `nextSort`;
+  the header carries `aria-sort`; nested and unordered columns keep a
+  plain name; the sort resets the page like a filter, rolls back with the
+  rest of the request state when a sorted load fails, goes with the
+  export, and is dropped when the file no longer has the column),
   and the column profile (`ColumnProfilePanel`, opened by the chart button on a
   column header): row / NULL / distinct counts under the active filter and a bar
   chart of the values, every one listed or binned past twenty; a click on a
@@ -248,10 +256,10 @@ Argument names are camelCase on the JS side.
 | `remove_workspace_root` | `(path)` → `void` | Close a root and release its access grant |
 | `list_session_tabs` | `()` → `SessionTabs` | The tabs of the last session in order, each with its saved state and `available` (bookmark resolves and the file exists), plus the active tab's path |
 | `save_session` | `(tabs, active?)` → `void` | Replace the saved session with the open tabs (`{path, state}` each) and the active one's path; written by the webview on change |
-| `read_parquet_data` | `(path, offset, limit, filter?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment |
+| `read_parquet_data` | `(path, offset, limit, filter?, sort?)` → `Value[]` | One page of rows, optional SQL `WHERE` fragment, optional `SortSpec` (`{column, direction: asc \| desc}`). A sorted page is an `ORDER BY` over the whole file per page (see `order_by_terms`) |
 | `count_parquet_data` | `(path, filter?)` → `number` | Row count under the active filter |
 | `profile_column` | `(path, column, filter?)` → `ColumnProfile` | The column's row / NULL / distinct counts under the filter and its chart: every value with its count when there are at most 20 distinct values, else equal-width buckets on round edges (whole days / seconds for temporal columns) for numbers and dates and the 20 commonest values for the rest, with what is not shown counted as `other`. Bucket counts use the same typed predicates as drill-down; day-end time buckets include their final representable instant. Unsafe double ranges and decimals with more than 15 digits of precision fall back to top values. Two or three scans of the file through the single-partition session (`services/profile.rs`) |
-| `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered result. On success the destination folder is recorded as the last export folder |
+| `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?, sort?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered, sorted result — the sequence the grid paginates over. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
 | `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's |
@@ -308,13 +316,63 @@ command's answer carries the higher `revision`, since the two can cross.
    rustdoc on `get_or_create_session`). The SQL view runs single-threaded as a
    result; don't revert this for speed without splitting paging and querying
    into separate sessions.
-   Unfiltered pages do not go through DataFusion at all: `read_data` reads them
+   Unfiltered, unsorted pages do not go through DataFusion at all: `read_data` reads them
    with `range_reader`, the parquet Arrow reader with offset/limit pushed down,
    which skips whole row groups by their row counts. A `LIMIT`/`OFFSET` query
    decodes every row before the page — the last page of a 58M-row file took
    2.5 s in release and a minute in debug. Both paths read row groups in file
    order, so adding a filter never reorders the grid
    (`unfiltered_pages_match_the_sql_path` pins this).
+   A sort is the one thing that does reorder it, and it is the expensive
+   path by design: each uncached page is its own `ORDER BY ... LIMIT/OFFSET` query
+   over the whole file, and the file has no row id, so the `ORDER BY`
+   names the sort column and then every other sortable column in the same
+   direction (`order_by_terms`). Without those tie-breakers the heap's
+   order among equal keys differs from page to page and a sort on a
+   category column showed rows twice and dropped others;
+   `sorted_pages_join_up_without_repeating_or_losing_a_row` fails when
+   they are removed. Rows identical in every sortable column but differing
+   in a nested one are the one case left open.
+   DataFusion answers the query with a top-k heap of `offset + limit`
+   whole rows, so the cost grows with the offset: on a 58M-row file in
+   release, the first page sorted in 2.5–3.8 s, offset 1M in 29 s and
+   2.1 GB, the last page in 180 s and 11 GB. Two things keep that in
+   bounds. A page past the midpoint is read from the other end — the
+   descending order is the exact reverse of the ascending one, so
+   `sorted_page_batches` takes the mirrored window of the reversed order and turns
+   it around (`mirrored_window`); the last page now costs what the first
+   does and the middle page is the worst. And every file's session runs
+   under a memory pool of `SESSION_MEMORY_LIMIT` (2 GiB): operators that
+   can spill (the SQL view's aggregates and full sorts) go to disk past
+   it, a top-k cannot and fails, which the grid reports as a page
+   too deep to sort with the ways out (a filter, the other end, the SQL
+   view). On that file the sorted pages within about 1–2M rows of either
+   end answer and the deeper ones fail with a peak near 2.3 GB instead of
+   taking the app down (`a_sort_past_the_memory_limit_fails_cleanly`).
+   Counts and sorted pages share a bounded LRU in `ParquetCache`: at most
+   64 results and 32 MiB across all files, keyed by path, session identity,
+   file size/modification time and SQL. Hits stat the file; changed versions
+   invalidate older results. The count/page sequence checks its version at
+   both ends and refuses results if the file changed during the read. Even
+   unfiltered sorts obtain their count from the versioned query path rather
+   than cached UI metadata. Schema/UI metadata still refresh explicitly.
+   The frontend count and the sort's mirrored-window count reuse
+   the same result. Refresh/close evicts entries; a query from an evicted
+   session cannot insert them again. Stable/volatile functions (including
+   those in subqueries) bypass caching. Results over 8192 rows or the byte
+   budget are not cached. Page arrays are compacted before caching so a
+   100-row slice does not retain the whole top-k allocation; string/binary
+   views also compact their backing blocks. SQL-view queries are not cached.
+   Sorted exports with a limit of at most 8192 rows (current pages and small
+   custom ranges) use the same Arrow page reader, including mirroring and
+   existing cached results. They do not insert new count/page results, so
+   custom ranges do not displace grid entries, and memory errors have export
+   guidance. Native types survive until the export writer converts them.
+   Unsorted exports, larger sorted ranges and full exports still stream.
+   If the first read of a deep page still hurts, the next step is a
+   cached permutation per (file, filter, column, direction) paged through
+   the parquet reader's row selection, not a smaller key. A full sorted
+   export runs the query without a limit and spills to disk past the pool.
 4. In the SQL view and in filters, the open file is always registered as table `t`.
 5. Settings and recent files are persisted in `localStorage`. `lib/settings-storage.ts`
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`
@@ -621,7 +679,9 @@ screen's sample link, the Free ⓘ pill, the restore notice, the upgrade
 prompt's states, Recent Files' Clear all and its fold past five, the
 Recent Files panel (search, same-name folders) and its button in the top
 row, the viewer's view
-options, the column profile panel (values, buckets and NULL as
+options, the header's sort (the button on sortable columns only, `aria-sort`;
+`nextSort`'s cycle; the viewer's page reset, rollback of a failed sorted
+load, a restored sort kept or dropped by the file's columns), the column profile panel (values, buckets and NULL as
 conditions, the partial-list note, a late answer discarded), the SQL chart
 (`features/query`: value parsing at the safe-integer and 15-digit
 boundaries, inference and availability per X type, the point cap over all
@@ -637,7 +697,9 @@ cancelled / failed / pending purchases, the upgrade prompt),
 `lib/path`, `lib/column-widths`, `lib/settings-storage`'s
 system-language guess and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
-`commands/file.rs`, file registration edge cases (uppercase extensions, glob
+`commands/file.rs`, the sort's `ORDER BY` (the key, the tie-breakers, quoting,
+a refused column) and its pages joining up over runs of ties with a filter
+and in both directions, a sorted export's order, file registration edge cases (uppercase extensions, glob
 characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN (Decimal32/64 included), the read-only SQL view, result
 truncation, the chart type of every Arrow type and of a query's planned
@@ -695,7 +757,7 @@ into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
 Purchases), the column profile (S19: values and NULL as conditions, the
 bins of a hundred thousand ids and a drill-down into one, non-finite
-floats including a NaN click, empty strings, restored filters and stale bars), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; run it under `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
+floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; run it under `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

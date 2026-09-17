@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
-import { ChartBar } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChartBar } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ColumnInfo } from '../api';
+import type { ColumnInfo, SortSpec } from '../api';
+import { isSortableColumn } from '../lib/sort';
 import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../../lib/settings-storage';
 import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
@@ -25,6 +26,10 @@ interface DataTableProps {
   profiledColumn?: string | null;
   /** The header's chart button; without it the header has none. */
   onProfileColumn?: (name: string) => void;
+  /** The column the rows are sorted by, if any; its header shows the direction. */
+  sort?: SortSpec | null;
+  /** A click on a sortable column's name; without it the names are plain text. */
+  onSort?: (name: string) => void;
 }
 
 /**
@@ -34,6 +39,13 @@ interface DataTableProps {
  * cell against the `px-4` of the rest).
  */
 export const PROFILE_BUTTON_WIDTH = 12;
+
+/**
+ * Width the sort arrow takes beside a sorted column's name (the icon and
+ * its gap), counted into every column's measured width so the arrow does
+ * not clip the name of a column that was measured without it.
+ */
+export const SORT_INDICATOR_WIDTH = 16;
 
 interface VisibleColumn {
   index: number;
@@ -157,6 +169,8 @@ export const DataTable = React.memo(function DataTable({
   scrollerRef,
   profiledColumn = null,
   onProfileColumn,
+  sort = null,
+  onSort,
 }: DataTableProps) {
   const { t } = useTranslation();
   const typeLabels = useMemo(
@@ -168,9 +182,12 @@ export const DataTable = React.memo(function DataTable({
     () => measureColumnWidths(
       columns.map((col, i) => ({ name: col.name, typeLabel: typeLabels[i] })),
       rows,
-      { format: formatCellValue, headerExtra: onProfileColumn ? PROFILE_BUTTON_WIDTH : 0 }
+      {
+        format: formatCellValue,
+        headerExtra: (onProfileColumn ? PROFILE_BUTTON_WIDTH : 0) + (onSort ? SORT_INDICATOR_WIDTH : 0),
+      }
     ),
-    [columns, typeLabels, rows, onProfileColumn]
+    [columns, typeLabels, rows, onProfileColumn, onSort]
   );
 
   const virt = useColumnVirtualizer(widths, scrollerRef);
@@ -236,17 +253,32 @@ export const DataTable = React.memo(function DataTable({
         <thead className="sticky top-0 z-10 border-b bg-slate-100 border-slate-200 dark:bg-gray-700 dark:border-gray-600">
           <tr>
             {padLeft > 0 && <th aria-hidden="true" />}
-            {visibleColumns.map(({ index, name }) => (
+            {visibleColumns.map(({ index, name }) => {
+              const sortedBy = sort?.column === name ? sort.direction : null;
+              const label = matchedColumns.has(index) ? highlight(name, searchTerm) : name;
+              return (
               <th
                 key={index}
                 title={name}
+                aria-sort={sortedBy ? (sortedBy === 'asc' ? 'ascending' : 'descending') : undefined}
                 className={`relative px-4 ${onProfileColumn ? 'pr-7' : ''} ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
                   }`}
               >
                 {/* The name stays the cell's first element: the e2e harness
                     reads the headers by it. */}
                 <div className="font-semibold">
-                  {matchedColumns.has(index) ? highlight(name, searchTerm) : name}
+                  {onSort && isSortableColumn(columns[index]) ? (
+                    <button
+                      type="button"
+                      onClick={() => onSort(name)}
+                      title={t('viewer.sort.toggle', { column: name })}
+                      className={`inline-flex items-center gap-1 max-w-full rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 ${sortedBy ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                    >
+                      <span className="truncate">{label}</span>
+                      {sortedBy === 'asc' && <ArrowUp size={12} aria-hidden="true" className="shrink-0" />}
+                      {sortedBy === 'desc' && <ArrowDown size={12} aria-hidden="true" className="shrink-0" />}
+                    </button>
+                  ) : label}
                 </div>
                 <div className="font-normal text-xs mt-0.5 text-slate-500 dark:text-gray-400">
                   {typeLabels[index]}
@@ -266,7 +298,8 @@ export const DataTable = React.memo(function DataTable({
                   </button>
                 )}
               </th>
-            ))}
+              );
+            })}
             {padRight > 0 && <th aria-hidden="true" />}
           </tr>
         </thead>

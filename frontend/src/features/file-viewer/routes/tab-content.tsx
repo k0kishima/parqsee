@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Database } from 'lucide-react';
 import type { Tab } from '../../../contexts/WorkspaceContext';
+import type { SortSpec } from '../../../bindings/ipc/SortSpec';
 import { DataViewer } from '../components/data-viewer';
 import { QueryView } from '../../query/routes/query-view';
 import { useAppCommand, type AppCommand } from '../../../lib/app-commands';
@@ -23,6 +24,8 @@ export interface TabState {
   searchTerm?: string;
   viewMode?: ViewMode;
   activeFilter?: string;
+  /** The column the grid is sorted by; null or absent is file order. */
+  sort?: SortSpec | null;
   selectedRow?: number | null;
   isSearchOpen?: boolean;
 }

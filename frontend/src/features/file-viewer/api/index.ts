@@ -8,8 +8,10 @@ import type { ColumnProfile } from '../../../bindings/ipc/ColumnProfile';
 import type { ProfileChart } from '../../../bindings/ipc/ProfileChart';
 import type { ValueCount } from '../../../bindings/ipc/ValueCount';
 import type { HistogramBucket } from '../../../bindings/ipc/HistogramBucket';
+import type { SortSpec } from '../../../bindings/ipc/SortSpec';
+import type { SortDirection } from '../../../bindings/ipc/SortDirection';
 
-export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata, ColumnProfile, ProfileChart, ValueCount, HistogramBucket };
+export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata, ColumnProfile, ProfileChart, ValueCount, HistogramBucket, SortSpec, SortDirection };
 
 export interface ExportDataParams {
     sourcePath: string;
@@ -20,6 +22,8 @@ export interface ExportDataParams {
     limit?: number;
     /** The WHERE fragment the grid is showing, if any. */
     filter?: string;
+    /** The order the grid is showing, if any; the range addresses it. */
+    sort?: SortSpec;
 }
 
 export const checkFileExists = async (path: string): Promise<boolean> => {
@@ -34,8 +38,13 @@ export const getFileInfo = async (path: string): Promise<FileInfo> => {
     return await invoke('get_file_info', { path });
 };
 
-export const readParquetData = async (path: string, offset: number, limit: number, filter?: string): Promise<RowData[]> => {
-    return await invoke('read_parquet_data', { path, offset, limit, filter });
+/**
+ * One page of rows under `filter`, in `sort`'s order or, without one, in
+ * file order. A sorted page is an `ORDER BY` over the whole file on the
+ * backend, so it costs a scan where an unsorted page costs a seek.
+ */
+export const readParquetData = async (path: string, offset: number, limit: number, filter?: string, sort?: SortSpec | null): Promise<RowData[]> => {
+    return await invoke('read_parquet_data', { path, offset, limit, filter, sort: sort ?? undefined });
 };
 
 export const countParquetData = async (path: string, filter?: string): Promise<number> => {

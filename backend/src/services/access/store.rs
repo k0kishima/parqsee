@@ -439,6 +439,10 @@ mod tests {
                 view_mode: Some("query".into()),
                 current_page: Some(3),
                 active_filter: Some("x > 1".into()),
+                sort: Some(crate::models::SortSpec {
+                    column: "x".into(),
+                    direction: crate::models::SortDirection::Desc,
+                }),
             },
         }
     }
@@ -456,6 +460,7 @@ mod tests {
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("\"view_mode\": \"query\""), "{text}");
         assert!(text.contains("\"current_page\": 3"), "{text}");
+        assert!(text.contains("\"direction\": \"desc\""), "{text}");
         assert_eq!(BookmarkStore::load_from(&file), store);
 
         let older: BookmarkStore =
