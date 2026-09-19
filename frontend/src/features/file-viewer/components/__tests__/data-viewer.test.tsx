@@ -95,6 +95,22 @@ describe('DataViewer failed-load rollback', () => {
     expect(mockReadParquetData).toHaveBeenCalledTimes(2);
   });
 
+  it('does not start a page read when an older filter count finishes last', async () => {
+    await renderViewer();
+    let finishOldCount!: (count: number) => void;
+    mockCountParquetData.mockReturnValueOnce(new Promise<number>(resolve => { finishOldCount = resolve; }));
+    await applyFilter('5');
+    await waitFor(() => expect(mockCountParquetData).toHaveBeenCalledWith('/data/test.parquet', '"id" = 5'));
+
+    await applyFilter('7');
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 7', null));
+    await act(async () => { finishOldCount(5); });
+
+    expect(mockReadParquetData).toHaveBeenCalledTimes(2);
+    expect(mockReadParquetData).not.toHaveBeenCalledWith('/data/test.parquet', 0, 50, '"id" = 5', null);
+    expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument();
+  });
+
   it('still reloads the file on Refresh when the cache could not be evicted', async () => {
     await renderViewer();
     mockEvictCache.mockRejectedValueOnce('boom: evict');
