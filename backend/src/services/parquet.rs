@@ -27,12 +27,15 @@ use crate::services::access::FileAccess;
 /// and sorts. Operators that can spill (aggregates, a full sort) go to the
 /// disk manager's temp directory past it; a top-k cannot and fails with
 /// "Resources exhausted", which the grid turns into a message that
-/// names the way out. Measured on a 58M-row, 7-column file in release:
+/// names the way out. Before the ordinary-sort fallback for deep pages,
+/// measured on a 58M-row, 7-column file in release:
 /// the sorted page at offset 1M peaked at 2.1 GB of process memory, at
 /// 5M at 3.3 GB, at the middle (29M) at 12.9 GB — the heap holds
 /// `offset + limit` rows of the whole row. The limit keeps a deep page of
 /// a huge file from taking the app down on a small machine; the pages
-/// within reach of it are the far majority a viewer pages to.
+/// within reach of it are the far majority a viewer pages to. Deep pages
+/// now prefer a spillable ordinary sort; even that needs enough memory
+/// for its merge batches, so a resource error is still possible.
 pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
 // Shared across files, not an additional allowance for every open tab.
@@ -1308,6 +1311,16 @@ async fn execute_browse_query(
     query: &str,
     policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
+    execute_browse_query_with_sort(cache, path, query, policy, false).await
+}
+
+async fn execute_browse_query_with_sort(
+    cache: &ParquetCache,
+    path: &str,
+    query: &str,
+    policy: ResultCachePolicy,
+    full_sort: bool,
+) -> Result<Vec<RecordBatch>, String> {
     let ctx = cache.get_or_create_session(path).await?;
     let session_id = ctx.session_id();
     let version = FileVersion::read(path)?;
@@ -1331,9 +1344,15 @@ async fn execute_browse_query(
     }
     let plan = plan_query_checked(&ctx, query).await?;
     let reusable = reusable_plan(&plan)?;
-    let mut batches = ctx.execute_logical_plan(plan).await
-        .map_err(|e| format!("SQL execution failed: {}", e))?
-        .collect().await.map_err(|e| format!("Failed to collect results: {}", e))?;
+    let df = ctx.execute_logical_plan(plan).await
+        .map_err(|e| format!("SQL execution failed: {}", e))?;
+    let mut batches = if full_sort {
+        let physical = df.create_physical_plan().await
+            .map_err(|e| format!("Failed to plan sorted page: {}", e))?;
+        datafusion::physical_plan::collect(full_sort_page_plan(physical), ctx.task_ctx()).await
+    } else {
+        df.collect().await
+    }.map_err(|e| format!("Failed to collect results: {}", e))?;
     version.check(path)?;
     // LIMIT can return a slice backed by the entire top-k output. Copy only
     // page-sized results; very large ranges remain uncached.
@@ -1361,6 +1380,37 @@ async fn execute_browse_query(
         }
     }
     Ok(batches)
+}
+
+/// Top-K is excellent near either end, but maintaining a heap for a large
+/// fraction of the file costs more than a batch sort/merge. Keep small files
+/// and shallow windows on Top-K. In release probes over 1M rows, a 25%-deep
+/// page improved for category, random, ordered numeric and text keys; at 1%
+/// depth an ordinary sort regressed ordered keys. This is a conservative
+/// crossover, not a universal optimizer cost model.
+fn prefer_full_page_sort(offset: usize, total: usize) -> bool {
+    offset >= 16_384 && offset >= total / 4
+}
+
+/// Remove only the outer page sort's Top-K, *after* physical optimization
+/// (otherwise DataFusion pushes fetch back into it). Keep GlobalLimit and
+/// every ORDER BY key intact. Nested sorts in user filters are untouched.
+/// A future optimizer producing a different shape safely retains its plan.
+fn full_sort_page_plan(
+    plan: Arc<dyn datafusion::physical_plan::ExecutionPlan>,
+) -> Arc<dyn datafusion::physical_plan::ExecutionPlan> {
+    use datafusion::physical_plan::{limit::GlobalLimitExec, sorts::sort::SortExec};
+    let Some(limit) = plan.downcast_ref::<GlobalLimitExec>() else { return plan; };
+    let Some(sort) = limit.input().downcast_ref::<SortExec>() else { return plan; };
+    if limit.skip() == 0 || sort.preserve_partitioning()
+        || sort.fetch() != limit.fetch().map(|n| limit.skip().saturating_add(n))
+    {
+        return plan;
+    }
+    // The scan's old Top-K dynamic predicate starts at true. No Top-K now
+    // updates it, so it cannot discard rows needed by the ordinary sort.
+    let sort = Arc::new(SortExec::new(sort.expr().clone(), Arc::clone(sort.input())));
+    Arc::new(GlobalLimitExec::new(sort, limit.skip(), limit.fetch()))
 }
 
 fn compact_batch(batch: &RecordBatch) -> Result<RecordBatch, String> {
@@ -1393,7 +1443,8 @@ fn compact_batch(batch: &RecordBatch) -> Result<RecordBatch, String> {
 /// key in the same direction, `NULLS LAST` / `NULLS FIRST` swapped), so
 /// the last page ascending is the first page descending read backwards,
 /// and a page past the midpoint is read from the other end with the same
-/// small heap. The worst page is now the middle one, at half the file.
+/// small heap. For Top-K the worst page is the middle one, at half the
+/// file; `prefer_full_page_sort` switches deep windows to an ordinary sort.
 pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usize, usize)> {
     if offset >= total || offset <= total / 2 {
         return None;
@@ -1407,6 +1458,7 @@ pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usi
 /// reversed order, read from the other end and turned around
 /// (`mirrored_window`). The filtered count that decides which half a page
 /// is in is shared with the frontend's count through the result cache.
+/// After mirroring, deep windows use an ordinary sort instead of Top-K.
 pub(crate) async fn sorted_page_batches(
     cache: &ParquetCache,
     path: &str,
@@ -1435,7 +1487,9 @@ pub(crate) async fn sorted_page_batches(
     };
     let order_by = order_by_terms(&sort, &metadata.columns)?;
     let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
-    let batches = execute_browse_query(cache, path, &query, policy).await?;
+    let batches = execute_browse_query_with_sort(
+        cache, path, &query, policy, prefer_full_page_sort(offset, total),
+    ).await?;
     // A key per query is insufficient if the file changes between the count
     // and page queries: refuse a window computed for a different version.
     version.check(path)?;
@@ -2673,6 +2727,106 @@ mod tests {
                 physical_type: String::new(),
             })
             .collect()
+    }
+
+    #[tokio::test]
+    async fn deep_full_sort_pages_match_topk_with_nulls_filters_and_mirroring() {
+        use datafusion::physical_plan::{collect, limit::GlobalLimitExec, sorts::sort::SortExec};
+
+        let n = 70_000i64;
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("grp", DataType::Utf8, true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from((0..n).rev().map(|i| match i % 3 {
+                    0 => Some("a"), 1 => Some("b"), _ => None,
+                }).collect::<Vec<_>>())),
+            ],
+        ).unwrap();
+        let path = temp_path("deep_full_sort.parquet");
+        write_parquet(&path, &batch, None);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new();
+        let metadata = cache.get_or_create_metadata(&file).await.unwrap();
+        let ctx = cache.get_or_create_session(&file).await.unwrap();
+        for direction in [SortDirection::Asc, SortDirection::Desc] {
+            let sort = SortSpec { column: "grp".into(), direction };
+            let terms = super::order_by_terms(&sort, &metadata.columns).unwrap();
+            for filter in [None, Some("id % 2 = 0")] {
+                let total = if filter.is_some() { n as usize / 2 } else { n as usize };
+                // Both sides of the midpoint take the ordinary-sort path.
+                for offset in [total / 2 - 100, total / 2 + 100] {
+                    let query = super::build_page_query(filter, Some(&terms), Some(offset), Some(50));
+                    let expected = ctx.sql(&query).await.unwrap().collect().await.unwrap();
+                    let expected = super::batches_to_rows(&expected).unwrap();
+                    // Fresh plan: its dynamic filter must not have been updated
+                    // by executing the reference Top-K above.
+                    let physical = ctx.sql(&query).await.unwrap().create_physical_plan().await.unwrap();
+                    let full = super::full_sort_page_plan(physical);
+                    let outer = full.downcast_ref::<GlobalLimitExec>().unwrap();
+                    assert!(outer.input().downcast_ref::<SortExec>().unwrap().fetch().is_none());
+                    let actual = collect(full, ctx.task_ctx()).await.unwrap();
+                    assert_eq!(super::batches_to_rows(&actual).unwrap(), expected);
+
+                    if filter.is_none() && offset == total / 2 - 100 {
+                        // A cold export must use the same deep window even
+                        // before the grid has populated its page cache.
+                        let output = temp_path("deep_full_sort.csv");
+                        crate::services::export::export_data(
+                            &cache, file.clone(), output.to_string_lossy().into_owned(),
+                            "csv".into(), Some(offset), Some(50), None, Some(sort.clone()),
+                        ).await.unwrap();
+                        let csv = std::fs::read_to_string(output).unwrap();
+                        let exported_ids: Vec<i64> = csv.lines().skip(1)
+                            .map(|line| line.split(',').next().unwrap().parse().unwrap()).collect();
+                        let expected_ids: Vec<i64> = expected.iter().map(|row| row["id"].as_i64().unwrap()).collect();
+                        assert_eq!(exported_ids, expected_ids);
+                    }
+
+                    let rows = super::read_data(&cache, &file, offset, 50, filter.map(str::to_owned), Some(sort.clone())).await.unwrap();
+                    assert_eq!(rows, expected);
+                    let hit = super::read_data(&cache, &file, offset, 50, filter.map(str::to_owned), Some(sort.clone())).await.unwrap();
+                    assert_eq!(hit, rows);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn full_page_sort_can_spill_with_a_bounded_memory_pool() {
+        use datafusion::physical_plan::{collect, limit::GlobalLimitExec};
+
+        let n = 30_000i64;
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("text", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
+            ],
+        ).unwrap();
+        let path = temp_path("full_sort_spill.parquet");
+        write_parquet(&path, &batch, None);
+        // This deliberately tiny pool needs smaller merge batches than the
+        // production 2 GiB pool. Spill still processes more data than fits.
+        let cache = ParquetCache::new().with_memory_limit(32 * 1024 * 1024);
+        let ctx = cache.get_or_create_session(&path.to_string_lossy()).await.unwrap();
+        ctx.sql("SET datafusion.execution.batch_size = 1024").await.unwrap().collect().await.unwrap();
+        let plan = ctx.sql("SELECT * FROM t ORDER BY text, id LIMIT 50 OFFSET 15000")
+            .await.unwrap().create_physical_plan().await.unwrap();
+        let plan = super::full_sort_page_plan(plan);
+        let batches = collect(Arc::clone(&plan), ctx.task_ctx()).await.unwrap();
+        let rows = super::batches_to_rows(&batches).unwrap();
+        assert_eq!(rows.len(), 50);
+        assert_eq!(rows[0]["id"], 15000);
+        assert_eq!(rows[49]["id"], 15049);
+        let sort = plan.downcast_ref::<GlobalLimitExec>().unwrap().input();
+        assert!(sort.metrics().unwrap().spill_count().unwrap() > 0);
     }
 
     /// A sorted page whose top-k heap outgrows the session's memory limit
