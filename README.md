@@ -196,6 +196,9 @@ Read it before changing the backend.
 
 ### Performance Tips
 
+Repeatable large sort datasets and the release-bridge benchmark are described
+in [`scripts/qa/PERFORMANCE.md`](scripts/qa/PERFORMANCE.md).
+
 - A release build is the one to judge speed by: `pnpm tauri dev` is a debug
   build and scans roughly twenty times slower.
 - An unfiltered page is read by skipping row groups; a filter turns the page
