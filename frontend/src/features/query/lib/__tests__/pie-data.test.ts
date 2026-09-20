@@ -135,7 +135,7 @@ describe('pie slices', () => {
     rows[0] = { x: 'Other', y: 100 };
     const pie = shares(rows);
     expect(pie.ok && pie.data.slices[0]).toMatchObject({ id: '0', label: 'Other', value: 100 });
-    expect(pie.ok && pie.data.slices.at(-1)).toMatchObject({ id: 'other', rowIndex: null });
+    expect(pie.ok && pie.data.slices[MAX_PIE_SLICES - 1]).toMatchObject({ id: 'other', rowIndex: null });
   });
 
   it('carries the whole tail of a full-sized result, biggest first', () => {
