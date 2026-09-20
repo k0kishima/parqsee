@@ -111,3 +111,68 @@ export function barGeometry(model: ChartModel, viewport: { width: number; height
 export function labelStride(pitch: number, minSpacing = 80): number {
   return Math.max(1, Math.ceil(minSpacing / pitch));
 }
+
+/** The gap between the pie's edge and its box, so a hovered outline is not clipped. */
+const PIE_PADDING = 12;
+/** Below this the circle is a dot; the pane stacks the legend under it instead of shrinking further. */
+const MIN_PIE_SIZE = 96;
+
+export interface PieArc {
+  /** The slice's own id, as `pieData` gave it. */
+  id: string;
+  /** Radians from 12 o'clock, clockwise. */
+  startAngle: number;
+  endAngle: number;
+  /** The wedge, or null when this slice is the whole circle and is drawn as one. */
+  path: string | null;
+}
+
+export interface PieGeometry {
+  /** The side of the square the circle is drawn in. */
+  size: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  arcs: PieArc[];
+  /** One slice holds everything: a circle, not an arc from a point back to itself. */
+  whole: boolean;
+}
+
+const round = (value: number) => Number(value.toFixed(3));
+
+/** A point on the circle, measuring from 12 o'clock clockwise like a clock face. */
+const onCircle = (cx: number, cy: number, r: number, angle: number): [number, number] =>
+  [round(cx + r * Math.sin(angle)), round(cy - r * Math.cos(angle))];
+
+/** The wedge from the centre out to `start`, round to `end`, and back. */
+export function arcPath(cx: number, cy: number, r: number, start: number, end: number): string {
+  const [x0, y0] = onCircle(cx, cy, r, start);
+  const [x1, y1] = onCircle(cx, cy, r, end);
+  const large = end - start > Math.PI ? 1 : 0;
+  return `M ${round(cx)} ${round(cy)} L ${x0} ${y0} A ${round(r)} ${round(r)} 0 ${large} 1 ${x1} ${y1} Z`;
+}
+
+/**
+ * The wedges of a pie, in the order the slices came. Angles run from 12
+ * o'clock clockwise and are taken from the running total rather than from
+ * each share in turn, so the last wedge ends exactly where the first
+ * began however the shares round.
+ */
+export function pieGeometry(slices: readonly { id: string; value: number }[], viewport: { width: number; height: number }): PieGeometry | null {
+  if (slices.length === 0) return null;
+  const size = Math.max(MIN_PIE_SIZE, Math.min(viewport.width, viewport.height));
+  const radius = Math.max(1, size / 2 - PIE_PADDING);
+  const cx = size / 2;
+  const cy = size / 2;
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+  const whole = slices.length === 1;
+  const arcs: PieArc[] = [];
+  let before = 0;
+  for (const slice of slices) {
+    const startAngle = total > 0 ? (before / total) * Math.PI * 2 : 0;
+    before += slice.value;
+    const endAngle = total > 0 ? (before / total) * Math.PI * 2 : 0;
+    arcs.push({ id: slice.id, startAngle, endAngle, path: whole ? null : arcPath(cx, cy, radius, startAngle, endAngle) });
+  }
+  return { size, cx, cy, radius, arcs, whole };
+}

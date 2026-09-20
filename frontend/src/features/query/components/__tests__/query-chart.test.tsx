@@ -134,3 +134,84 @@ describe('QueryChart (bar)', () => {
     expect(Number(ten.getAttribute('height'))).toBeGreaterThan(100);
   });
 });
+
+/** A category X and one integer Y: the shape a pie is allowed to draw. */
+const pieResult = (rows: Record<string, unknown>[], extra: Partial<QueryResult> = {}) => result(rows, ['y'], extra);
+const pieModel = (rows: Record<string, unknown>[], extra: Partial<QueryResult> = {}) =>
+  buildChartModel(pieResult(rows, extra), ['bar', 'pie']);
+const sliceIds = () => marks().map(m => m.getAttribute('data-slice-id'));
+/** The legend's buttons, in slice order. */
+const legend = () => screen.getAllByRole('listitem').map(item => item.querySelector('button')!);
+
+describe('QueryChart (pie)', () => {
+  it('draws a wedge per slice, biggest first, and lists them in the legend', () => {
+    render(<QueryChart model={pieModel([{ x: 'a', y: 1 }, { x: 'b', y: 3 }, { x: 'c', y: 2 }])} kind="pie" />);
+    expect(document.querySelector('svg[data-chart-kind="pie"]')).toBeInTheDocument();
+    expect(sliceIds()).toEqual(['1', '2', '0']);
+    expect(marks().map(m => m.tagName)).toEqual(['path', 'path', 'path']);
+    expect(marks().map(m => m.getAttribute('fill'))).toEqual(['var(--chart-series-1)', 'var(--chart-series-2)', 'var(--chart-series-3)']);
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    expect(detailText()).toBe('viewer.query.chart.detailEmpty');
+  });
+
+  it('paints the aggregate outside the series ramp and keeps it last', () => {
+    render(<QueryChart model={pieModel(Array.from({ length: 9 }, (_, i) => ({ x: `c${i}`, y: i + 1 })))} kind="pie" />);
+    expect(sliceIds()).toEqual(['8', '7', '6', '5', '4', '3', '2', 'other']);
+    expect(marks()[marks().length - 1]).toHaveAttribute('fill', 'var(--chart-other)');
+  });
+
+  it('draws one positive value as a whole circle, not an arc back to its own start', () => {
+    render(<QueryChart model={pieModel([{ x: 'a', y: 4 }, { x: 'b', y: 0 }])} kind="pie" />);
+    expect(marks().map(m => m.tagName)).toEqual(['circle']);
+    // The zero has no area, so it is counted above the plot instead of drawn.
+    expect(screen.getByText('viewer.query.chart.zeroSlices')).toBeInTheDocument();
+  });
+
+  it('says when the total and the percentages are approximations', () => {
+    const decimals = {
+      ...pieResult([{ x: 'a', y: '1.25' }, { x: 'b', y: '2.50' }]),
+      columns: [{ name: 'x', data_type: 'Utf8', chart_type: cat }, { name: 'y', data_type: 'Decimal', chart_type: { kind: 'decimal' } as QueryChartType }],
+    };
+    render(<QueryChart model={buildChartModel(decimals, ['bar', 'pie'])} kind="pie" />);
+    expect(screen.getByText('viewer.query.chart.approximateTotal')).toBeInTheDocument();
+  });
+
+  it('walks the slices from the detail box and selects one from the legend', async () => {
+    render(<QueryChart model={pieModel([{ x: 'a', y: 1 }, { x: 'b', y: 3 }])} kind="pie" />);
+    const box = detail();
+    box.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-slice-id', '1');
+    expect(detailText()).toBe('viewer.query.chart.sliceDescription');
+    await userEvent.keyboard('{End}');
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-slice-id', '0');
+    await userEvent.keyboard('{Home}');
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-slice-id', '1');
+    // Up and down belong to series, of which a pie has one; they leave the walk alone.
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-slice-id', '1');
+    await userEvent.click(legend()[1]);
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-slice-id', '0');
+  });
+
+  it('shows a tooltip for the slice under the pointer and closes it on Escape', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      render(<QueryChart model={pieModel([{ x: 'a', y: 1 }, { x: 'b', y: 3 }])} kind="pie" />);
+      fireEvent.pointerMove(marks()[0], { clientX: 50, clientY: 50 });
+      act(() => { vi.runAllTimers(); });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('viewer.query.chart.sliceDescription');
+      fireEvent.keyDown(detail(), { key: 'Escape' });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the pie\'s own condition in place of the plot when the result is not a whole', () => {
+    const model = buildChartModel(result([{ x: 'a', y1: 1, y2: 2 }], ['y1', 'y2']), ['bar', 'pie']);
+    render(<QueryChart model={model} kind="pie" />);
+    expect(screen.getByRole('status')).toHaveTextContent('viewer.query.chart.pieOneSeries');
+    expect(document.querySelector('svg[data-chart-kind]')).not.toBeInTheDocument();
+  });
+});

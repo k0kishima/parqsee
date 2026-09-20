@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { QueryChartType, QueryResult } from '../../types';
 import { buildChartModel } from '../chart-data';
-import { barGeometry, labelStride, PLOT_MARGIN } from '../chart-geometry';
+import { arcPath, barGeometry, labelStride, pieGeometry, PLOT_MARGIN } from '../chart-geometry';
 
 const cat: QueryChartType = { kind: 'category' };
 const int: QueryChartType = { kind: 'integer' };
@@ -68,5 +68,54 @@ describe('barGeometry', () => {
     expect(labelStride(100)).toBe(1);
     expect(labelStride(40)).toBe(2);
     expect(labelStride(28)).toBe(3);
+  });
+});
+
+describe('pieGeometry', () => {
+  const quarters = [
+    { id: 'a', value: 1 },
+    { id: 'b', value: 1 },
+    { id: 'c', value: 1 },
+    { id: 'd', value: 1 },
+  ];
+
+  it('runs clockwise from 12 o\'clock and closes the circle exactly', () => {
+    const geometry = pieGeometry(quarters, viewport)!;
+    expect(geometry.arcs.map(a => a.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(geometry.arcs.map(a => a.startAngle)).toEqual([0, Math.PI / 2, Math.PI, Math.PI * 1.5]);
+    expect(geometry.arcs[3].endAngle).toBe(Math.PI * 2);
+    // The first wedge leaves the centre straight up and comes back at 3 o'clock.
+    expect(geometry.arcs[0].path).toBe(`M 200 200 L 200 12 A 188 188 0 0 1 388 200 Z`);
+  });
+
+  it('takes the angles from the running total, so rounding cannot leave a gap', () => {
+    const thirds = [{ id: 'a', value: 1 }, { id: 'b', value: 1 }, { id: 'c', value: 1 }];
+    const geometry = pieGeometry(thirds, viewport)!;
+    expect(geometry.arcs[2].endAngle).toBe(Math.PI * 2);
+    geometry.arcs.forEach((arc, i) => { if (i > 0) expect(arc.startAngle).toBe(geometry.arcs[i - 1].endAngle); });
+  });
+
+  it('flags a wedge past a half circle so its arc takes the long way round', () => {
+    const geometry = pieGeometry([{ id: 'big', value: 3 }, { id: 'rest', value: 1 }], viewport)!;
+    expect(geometry.arcs[0].path).toContain(' 1 1 ');
+    expect(geometry.arcs[1].path).toContain(' 0 1 ');
+  });
+
+  it('draws one slice as a circle rather than an arc from a point back to itself', () => {
+    const geometry = pieGeometry([{ id: 'all', value: 5 }], viewport)!;
+    expect(geometry.whole).toBe(true);
+    expect(geometry.arcs[0]).toMatchObject({ startAngle: 0, endAngle: Math.PI * 2, path: null });
+  });
+
+  it('fits the circle in the shorter side of its box, never below a legible size', () => {
+    expect(pieGeometry(quarters, { width: 600, height: 240 })!.size).toBe(240);
+    expect(pieGeometry(quarters, { width: 120, height: 400 })!.size).toBe(120);
+    expect(pieGeometry(quarters, { width: 20, height: 20 })!.size).toBe(96);
+    expect(pieGeometry([], viewport)).toBeNull();
+  });
+
+  it('measures its angles from 12 o\'clock clockwise', () => {
+    expect(arcPath(0, 0, 10, 0, Math.PI / 2)).toBe('M 0 0 L 0 -10 A 10 10 0 0 1 10 0 Z');
+    expect(arcPath(0, 0, 10, Math.PI, Math.PI * 1.5)).toBe('M 0 0 L 0 10 A 10 10 0 0 1 -10 0 Z');
   });
 });
