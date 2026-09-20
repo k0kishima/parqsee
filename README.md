@@ -196,14 +196,19 @@ Read it before changing the backend.
 
 ### Performance Tips
 
+Repeatable large sort datasets and the release-bridge benchmark are described
+in [`scripts/qa/PERFORMANCE.md`](scripts/qa/PERFORMANCE.md).
+
 - A release build is the one to judge speed by: `pnpm tauri dev` is a debug
   build and scans roughly twenty times slower.
 - An unfiltered page is read by skipping row groups; a filter turns the page
   into a DataFusion query, so a filter over a huge file is the slow case. A
-  sort is slower still: every page sorts the whole file. The pages near
-  either end are the cheap ones; a page deep in the middle of a file with
-  tens of millions of rows may be refused as too deep to sort within the
-  memory the app allows itself, and a filter is the way to it.
+  sort is slower still: each uncached page may scan the whole file. Pages
+  near either end use Top-K; deep pages use an ordinary sort to avoid a
+  large candidate heap. That sort can spill to temporary disk within the
+  session's memory budget, but very large files can still be slow or exceed
+  the memory needed to merge batches. A filter reduces the work. Recently
+  visited sorted pages share a bounded result cache.
 - Close tabs you are done with: each one keeps a session and the file's
   metadata cached.
 

@@ -168,6 +168,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       const total = activeFilter
         ? await countParquetData(filePath, activeFilter)
         : metadata.num_rows;
+      // A newer filter/Refresh may have finished while COUNT was running.
+      // Do not start an expensive page sort for an obsolete request.
+      if (seq !== loadSeq.current) return;
       const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
       const rows = await readParquetData(filePath, offset, limit, activeFilter, sort);
       // A newer load has taken over; its result describes the current state.

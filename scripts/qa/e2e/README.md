@@ -93,6 +93,10 @@ pnpm large-file            # needs `uv run scripts/qa/gen_huge.py`; use a releas
 BRIDGE_BIN=../../../backend/target/release/examples/bridge pnpm suite
 ```
 
+For repeatable column-sort datasets and backend timing, see
+[`../PERFORMANCE.md`](../PERFORMANCE.md). Those tools are manual performance
+diagnostics and are kept separate from this functional regression suite.
+
 ### Demo screenshots (`pnpm shots`)
 
 Not a test: `shots.mjs` drives the same harness to photograph the app for the
