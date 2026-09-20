@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
-import { ArrowDown, ArrowUp, ChartBar } from 'lucide-react';
+import { ChartBar } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColumnInfo, SortSpec } from '../api';
 import { isSortableColumn } from '../lib/sort';
@@ -41,11 +41,36 @@ interface DataTableProps {
 export const PROFILE_BUTTON_WIDTH = 12;
 
 /**
- * Width the sort arrow takes beside a sorted column's name (the icon and
- * its gap), counted into every column's measured width so the arrow does
- * not clip the name of a column that was measured without it.
+ * Width the sort triangle takes beside a sorted column's name (the mark
+ * and its gap), counted into every column's measured width so the mark
+ * does not clip the name of a column that was measured without it.
  */
-export const SORT_INDICATOR_WIDTH = 16;
+export const SORT_INDICATOR_WIDTH = 12;
+
+/**
+ * The sorted direction, as a filled triangle beside the column name —
+ * the mark database clients (Table Plus among them) use for this, where
+ * a line arrow reads as "move" rather than "sorted by". It is drawn here
+ * rather than taken from the icon set, which has no solid triangle this
+ * small: at 8x5 a stroked one would be mostly stroke.
+ */
+function SortTriangle({ direction }: { direction: 'asc' | 'desc' }) {
+  return (
+    <svg
+      width={8}
+      height={5}
+      viewBox="0 0 8 5"
+      aria-hidden="true"
+      focusable="false"
+      className="shrink-0"
+    >
+      <polygon
+        fill="currentColor"
+        points={direction === 'asc' ? '4,0 8,5 0,5' : '0,0 8,0 4,5'}
+      />
+    </svg>
+  );
+}
 
 interface VisibleColumn {
   index: number;
@@ -275,8 +300,7 @@ export const DataTable = React.memo(function DataTable({
                       className={`inline-flex items-center gap-1 max-w-full rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 ${sortedBy ? 'text-blue-600 dark:text-blue-400' : ''}`}
                     >
                       <span className="truncate">{label}</span>
-                      {sortedBy === 'asc' && <ArrowUp size={12} aria-hidden="true" className="shrink-0" />}
-                      {sortedBy === 'desc' && <ArrowDown size={12} aria-hidden="true" className="shrink-0" />}
+                      {sortedBy && <SortTriangle direction={sortedBy} />}
                     </button>
                   ) : label}
                 </div>
