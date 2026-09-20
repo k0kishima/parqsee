@@ -85,7 +85,12 @@ export type ChartProblemCode =
   | 'unsafeRange'
   | 'numericXRequired'
   | 'continuousXRequired'
-  | 'notImplemented';
+  | 'pieCategory'
+  | 'pieOneSeries'
+  | 'pieRows'
+  | 'pieUnique'
+  | 'pieValues'
+  | 'piePartial';
 
 export interface ChartProblem {
   code: ChartProblemCode;
