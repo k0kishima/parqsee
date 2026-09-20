@@ -95,6 +95,7 @@
     "restoredFilter": "復元されたフィルタ",
     "filter": "フィルター",
     "filterPlaceholder": "抽出条件 (例: id > 5)",
+    "filterColumnPlaceholder": "列...",
     "filterValuePlaceholder": "値...",
     "summary": "{{rows}} 行 × {{columns}} 列",
     "tabs": {

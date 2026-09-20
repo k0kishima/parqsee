@@ -40,6 +40,9 @@ const pageInput = () =>
 
 const applyFilter = async (value: string) => {
   const user = userEvent.setup();
+  // The bar opens with no column picked, so a condition is built left to
+  // right; a value on its own applies nothing.
+  await user.selectOptions(screen.getAllByRole('combobox')[0], 'id');
   await user.clear(screen.getByPlaceholderText('viewer.filterValuePlaceholder'));
   await user.type(screen.getByPlaceholderText('viewer.filterValuePlaceholder'), value);
   await user.click(screen.getByText('common.apply'));

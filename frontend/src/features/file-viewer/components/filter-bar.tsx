@@ -81,12 +81,20 @@ export interface FilterRow {
 
 let nextFilterRowSerial = 0;
 /**
- * An empty condition on `column` (the first column, or none). The id is a
- * serial and only has to be unique among the rows of one bar; `Date.now()`
- * gave two rows added within a millisecond the same id, and one − then
- * removed both.
+ * An empty condition on `column`, or on no column at all — which is what a
+ * row nobody has touched carries. A new row starts without a column because
+ * the bar is on screen from the moment a file opens: a column filled in for
+ * the user reads as a condition they never stated, on whichever column the
+ * file happens to begin with, and it leaves the value box as the only empty
+ * field in the row, which is how a value gets applied to a column nobody
+ * chose. The operator does start at `=`, what almost every filter wants;
+ * unlike the column it is not decided by the file's column order.
+ *
+ * The id is a serial and only has to be unique among the rows of one bar;
+ * `Date.now()` gave two rows added within a millisecond the same id, and
+ * one − then removed both.
  */
-function newFilterRow(column: string | undefined): FilterRow {
+function newFilterRow(column?: string): FilterRow {
     return { id: nextFilterRowSerial++, column: column ?? "", operator: "=", value: "" };
 }
 
@@ -256,9 +264,9 @@ function restoreFilter(expression: string, columns: ColumnInfo[]): { filters: Fi
         else break;
     }
     if (rest || buildFilterExpression(filters, columns) !== expression) {
-        return { filters: [newFilterRow(columns[0]?.name)], base: expression };
+        return { filters: [newFilterRow()], base: expression };
     }
-    return { filters: filters.length ? filters : [newFilterRow(columns[0]?.name)], base: '' };
+    return { filters: filters.length ? filters : [newFilterRow()], base: '' };
 }
 
 function withBase(base: string, expression: string): string {
@@ -344,24 +352,25 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
             setFilters(restored.filters);
             setBaseFilter(restored.base);
         } else if (columns.length > 0) {
-            setFilters(prevFilters => prevFilters.map(f => {
-                if (!columns.find(c => c.name === f.column)) {
-                    return { ...f, column: columns[0].name };
-                }
-                return f;
-            }));
+            // A row whose column the new columns do not have goes back to no
+            // column rather than to the first one: its value would otherwise
+            // be read against a column the user never picked. The row is then
+            // unfilled, and unfilled rows are dropped from the expression.
+            setFilters(prevFilters => prevFilters.map(f =>
+                f.column && !columns.find(c => c.name === f.column) ? { ...f, column: "" } : f
+            ));
         }
     }
 
     const handleAddRow = () => {
-        setFilters([...filters, newFilterRow(columns[0]?.name)]);
+        setFilters([...filters, newFilterRow()]);
     };
 
     const handleRemoveRow = (id: number) => {
         const newFilters = filters.filter(f => f.id !== id);
         // Always keep at least one row
         if (newFilters.length === 0) {
-            setFilters([newFilterRow(columns[0]?.name)]);
+            setFilters([newFilterRow()]);
             // Also clear the filter
             setBaseFilter("");
             apply("");
@@ -377,7 +386,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     };
 
     const handleClear = () => {
-        setFilters([newFilterRow(columns[0]?.name)]);
+        setFilters([newFilterRow()]);
         setInvalid(null);
         setBaseFilter("");
         apply("");
@@ -392,6 +401,11 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     };
 
     const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
+    // The same field with its text dimmed, for a select that has nothing
+    // picked yet. A whole class string rather than a text colour appended to
+    // `inputBg`: two text colours on one element are resolved by the order of
+    // the stylesheet, not the order of the attribute.
+    const unsetInputBg = 'bg-white border-slate-300 text-slate-400 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500';
     const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
     // One grid for every condition, so the value inputs line up whatever
@@ -430,12 +444,24 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 </div>
                             )}
 
-                            {/* Column Selector */}
+                            {/* Column Selector. With no column picked it
+                                shows a dimmed placeholder instead of the first
+                                column, so an untouched bar claims nothing and
+                                the row is filled left to right. The
+                                placeholder is offered only while it is what
+                                the select shows: a row is emptied with −,
+                                not by picking "Column..." again. A column
+                                whose name is empty is the one thing the
+                                select cannot tell from the placeholder, and
+                                an unfilled row has always been an empty
+                                `column`, so such a column could never be
+                                filtered on either way. */}
                             <select
                                 value={filter.column}
                                 onChange={(e) => handleChange(filter.id, { column: e.target.value })}
-                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}${lit}`}
+                                className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${filter.column ? inputBg : unsetInputBg}${lit}`}
                             >
+                                {!filter.column && <option value="">{t('viewer.filterColumnPlaceholder')}</option>}
                                 {columns.map(col => (
                                     <option key={col.name} value={col.name}>{col.name}</option>
                                 ))}

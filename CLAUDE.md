@@ -122,7 +122,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   not through the index, which would cycle back through the Welcome route
 - `workspace` — main layout: sidebar, header, tab hosting; `api/` for workspace roots
 - `file-explorer` — tree over the workspace roots, search, breadcrumb (bounded by the root), context menu
-- `file-viewer` — data table (column-virtualized), pagination, search bar, filter bar, export modal,
+- `file-viewer` — data table (column-virtualized), pagination, search bar,
+  the filter bar (on screen from the moment a file opens; a row starts with
+  no column picked — a dimmed placeholder, not the file's first column, so
+  an untouched bar states no condition and a value alone applies nothing —
+  while the operator starts at `=`; a row whose column the file loses goes
+  back to unpicked rather than to another column), export modal,
   the sort (a click on a sortable column's name in the header cycles
   ascending → descending → file order through `lib/sort.ts`'s `nextSort`;
   the header carries `aria-sort`; nested and unordered columns keep a

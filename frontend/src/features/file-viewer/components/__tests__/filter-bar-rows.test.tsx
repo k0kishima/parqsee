@@ -13,6 +13,8 @@ const columns: ColumnInfo[] = [
 const addButton = () => screen.getByRole('button', { name: 'common.addCondition' });
 const removeButtons = () => screen.getAllByRole('button', { name: 'common.removeCondition' });
 const valueInputs = () => screen.getAllByRole('textbox');
+// Two selects per row: the column, then the operator.
+const columnSelects = () => screen.getAllByRole('combobox').filter((_, i) => i % 2 === 0);
 
 function renderBar() {
   const onFilterChange = vi.fn();
@@ -26,6 +28,39 @@ describe('FilterBar rows', () => {
     expect(removeButtons()).toHaveLength(1);
     fireEvent.click(addButton());
     expect(removeButtons()).toHaveLength(2);
+  });
+
+  it('starts with no column picked, so an untouched bar states no condition', () => {
+    const onFilterChange = renderBar();
+    expect(columnSelects()[0]).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'viewer.filterColumnPlaceholder' })).toBeInTheDocument();
+
+    // A value typed without picking a column applies nothing rather than
+    // filtering on whichever column the file happens to begin with.
+    fireEvent.change(valueInputs()[0], { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenCalledWith('');
+
+    fireEvent.change(columnSelects()[0], { target: { value: 'id' } });
+    // The placeholder leaves the list once a column is picked.
+    expect(screen.queryByRole('option', { name: 'viewer.filterColumnPlaceholder' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 5');
+  });
+
+  it('empties a row whose column the new columns no longer have', () => {
+    const onFilterChange = vi.fn();
+    const { rerender } = render(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter="" />);
+    fireEvent.change(columnSelects()[0], { target: { value: 'name' } });
+    fireEvent.change(valueInputs()[0], { target: { value: 'JP' } });
+
+    rerender(<FilterBar columns={[columns[0]]} onFilterChange={onFilterChange} activeFilter="" />);
+
+    // Not moved to the first column, which would read the value against a
+    // column nobody chose.
+    expect(columnSelects()[0]).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('');
   });
 
   it('removes only the row whose − was pressed', () => {
@@ -172,6 +207,7 @@ describe('FilterBar rows', () => {
 
     it('keeps a filled-in row and adds behind it', () => {
       const { onFilterChange, add } = renderWithHandle();
+      fireEvent.change(columnSelects()[0], { target: { value: 'id' } });
       fireEvent.change(valueInputs()[0], { target: { value: '5' } });
       add([
         { column: 'name', operator: '>=', value: 'a' },
