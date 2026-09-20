@@ -27,15 +27,16 @@ use crate::services::access::FileAccess;
 /// and sorts. Operators that can spill (aggregates, a full sort) go to the
 /// disk manager's temp directory past it; a top-k cannot and fails with
 /// "Resources exhausted", which the grid turns into a message that
-/// names the way out. Before the ordinary-sort fallback for deep pages,
-/// measured on a 58M-row, 7-column file in release:
-/// the sorted page at offset 1M peaked at 2.1 GB of process memory, at
-/// 5M at 3.3 GB, at the middle (29M) at 12.9 GB — the heap holds
-/// `offset + limit` rows of the whole row. The limit keeps a deep page of
-/// a huge file from taking the app down on a small machine; the pages
-/// within reach of it are the far majority a viewer pages to. Deep pages
-/// now prefer a spillable ordinary sort; even that needs enough memory
-/// for its merge batches, so a resource error is still possible.
+/// names the way out. When the sorted page's query still carried every
+/// column of the row, measured on a 58M-row, 7-column file in release,
+/// the page at offset 1M peaked at 2.1 GB of process memory, at 5M at
+/// 3.3 GB, at the middle (29M) at 12.9 GB — the heap held `offset + limit`
+/// whole rows. The heap now holds the key and a row position
+/// (`SortOrder`), deep pages prefer a spillable ordinary sort
+/// (`prefer_full_page_sort`) and a top-k that hits the limit falls back
+/// to it (`sorted_rows`), so the limit is reached far later; it still
+/// keeps a page of a huge file from taking the app down on a small
+/// machine, since even a spilling sort needs memory for its merge batches.
 pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
 // Shared across files, not an additional allowance for every open tab.
@@ -203,7 +204,17 @@ impl ParquetCache {
         let config = datafusion::execution::context::SessionConfig::new()
             .with_target_partitions(1)
             // Lets the SQL view answer SHOW TABLES / SHOW COLUMNS FROM t.
-            .with_information_schema(true);
+            .with_information_schema(true)
+            // What a full sort keeps back for merging the batches it holds in
+            // memory: the merge's cursors carry every buffered row's key in row
+            // format, and that cannot spill. The default (10 MB) let the sorter
+            // fill the pool with batches first — a sorted page of a 58M-row
+            // file failed asking for 400 MB more once 44M rows were buffered.
+            // Half the pool makes it spill while a merge of what is left
+            // still fits, at the price of spilling sooner; the position query
+            // a sorted page runs (`SortOrder`) is narrow enough that a spill
+            // is cheap.
+            .with_sort_spill_reservation_bytes(self.memory_limit / 2);
         // Bounded, see `SESSION_MEMORY_LIMIT`; the rest of the runtime is
         // the default, disk spilling included.
         let runtime = match datafusion::execution::runtime_env::RuntimeEnvBuilder::new()
@@ -1142,27 +1153,50 @@ pub fn is_sortable(kind: ColumnKind) -> bool {
     !matches!(kind, ColumnKind::Nested | ColumnKind::Other)
 }
 
-/// The `ORDER BY` terms for `sort` over a file with `columns`: the sort
-/// column first, then every other sortable column in file order, all in
+/// A sort's `ORDER BY`: the key column first, then the row's position in
+/// the file (`position`, a `row_number() OVER ()` the query computes) in
 /// the same direction.
 ///
-/// The tie-breakers are what make paging over a sorted grid safe. Pages
-/// are separate `ORDER BY ... LIMIT/OFFSET` queries, and DataFusion
-/// answers each with a top-k heap sized to that page's `offset + limit`,
-/// whose order among equal keys depends on the heap's shape — so two
-/// pages of `ORDER BY category` alone could show the same row twice and
-/// another never, whenever a run of equal values crossed the page boundary
-/// (a category column with five values crosses it on every page). With
-/// every sortable column in the key, rows that compare equal are identical
-/// in every value the grid can show, so whichever of them lands where, the
-/// pages read the same. Rows that differ only in a nested or unordered
-/// column are the one case this leaves open; they sort as equal and may
-/// swap places between two reads.
+/// The position is what makes paging over a sorted grid safe. Pages are
+/// separate `ORDER BY ... LIMIT/OFFSET` queries, and DataFusion answers
+/// each with a top-k heap sized to that page's `offset + limit`, whose
+/// order among equal keys depends on the heap's shape — so two pages of
+/// `ORDER BY category` alone could show the same row twice and another
+/// never, whenever a run of equal values crossed the page boundary (a
+/// category column with five values crosses it on every page). The
+/// position is unique per row, so the order is total: ties come in file
+/// order ascending and in reverse file order descending, rows identical in
+/// every column included. The earlier design named every other sortable
+/// column as the tie-breaker instead; on a file with hundreds of columns
+/// DataFusion spent 100 ms and more planning that `ORDER BY` for 174 rows,
+/// and rows that differed only in a nested column could still swap places.
 ///
-/// The direction applies to every term, so descending is exactly the
+/// The position is the row's index in the file, which is why the sorted
+/// page can be read in two steps (`sorted_page_batches`): the query sorts
+/// only the key and the position, and the parquet reader then fetches
+/// those rows by index. It is only the file's order because every session
+/// scans a single partition in file order (`get_or_create_session`) and
+/// the `WHERE` clause is applied above the window rather than pushed into
+/// the scan, which would skip rows before they are numbered.
+///
+/// The direction applies to both terms, so descending is exactly the
 /// ascending sequence reversed, NULLs included (`ASC NULLS LAST`,
 /// `DESC NULLS FIRST`, spelled out rather than left to the dialect).
-pub fn order_by_terms(sort: &SortSpec, columns: &[ColumnInfo]) -> Result<String, String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortOrder {
+    terms: String,
+    position: String,
+}
+
+impl SortOrder {
+    /// The alias of the position column in the query: a name the file does
+    /// not use, so it can never shadow a column the filter names.
+    pub fn position(&self) -> &str {
+        &self.position
+    }
+}
+
+pub fn sort_order(sort: &SortSpec, columns: &[ColumnInfo]) -> Result<SortOrder, String> {
     let key = columns
         .iter()
         .find(|c| c.name == sort.column)
@@ -1170,41 +1204,96 @@ pub fn order_by_terms(sort: &SortSpec, columns: &[ColumnInfo]) -> Result<String,
     if !is_sortable(key.kind) {
         return Err(format!("Cannot sort by {}: values of its type have no order", sort.column));
     }
-    let direction = match sort.direction {
-        SortDirection::Asc => "ASC NULLS LAST",
-        SortDirection::Desc => "DESC NULLS FIRST",
+    let (direction, position_direction) = match sort.direction {
+        SortDirection::Asc => ("ASC NULLS LAST", "ASC"),
+        SortDirection::Desc => ("DESC NULLS FIRST", "DESC"),
     };
-    let terms = std::iter::once(key)
-        .chain(columns.iter().filter(|c| c.name != sort.column && is_sortable(c.kind)))
-        .map(|c| format!("{} {}", quote_identifier(&c.name), direction))
-        .collect::<Vec<_>>();
-    Ok(terms.join(", "))
+    let mut position = String::from("__parqsee_pos");
+    while columns.iter().any(|c| c.name == position) {
+        position.push('_');
+    }
+    let terms = format!(
+        "{} {}, {} {}",
+        quote_identifier(&key.name),
+        direction,
+        quote_identifier(&position),
+        position_direction
+    );
+    Ok(SortOrder { terms, position })
 }
 
-/// The one `SELECT * FROM t ...` shape the browse grid and the filtered
-/// export share. Building it in one place keeps the exported rows the same
-/// rows the grid paginates over. `order_by` is the term list from
-/// `order_by_terms`, or `None` for file order.
-pub fn build_page_query(
-    filter: Option<&str>,
-    order_by: Option<&str>,
-    offset: Option<usize>,
-    limit: Option<usize>,
-) -> String {
+/// The one `SELECT * FROM t ...` shape the unsorted browse grid and the
+/// filtered export share. Building it in one place keeps the exported rows
+/// the same rows the grid paginates over.
+pub fn build_page_query(filter: Option<&str>, offset: Option<usize>, limit: Option<usize>) -> String {
     let mut query = String::from("SELECT * FROM t");
     if let Some(f) = where_clause(filter) {
         query.push_str(&format!(" WHERE {}", f));
     }
-    if let Some(order_by) = order_by {
-        query.push_str(&format!(" ORDER BY {}", order_by));
+    push_window(&mut query, offset, limit);
+    query
+}
+
+/// `t` with each row's file position alongside its columns, the `WHERE`
+/// applied above the numbering so a filter never changes a row's position
+/// (see `SortOrder`). The filter cannot be pushed into the scan from here,
+/// so a filtered sort scans every row group; it still reads only the key
+/// and the filter's columns.
+fn positioned_rows(filter: Option<&str>, order: &SortOrder) -> String {
+    let mut from = format!(
+        "FROM (SELECT *, row_number() OVER () AS {} FROM t)",
+        quote_identifier(&order.position)
+    );
+    if let Some(f) = where_clause(filter) {
+        from.push_str(&format!(" WHERE {}", f));
     }
+    from
+}
+
+/// The positions of the rows of a sorted page, in the page's order: the
+/// first step of `sorted_page_batches`, and all the sort DataFusion does.
+pub fn build_position_query(
+    filter: Option<&str>,
+    order: &SortOrder,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> String {
+    let mut query = format!(
+        "SELECT {} {} ORDER BY {}",
+        quote_identifier(&order.position),
+        positioned_rows(filter, order),
+        order.terms
+    );
+    push_window(&mut query, offset, limit);
+    query
+}
+
+/// The rows of a sorted range with all their columns, in the order
+/// `build_position_query` lists them: what a streamed sorted export
+/// writes, so its rows come in the sequence the grid paginates over.
+pub fn build_sorted_query(
+    filter: Option<&str>,
+    order: &SortOrder,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> String {
+    let mut query = format!(
+        "SELECT * EXCEPT ({}) {} ORDER BY {}",
+        quote_identifier(&order.position),
+        positioned_rows(filter, order),
+        order.terms
+    );
+    push_window(&mut query, offset, limit);
+    query
+}
+
+fn push_window(query: &mut String, offset: Option<usize>, limit: Option<usize>) {
     if let Some(limit) = limit {
         query.push_str(&format!(" LIMIT {}", limit));
     }
     if let Some(offset) = offset.filter(|o| *o > 0) {
         query.push_str(&format!(" OFFSET {}", offset));
     }
-    query
 }
 
 /// One page of rows. Without a filter or a sort the page comes straight
@@ -1216,7 +1305,7 @@ pub fn build_page_query(
 /// read row groups in file order, so the two paginate the same sequence.
 /// An uncached sort is an `ORDER BY` over the whole file for that page;
 /// counts and compact page batches share a bounded cache. See
-/// `order_by_terms` for what keeps its pages consistent and `sorted_page_batches`
+/// `SortOrder` for what keeps its pages consistent and `sorted_page_batches`
 /// for how far-half pages are read from the nearer end.
 pub async fn read_data(
     cache: &ParquetCache,
@@ -1253,7 +1342,7 @@ pub async fn read_data(
             .map_err(|e| format!("Page read task failed: {}", e))??
         }
         Some(_) => {
-            let query = build_page_query(filter.as_deref(), None, Some(offset), Some(limit));
+            let query = build_page_query(filter.as_deref(), Some(offset), Some(limit));
             execute_sql_with_cache(cache, path, &query).await?.0
         }
     };
@@ -1311,10 +1400,27 @@ async fn execute_browse_query(
     query: &str,
     policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
-    execute_browse_query_with_sort(cache, path, query, policy, false).await
+    let ctx = cache.get_or_create_session(path).await?;
+    let version = FileVersion::read(path)?;
+    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
+        return Ok(batches);
+    }
+    let (batches, reusable) = run_browse_query(&ctx, query, false).await?;
+    version.check(path)?;
+    store_result(cache, path, &ctx, version, query, batches, reusable, policy)
 }
 
-async fn execute_browse_query_with_sort(
+/// A sorted page's rows, keyed in the result cache by its position query
+/// (`build_position_query`): the query sorts the key and the row position
+/// only, and the rows come out of the parquet reader by position
+/// (`rows_at_positions`), so a sort on a file with hundreds of columns
+/// plans and reads a two-column query instead of a wide one. A top-k
+/// that outgrows the session's memory falls back to the spillable full
+/// sort — `prefer_full_page_sort` picks it up front for deep pages, but
+/// the depth at which a top-k of a huge file exhausts the pool is not a
+/// fixed fraction of the file, and a page that fails only because it is
+/// shallower than the crossover is not one the user can reason about.
+async fn sorted_rows(
     cache: &ParquetCache,
     path: &str,
     query: &str,
@@ -1322,13 +1428,39 @@ async fn execute_browse_query_with_sort(
     full_sort: bool,
 ) -> Result<Vec<RecordBatch>, String> {
     let ctx = cache.get_or_create_session(path).await?;
-    let session_id = ctx.session_id();
     let version = FileVersion::read(path)?;
+    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
+        return Ok(batches);
+    }
+    let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
+        Err(e) if !full_sort && e.contains("Resources exhausted") => {
+            run_browse_query(&ctx, query, true).await?
+        }
+        other => other?,
+    };
+    let positions = positions_from_batches(&positions)?;
+    // Decoding is CPU-bound; keep it off the async workers like an unfiltered page.
+    let owned = path.to_string();
+    let batch = tokio::task::spawn_blocking(move || rows_at_positions(&owned, &positions))
+        .await
+        .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))??;
+    version.check(path)?;
+    store_result(cache, path, &ctx, version, query, vec![batch], reusable, policy)
+}
+
+fn cached_result(
+    cache: &ParquetCache,
+    path: &str,
+    ctx: &datafusion::execution::context::SessionContext,
+    version: &FileVersion,
+    query: &str,
+) -> Result<Option<Vec<RecordBatch>>, String> {
+    let session_id = ctx.session_id();
     let hit = {
         let mut results = cache.results.lock().map_err(|e| e.to_string())?;
-        results.retain(|r| r.path != path || r.version == version);
+        results.retain(|r| r.path != path || r.version == *version);
         if let Some(index) = results.iter().position(|r| {
-            r.path == path && r.session_id == session_id && r.version == version && r.query == query
+            r.path == path && r.session_id == session_id && r.version == *version && r.query == query
         }) {
             let result = results.remove(index).expect("cache entry exists");
             let batches = result.batches.clone();
@@ -1338,22 +1470,46 @@ async fn execute_browse_query_with_sort(
             None
         }
     };
-    if let Some(batches) = hit {
+    if hit.is_some() {
         version.check(path)?;
-        return Ok(batches);
     }
-    let plan = plan_query_checked(&ctx, query).await?;
+    Ok(hit)
+}
+
+/// Plan, check and run one browse query; `full_sort` swaps the page's
+/// top-k for an ordinary sort (`full_sort_page_plan`). The flag says
+/// whether the result may be cached (`reusable_plan`).
+async fn run_browse_query(
+    ctx: &datafusion::execution::context::SessionContext,
+    query: &str,
+    full_sort: bool,
+) -> Result<(Vec<RecordBatch>, bool), String> {
+    let plan = plan_query_checked(ctx, query).await?;
     let reusable = reusable_plan(&plan)?;
     let df = ctx.execute_logical_plan(plan).await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
-    let mut batches = if full_sort {
+    let batches = if full_sort {
         let physical = df.create_physical_plan().await
             .map_err(|e| format!("Failed to plan sorted page: {}", e))?;
         datafusion::physical_plan::collect(full_sort_page_plan(physical), ctx.task_ctx()).await
     } else {
         df.collect().await
     }.map_err(|e| format!("Failed to collect results: {}", e))?;
-    version.check(path)?;
+    Ok((batches, reusable))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn store_result(
+    cache: &ParquetCache,
+    path: &str,
+    ctx: &datafusion::execution::context::SessionContext,
+    version: FileVersion,
+    query: &str,
+    mut batches: Vec<RecordBatch>,
+    reusable: bool,
+    policy: ResultCachePolicy,
+) -> Result<Vec<RecordBatch>, String> {
+    let session_id = ctx.session_id();
     // LIMIT can return a slice backed by the entire top-k output. Copy only
     // page-sized results; very large ranges remain uncached.
     let page_sized = batches.iter().map(RecordBatch::num_rows).sum::<usize>() <= 8192;
@@ -1382,6 +1538,80 @@ async fn execute_browse_query_with_sort(
     Ok(batches)
 }
 
+/// The single column of a position query, zero-based: `row_number()` is
+/// one-based and unsigned.
+fn positions_from_batches(batches: &[RecordBatch]) -> Result<Vec<usize>, String> {
+    use arrow::array::UInt64Array;
+    let mut positions = Vec::with_capacity(batches.iter().map(RecordBatch::num_rows).sum());
+    for batch in batches {
+        let column = batch.column(0).as_any().downcast_ref::<UInt64Array>()
+            .ok_or_else(|| "Failed to downcast row positions".to_string())?;
+        for i in 0..column.len() {
+            let position = column.value(i);
+            positions.push(usize::try_from(position.checked_sub(1).ok_or("Invalid row position 0")?)
+                .map_err(|_| format!("Invalid row position {position}"))?);
+        }
+    }
+    Ok(positions)
+}
+
+/// The rows at `positions` (zero-based, in any order), as one batch in the
+/// order given. The reader is handed a row selection, so it decodes the
+/// pages holding those rows and skips whole row groups none of them fall
+/// in: 100 rows spread over a 58M-row file came back in 0.4 s in release.
+/// A position past the end means the file changed since the query ran.
+fn rows_at_positions(path: &str, positions: &[usize]) -> Result<RecordBatch, String> {
+    use arrow::array::UInt64Array;
+    use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
+
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+    let total = usize::try_from(builder.metadata().file_metadata().num_rows()).unwrap_or(0);
+    if positions.iter().any(|&p| p >= total) {
+        return Err("The file changed while reading it. Refresh and try again.".into());
+    }
+    let schema = builder.schema().clone();
+    if positions.is_empty() {
+        return Ok(RecordBatch::new_empty(schema));
+    }
+    let mut sorted = positions.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut selectors = Vec::with_capacity(sorted.len() * 2 + 1);
+    let mut cursor = 0;
+    for &position in &sorted {
+        if position > cursor {
+            selectors.push(RowSelector::skip(position - cursor));
+        }
+        selectors.push(RowSelector::select(1));
+        cursor = position + 1;
+    }
+    if cursor < total {
+        selectors.push(RowSelector::skip(total - cursor));
+    }
+    let reader = builder
+        .with_batch_size(sorted.len())
+        .with_row_selection(RowSelection::from(selectors))
+        .build()
+        .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))?;
+    let batches = reader
+        .map(|b| b.map_err(|e| format!("Failed to read parquet file {}: {}", path, e)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let rows = arrow::compute::concat_batches(&schema, &batches).map_err(|e| e.to_string())?;
+    if rows.num_rows() != sorted.len() {
+        return Err("The file changed while reading it. Refresh and try again.".into());
+    }
+    // The reader returns file order; put the rows back into the page's order.
+    let indices = UInt64Array::from_iter_values(positions.iter().map(|p| {
+        sorted.binary_search(p).expect("every position was selected") as u64
+    }));
+    let columns = rows.columns().iter()
+        .map(|column| arrow::compute::take(column.as_ref(), &indices, None))
+        .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())
+}
+
 /// Top-K is excellent near either end, but maintaining a heap for a large
 /// fraction of the file costs more than a batch sort/merge. Keep small files
 /// and shallow windows on Top-K. In release probes over 1M rows, a 25%-deep
@@ -1394,23 +1624,35 @@ fn prefer_full_page_sort(offset: usize, total: usize) -> bool {
 
 /// Remove only the outer page sort's Top-K, *after* physical optimization
 /// (otherwise DataFusion pushes fetch back into it). Keep GlobalLimit and
-/// every ORDER BY key intact. Nested sorts in user filters are untouched.
-/// A future optimizer producing a different shape safely retains its plan.
+/// every ORDER BY key intact; the projection a position query puts over
+/// the limit (`build_position_query`) is looked through. Nested sorts in
+/// user filters are untouched, and a plan of any other shape is used as it
+/// is, so a future optimizer producing a different shape safely retains
+/// its plan.
 fn full_sort_page_plan(
     plan: Arc<dyn datafusion::physical_plan::ExecutionPlan>,
 ) -> Arc<dyn datafusion::physical_plan::ExecutionPlan> {
-    use datafusion::physical_plan::{limit::GlobalLimitExec, sorts::sort::SortExec};
-    let Some(limit) = plan.downcast_ref::<GlobalLimitExec>() else { return plan; };
-    let Some(sort) = limit.input().downcast_ref::<SortExec>() else { return plan; };
-    if limit.skip() == 0 || sort.preserve_partitioning()
-        || sort.fetch() != limit.fetch().map(|n| limit.skip().saturating_add(n))
-    {
-        return plan;
+    use datafusion::physical_plan::{limit::GlobalLimitExec, projection::ProjectionExec, sorts::sort::SortExec};
+    fn rewrite(
+        plan: &Arc<dyn datafusion::physical_plan::ExecutionPlan>,
+    ) -> Option<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
+        if let Some(projection) = plan.downcast_ref::<ProjectionExec>() {
+            let input = rewrite(projection.input())?;
+            return Arc::clone(plan).with_new_children(vec![input]).ok();
+        }
+        let limit = plan.downcast_ref::<GlobalLimitExec>()?;
+        let sort = limit.input().downcast_ref::<SortExec>()?;
+        if limit.skip() == 0 || sort.preserve_partitioning()
+            || sort.fetch() != limit.fetch().map(|n| limit.skip().saturating_add(n))
+        {
+            return None;
+        }
+        // The scan's old Top-K dynamic predicate starts at true. No Top-K now
+        // updates it, so it cannot discard rows needed by the ordinary sort.
+        let sort = Arc::new(SortExec::new(sort.expr().clone(), Arc::clone(sort.input())));
+        Some(Arc::new(GlobalLimitExec::new(sort, limit.skip(), limit.fetch())))
     }
-    // The scan's old Top-K dynamic predicate starts at true. No Top-K now
-    // updates it, so it cannot discard rows needed by the ordinary sort.
-    let sort = Arc::new(SortExec::new(sort.expr().clone(), Arc::clone(sort.input())));
-    Arc::new(GlobalLimitExec::new(sort, limit.skip(), limit.fetch()))
+    rewrite(&plan).unwrap_or(plan)
 }
 
 fn compact_batch(batch: &RecordBatch) -> Result<RecordBatch, String> {
@@ -1459,6 +1701,9 @@ pub fn mirrored_window(offset: usize, limit: usize, total: usize) -> Option<(usi
 /// (`mirrored_window`). The filtered count that decides which half a page
 /// is in is shared with the frontend's count through the result cache.
 /// After mirroring, deep windows use an ordinary sort instead of Top-K.
+/// The sort itself is over the key and the row position only
+/// (`build_position_query`); the page's rows are then read by position
+/// (`sorted_rows`), so the width of the file never enters the sort.
 pub(crate) async fn sorted_page_batches(
     cache: &ParquetCache,
     path: &str,
@@ -1485,11 +1730,9 @@ pub(crate) async fn sorted_page_batches(
         ),
         None => (sort, offset, limit, false),
     };
-    let order_by = order_by_terms(&sort, &metadata.columns)?;
-    let query = build_page_query(filter.as_deref(), Some(&order_by), Some(offset), Some(limit));
-    let batches = execute_browse_query_with_sort(
-        cache, path, &query, policy, prefer_full_page_sort(offset, total),
-    ).await?;
+    let order = sort_order(&sort, &metadata.columns)?;
+    let query = build_position_query(filter.as_deref(), &order, Some(offset), Some(limit));
+    let batches = sorted_rows(cache, path, &query, policy, prefer_full_page_sort(offset, total)).await?;
     // A key per query is insufficient if the file changes between the count
     // and page queries: refuse a window computed for a different version.
     version.check(path)?;
@@ -2691,28 +2934,46 @@ mod tests {
     fn page_query_covers_every_clause_combination() {
         use super::build_page_query;
         assert_eq!(
-            build_page_query(None, None, Some(0), Some(50)),
+            build_page_query(None, Some(0), Some(50)),
             "SELECT * FROM t LIMIT 50"
         );
         assert_eq!(
-            build_page_query(Some("  "), None, Some(100), Some(50)),
+            build_page_query(Some("  "), Some(100), Some(50)),
             "SELECT * FROM t LIMIT 50 OFFSET 100"
         );
         assert_eq!(
-            build_page_query(Some("\"id\" > 1"), None, None, None),
+            build_page_query(Some("\"id\" > 1"), None, None),
             "SELECT * FROM t WHERE \"id\" > 1"
         );
         assert_eq!(
-            build_page_query(Some("\"id\" > 1"), None, Some(25), Some(25)),
+            build_page_query(Some("\"id\" > 1"), Some(25), Some(25)),
             "SELECT * FROM t WHERE \"id\" > 1 LIMIT 25 OFFSET 25"
         );
+    }
+
+    /// A sorted page is two queries: the positions, then the rows at them;
+    /// a streamed sorted export is the rows query DataFusion sorts itself.
+    /// The filter sits above the numbering in both, never inside it.
+    #[test]
+    fn sorted_queries_number_the_rows_before_the_filter() {
+        use super::{build_position_query, build_sorted_query, sort_order};
+        let columns = columns_of(&[("id", ColumnKind::Integer), ("a", ColumnKind::Text)]);
+        let order = sort_order(&SortSpec { column: "a".into(), direction: SortDirection::Asc }, &columns).unwrap();
         assert_eq!(
-            build_page_query(None, Some("\"a\" ASC NULLS LAST"), Some(25), Some(25)),
-            "SELECT * FROM t ORDER BY \"a\" ASC NULLS LAST LIMIT 25 OFFSET 25"
+            build_position_query(None, &order, Some(25), Some(25)),
+            "SELECT \"__parqsee_pos\" FROM (SELECT *, row_number() OVER () AS \"__parqsee_pos\" FROM t) \
+             ORDER BY \"a\" ASC NULLS LAST, \"__parqsee_pos\" ASC LIMIT 25 OFFSET 25"
         );
         assert_eq!(
-            build_page_query(Some("\"id\" > 1"), Some("\"a\" DESC NULLS FIRST"), None, None),
-            "SELECT * FROM t WHERE \"id\" > 1 ORDER BY \"a\" DESC NULLS FIRST"
+            build_position_query(Some("\"id\" > 1"), &order, Some(0), Some(25)),
+            "SELECT \"__parqsee_pos\" FROM (SELECT *, row_number() OVER () AS \"__parqsee_pos\" FROM t) \
+             WHERE \"id\" > 1 ORDER BY \"a\" ASC NULLS LAST, \"__parqsee_pos\" ASC LIMIT 25"
+        );
+        let order = sort_order(&SortSpec { column: "a".into(), direction: SortDirection::Desc }, &columns).unwrap();
+        assert_eq!(
+            build_sorted_query(Some("\"id\" > 1"), &order, None, None),
+            "SELECT * EXCEPT (\"__parqsee_pos\") FROM (SELECT *, row_number() OVER () AS \"__parqsee_pos\" FROM t) \
+             WHERE \"id\" > 1 ORDER BY \"a\" DESC NULLS FIRST, \"__parqsee_pos\" DESC"
         );
     }
 
@@ -2731,7 +2992,7 @@ mod tests {
 
     #[tokio::test]
     async fn deep_full_sort_pages_match_topk_with_nulls_filters_and_mirroring() {
-        use datafusion::physical_plan::{collect, limit::GlobalLimitExec, sorts::sort::SortExec};
+        use datafusion::physical_plan::{collect, limit::GlobalLimitExec, projection::ProjectionExec, sorts::sort::SortExec};
 
         let n = 70_000i64;
         let batch = RecordBatch::try_new(
@@ -2754,22 +3015,29 @@ mod tests {
         let ctx = cache.get_or_create_session(&file).await.unwrap();
         for direction in [SortDirection::Asc, SortDirection::Desc] {
             let sort = SortSpec { column: "grp".into(), direction };
-            let terms = super::order_by_terms(&sort, &metadata.columns).unwrap();
+            let order = super::sort_order(&sort, &metadata.columns).unwrap();
             for filter in [None, Some("id % 2 = 0")] {
                 let total = if filter.is_some() { n as usize / 2 } else { n as usize };
                 // Both sides of the midpoint take the ordinary-sort path.
                 for offset in [total / 2 - 100, total / 2 + 100] {
-                    let query = super::build_page_query(filter, Some(&terms), Some(offset), Some(50));
-                    let expected = ctx.sql(&query).await.unwrap().collect().await.unwrap();
+                    let rows_query = super::build_sorted_query(filter, &order, Some(offset), Some(50));
+                    let expected = ctx.sql(&rows_query).await.unwrap().collect().await.unwrap();
                     let expected = super::batches_to_rows(&expected).unwrap();
+                    let query = super::build_position_query(filter, &order, Some(offset), Some(50));
+                    let topk = ctx.sql(&query).await.unwrap().collect().await.unwrap();
+                    let topk = super::positions_from_batches(&topk).unwrap();
                     // Fresh plan: its dynamic filter must not have been updated
                     // by executing the reference Top-K above.
                     let physical = ctx.sql(&query).await.unwrap().create_physical_plan().await.unwrap();
                     let full = super::full_sort_page_plan(physical);
-                    let outer = full.downcast_ref::<GlobalLimitExec>().unwrap();
+                    let outer = full.downcast_ref::<ProjectionExec>().unwrap().input()
+                        .downcast_ref::<GlobalLimitExec>().unwrap();
                     assert!(outer.input().downcast_ref::<SortExec>().unwrap().fetch().is_none());
                     let actual = collect(full, ctx.task_ctx()).await.unwrap();
-                    assert_eq!(super::batches_to_rows(&actual).unwrap(), expected);
+                    assert_eq!(super::positions_from_batches(&actual).unwrap(), topk);
+                    let ids: Vec<i64> = expected.iter().map(|row| row["id"].as_i64().unwrap()).collect();
+                    // The position is the row's index in the file, whose ids run backwards.
+                    assert_eq!(topk.iter().map(|&p| n - 1 - p as i64).collect::<Vec<_>>(), ids);
 
                     if filter.is_none() && offset == total / 2 - 100 {
                         // A cold export must use the same deep window even
@@ -2827,6 +3095,44 @@ mod tests {
         assert_eq!(rows[49]["id"], 15049);
         let sort = plan.downcast_ref::<GlobalLimitExec>().unwrap().input();
         assert!(sort.metrics().unwrap().spill_count().unwrap() > 0);
+    }
+
+    /// A page too shallow for `prefer_full_page_sort` whose top-k still
+    /// outgrows the pool is answered by the full sort instead of refused:
+    /// long keys make the heap of `offset + limit` rows heavy long before
+    /// the crossover. With the fallback disabled, the read fails.
+    #[tokio::test]
+    async fn a_top_k_past_the_memory_limit_falls_back_to_the_full_sort() {
+        let n = 30_000i64;
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("text", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
+            ],
+        ).unwrap();
+        let path = temp_path("topk_fallback.parquet");
+        write_parquet(&path, &batch, None);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new().with_memory_limit(16 * 1024 * 1024);
+        let ctx = cache.get_or_create_session(&file).await.unwrap();
+        ctx.sql("SET datafusion.execution.batch_size = 1024").await.unwrap().collect().await.unwrap();
+        let sort = SortSpec { column: "text".into(), direction: SortDirection::Asc };
+        let offset = 15_000usize;
+        assert!(!super::prefer_full_page_sort(offset, n as usize));
+
+        let order = super::sort_order(&sort, &cache.get_or_create_metadata(&file).await.unwrap().columns).unwrap();
+        let query = super::build_position_query(None, &order, Some(offset), Some(50));
+        let err = super::run_browse_query(&ctx, &query, false).await.unwrap_err();
+        assert!(err.contains("Resources exhausted"), "{err}");
+
+        let rows = super::read_data(&cache, &file, offset, 50, None, Some(sort)).await.unwrap();
+        assert_eq!(rows.len(), 50);
+        assert_eq!(rows[0]["id"], 15_000);
+        assert_eq!(rows[49]["id"], 15_049);
     }
 
     /// A sorted page whose top-k heap outgrows the session's memory limit
@@ -2887,8 +3193,8 @@ mod tests {
     }
 
     #[test]
-    fn order_by_puts_the_key_first_and_every_sortable_column_after_it() {
-        use super::order_by_terms;
+    fn sort_order_names_the_key_then_the_row_position() {
+        use super::sort_order;
         let columns = columns_of(&[
             ("id", ColumnKind::Integer),
             ("Mixed \"q\"", ColumnKind::Text),
@@ -2898,18 +3204,21 @@ mod tests {
         ]);
         let by = |column: &str, direction| SortSpec { column: column.into(), direction };
 
-        assert_eq!(
-            order_by_terms(&by("Mixed \"q\"", SortDirection::Asc), &columns).unwrap(),
-            "\"Mixed \"\"q\"\"\" ASC NULLS LAST, \"id\" ASC NULLS LAST, \"x\" ASC NULLS LAST"
-        );
-        assert_eq!(
-            order_by_terms(&by("x", SortDirection::Desc), &columns).unwrap(),
-            "\"x\" DESC NULLS FIRST, \"id\" DESC NULLS FIRST, \"Mixed \"\"q\"\"\" DESC NULLS FIRST"
-        );
-        let err = order_by_terms(&by("nope", SortDirection::Asc), &columns).unwrap_err();
+        let order = sort_order(&by("Mixed \"q\"", SortDirection::Asc), &columns).unwrap();
+        assert_eq!(order.terms, "\"Mixed \"\"q\"\"\" ASC NULLS LAST, \"__parqsee_pos\" ASC");
+        assert_eq!(order.position(), "__parqsee_pos");
+        let order = sort_order(&by("x", SortDirection::Desc), &columns).unwrap();
+        assert_eq!(order.terms, "\"x\" DESC NULLS FIRST, \"__parqsee_pos\" DESC");
+        let err = sort_order(&by("nope", SortDirection::Asc), &columns).unwrap_err();
         assert!(err.contains("nope") && err.contains("no such column"), "{err}");
-        let err = order_by_terms(&by("tags", SortDirection::Asc), &columns).unwrap_err();
+        let err = sort_order(&by("tags", SortDirection::Asc), &columns).unwrap_err();
         assert!(err.contains("tags") && err.contains("no order"), "{err}");
+
+        // A file that uses the alias itself gets a longer one.
+        let columns = columns_of(&[("__parqsee_pos", ColumnKind::Integer), ("__parqsee_pos_", ColumnKind::Text)]);
+        let order = sort_order(&by("__parqsee_pos", SortDirection::Asc), &columns).unwrap();
+        assert_eq!(order.position(), "__parqsee_pos__");
+        assert_eq!(order.terms, "\"__parqsee_pos\" ASC NULLS LAST, \"__parqsee_pos__\" ASC");
     }
 
     /// A sort key with long runs of equal values — the shape a category

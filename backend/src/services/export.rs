@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::SortSpec;
 use crate::services::parquet::{
-    build_page_query, json_unsafe_to_strings, nested_to_json_strings, order_by_terms,
+    build_page_query, build_sorted_query, json_unsafe_to_strings, nested_to_json_strings, sort_order, SortOrder,
     plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache, ResultCachePolicy,
 };
 
@@ -154,7 +154,7 @@ async fn export_data_with(
     let order_by = match sort.as_ref() {
         Some(sort) => {
             let metadata = cache.get_or_create_metadata(&source_path).await?;
-            Some(order_by_terms(sort, &metadata.columns)?)
+            Some(sort_order(sort, &metadata.columns)?)
         }
         None => None,
     };
@@ -203,7 +203,7 @@ async fn export_data_with(
                 cache,
                 &source_path,
                 filter,
-                order_by.as_deref(),
+                order_by.as_ref(),
                 offset,
                 limit,
                 format,
@@ -395,13 +395,16 @@ async fn export_query(
     cache: &ParquetCache,
     source_path: &str,
     filter: Option<&str>,
-    order_by: Option<&str>,
+    order: Option<&SortOrder>,
     offset: Option<usize>,
     limit: Option<usize>,
     format: ExportFormat,
     staging_path: &str,
 ) -> Result<usize, String> {
-    let query = build_page_query(filter, order_by, offset, limit);
+    let query = match order {
+        Some(order) => build_sorted_query(filter, order, offset, limit),
+        None => build_page_query(filter, offset, limit),
+    };
 
     // Planning rejects a bad filter here, before any file is created, and
     // refuses a filter that would change the session the browse grid shares

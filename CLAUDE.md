@@ -325,30 +325,56 @@ command's answer carries the higher `revision`, since the two can cross.
    (`unfiltered_pages_match_the_sql_path` pins this).
    A sort is the one thing that does reorder it, and it is the expensive
    path by design: each uncached page is its own `ORDER BY ... LIMIT/OFFSET` query
-   over the whole file, and the file has no row id, so the `ORDER BY`
-   names the sort column and then every other sortable column in the same
-   direction (`order_by_terms`). Without those tie-breakers the heap's
-   order among equal keys differs from page to page and a sort on a
-   category column showed rows twice and dropped others;
-   `sorted_pages_join_up_without_repeating_or_losing_a_row` fails when
-   they are removed. Rows identical in every sortable column but differing
-   in a nested one are the one case left open.
-   DataFusion answers the query with a top-k heap of `offset + limit`
-   whole rows, so the cost grows with the offset: on a 58M-row file in
-   release, the first page sorted in 2.5–3.8 s, offset 1M in 29 s and
-   2.1 GB, the last page in 180 s and 11 GB. Two things keep that in
+   over the whole file. The file has no row id, so the query numbers the
+   rows itself (`row_number() OVER ()`, in file order because the session
+   scans a single partition) and the `ORDER BY` is the sort column and
+   then that position in the same direction (`SortOrder`): ties come in
+   file order, the order is total, and the sort is over two columns
+   however wide the file is — the earlier key of "every other sortable
+   column" cost 100 ms of planning per page on a 733-column file of 174
+   rows. Without a unique tie-breaker the heap's order among equal keys
+   differs from page to page and a sort on a category column showed rows
+   twice and dropped others;
+   `sorted_pages_join_up_without_repeating_or_losing_a_row` pins this.
+   The page is read in two steps (`sorted_rows`): the position query
+   returns the positions of the page's rows, and the parquet reader
+   fetches those rows by index through a row selection
+   (`rows_at_positions`), skipping the row groups none of them fall in.
+   A filter sits above the numbering, never inside it, so it cannot be
+   pushed into the scan on the sorted path; a filtered sort scans every
+   row group of the key and the filter's columns.
+   DataFusion answers the position query with a top-k heap of `offset + limit`
+   rows, so the cost grows with the offset. Three things keep that in
    bounds. A page past the midpoint is read from the other end — the
    descending order is the exact reverse of the ascending one, so
    `sorted_page_batches` takes the mirrored window of the reversed order and turns
-   it around (`mirrored_window`); the last page now costs what the first
-   does and the middle page is the worst. And every file's session runs
-   under a memory pool of `SESSION_MEMORY_LIMIT` (2 GiB): operators that
-   can spill (the SQL view's aggregates and full sorts) go to disk past
-   it, a top-k cannot and fails, which the grid reports as a page
-   too deep to sort with the ways out (a filter, the other end, the SQL
-   view). On that file the sorted pages within about 1–2M rows of either
-   end answer and the deeper ones fail with a peak near 2.3 GB instead of
-   taking the app down (`a_sort_past_the_memory_limit_fails_cleanly`).
+   it around (`mirrored_window`); the last page costs what the first
+   does and the middle page is the worst. A page at least 16,384 rows
+   and a quarter of the (filtered) file deep skips the top-k for an
+   ordinary sort of the same query (`prefer_full_page_sort`,
+   `full_sort_page_plan`: the top-k is swapped out after physical
+   optimization, or DataFusion would put it back), which sorts batches
+   and merges them instead of maintaining a heap the size of most of
+   the file — on 1M rows the middle page went from 464 ms to 58 ms. And
+   every file's session runs under a memory pool of
+   `SESSION_MEMORY_LIMIT` (2 GiB): operators that can spill (the SQL
+   view's aggregates and full sorts) go to disk past it, a top-k cannot
+   and fails — which `sorted_rows` answers by running the ordinary sort
+   instead, since the depth at which a top-k exhausts the pool depends
+   on the key's width, not on a fraction of the file; only when that
+   sort fails too (its merge batches need memory as well) does the grid
+   report a page too deep to sort with the ways out (a filter, the other
+   end, the SQL view); `a_sort_past_the_memory_limit_fails_cleanly` and
+   `a_top_k_past_the_memory_limit_falls_back_to_the_full_sort` pin both.
+   The session reserves half the pool for the full sort's merge
+   (`sort_spill_reservation_bytes`, set in `get_or_create_session`):
+   DataFusion's sorter otherwise fills the pool with buffered batches
+   and then cannot allocate the row-format keys its in-memory merge
+   needs before the first spill — the middle page of the 58M-row file
+   failed that way at 44M buffered rows. With the reservation it spills
+   about 1.3 GB in three files and answers in 6–9 s, the first page in
+   about a second, a category key or the file's own order alike;
+   `scripts/qa/PERFORMANCE.md` has the benchmark.
    Counts and sorted pages share a bounded LRU in `ParquetCache`: at most
    64 results and 32 MiB across all files, keyed by path, session identity,
    file size/modification time and SQL. Hits stat the file; changed versions
