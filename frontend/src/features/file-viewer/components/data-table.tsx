@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, RefObject } from 'react';
-import { ArrowDown, ArrowUp, ChartBar } from 'lucide-react';
+import { ChartBar, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColumnInfo, SortSpec } from '../api';
 import { isSortableColumn } from '../lib/sort';
@@ -41,9 +41,9 @@ interface DataTableProps {
 export const PROFILE_BUTTON_WIDTH = 12;
 
 /**
- * Width the sort arrow takes beside a sorted column's name (the icon and
- * its gap), counted into every column's measured width so the arrow does
- * not clip the name of a column that was measured without it.
+ * Width the sort chevron takes beside a sorted column's name (the mark
+ * and its gap), counted into every column's measured width so the mark
+ * does not clip the name of a column that was measured without it.
  */
 export const SORT_INDICATOR_WIDTH = 16;
 
@@ -272,11 +272,23 @@ export const DataTable = React.memo(function DataTable({
                       type="button"
                       onClick={() => onSort(name)}
                       title={t('viewer.sort.toggle', { column: name })}
-                      className={`inline-flex items-center gap-1 max-w-full rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 ${sortedBy ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                      className="inline-flex items-center gap-1 max-w-full rounded group"
                     >
-                      <span className="truncate">{label}</span>
-                      {sortedBy === 'asc' && <ArrowUp size={12} aria-hidden="true" className="shrink-0" />}
-                      {sortedBy === 'desc' && <ArrowDown size={12} aria-hidden="true" className="shrink-0" />}
+                      {/* Only the name carries the sorted colour: the
+                          chevron says which way, the colour says which
+                          column, and colouring both makes the mark the
+                          louder of the two. */}
+                      <span
+                        className={`truncate transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400 ${sortedBy ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                      >
+                        {label}
+                      </span>
+                      {sortedBy === 'asc' && (
+                        <ChevronUp size={12} strokeWidth={2.5} aria-hidden="true" className="shrink-0 text-slate-500 dark:text-gray-400" />
+                      )}
+                      {sortedBy === 'desc' && (
+                        <ChevronDown size={12} strokeWidth={2.5} aria-hidden="true" className="shrink-0 text-slate-500 dark:text-gray-400" />
+                      )}
                     </button>
                   ) : label}
                 </div>
