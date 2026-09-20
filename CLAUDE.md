@@ -156,9 +156,13 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   the first column is X, every numeric column after it a series in
   column order, so the SQL is the whole axis-and-aggregation UI. The kind
   is inferred from X's `chart_type` (labels → bar, time → line, numbers →
-  scatter; pie is never inferred) among the kinds in
-  `IMPLEMENTED_CHART_KINDS` — bar so far; a line, scatter and pie stage
+  scatter; pie is never inferred — nothing in a type says the values are
+  shares of a whole, so the user picks it) among the kinds in
+  `IMPLEMENTED_CHART_KINDS` — bar and pie so far; a line and scatter stage
   each add a renderer under `components/charts/` and its name there.
+  `QueryChart` is the frame (the notes, the problem, the footer rule);
+  each kind owns its plot, legend and selection, and
+  `components/charts/chart-chrome.tsx` holds what they share.
   `lib/chart-data.ts` builds the model once per result: values parsed by
   chart type (integers only inside ±2^53, decimals only up to 15
   significant digits, floats only when finite — the rest counted by
@@ -174,7 +178,23 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   re-run of the same SQL keeps the pick, a different SQL re-infers, and
   the same SQL whose new result cannot draw the pick re-infers and says
   so. Series colors are the `--chart-series-1..8` tokens in `index.css`,
-  a palette validated for both surfaces
+  a palette validated for both surfaces.
+  The pie (`lib/pie-data.ts`, `components/charts/pie-chart.tsx`) is the
+  one kind that claims its values are parts of one whole, so anything
+  that is not a whole refuses the kind outright instead of leaving
+  values out the way the others do — which would draw the circle full
+  with every percentage against a different denominator: a second
+  numeric column, a repeated or absent category (told apart by the raw
+  value, so `''` is not NULL), an invalid or negative value, nothing
+  positive, more than 50 rows, a truncated result, a total no double can
+  carry. Past eight slices the tail is summed into a grey Other
+  (`--chart-other`, outside the categorical ramp) that keeps the rows it
+  swallowed so the details can still name them; a zero has no area and
+  is counted in a note instead; the total is a compensated sum, since
+  plain addition over fifty doubles drifts by more than the smallest
+  slice is wide. Slices run clockwise from 12 o'clock, biggest first,
+  and carry their category, value and percentage in the legend rather
+  than inside the circle
 - `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
   right, reopen the last closed tab. The bulk closes go through
@@ -716,7 +736,12 @@ load, a restored sort kept or dropped by the file's columns), the column profile
 conditions, the partial-list note, a late answer discarded), the SQL chart
 (`features/query`: value parsing at the safe-integer and 15-digit
 boundaries, inference and availability per X type, the point cap over all
-series, exclusion counts by reason, bar geometry; the chart's keyboard
+series, exclusion counts by reason, bar geometry; the pie's conditions
+and its slices (the row counts at 1 / 8 / 9 / 50 / 51, a repeated,
+empty or NULL category, negative and invalid values, zeros, one
+positive value, a truncated result, a total past the safe range, the
+top seven and the Other they feed, a row whose own category reads
+Other) and its wedges from the running total; the chart's keyboard
 walk, legend, tooltip and problem states; `QueryView`'s table-first mode,
 the pick kept across a re-run and dropped on a new SQL, the notice when the
 same SQL loses the pick, a superseded run's answer ignored), its button
@@ -788,7 +813,12 @@ into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
 Purchases), the column profile (S19: values and NULL as conditions, the
 bins of a hundred thousand ids and a drill-down into one, non-finite
-floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; run it under `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
+floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; S20-pie: the kind picked by hand
+because it is never inferred, eight slices and the ninth folded into
+Other with its breakdown and its own colour, forty-three rows behind
+one slice, a zero counted and a single value as a circle, and every
+condition that refuses the kind named on its button; run both under
+`csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

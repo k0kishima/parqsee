@@ -161,6 +161,9 @@ export function PieChart({ data, xName }: PieChartProps) {
             <li key={slice.id}>
               <button
                 type="button"
+                data-slice-legend={slice.id}
+                // The row is one line: a long category is cut, and the title is where it can still be read.
+                title={describe(slice)}
                 aria-pressed={slice.id === selectedId}
                 onClick={() => { setSelectedId(slice.id); setTooltipAt(null); }}
                 className="w-full inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-left hover:bg-tertiary focus:outline-none focus:ring-1 focus:ring-blue-500 aria-pressed:font-semibold"

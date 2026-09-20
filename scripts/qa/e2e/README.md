@@ -192,11 +192,15 @@ to the harness.
   usual reason a "fix" does not show up here.
 - `cargo test` / `pnpm tauri build` and the bridge build share the target
   directory lock; don't run them concurrently.
-- The SQL view's chart (S20) is inline SVG whose fills are `var(--chart-series-n)`
+- The SQL view's charts (S20, S20-pie) are inline SVG whose fills are
+  `var(--chart-series-n)` and `var(--chart-other)`
   tokens; the checks read them back through `getComputedStyle`, so a theme
-  is set through `localStorage` at launch, not toggled mid-run. Run S20
+  is set through `localStorage` at launch, not toggled mid-run. Run them
   under `csp-server` as well: an inline `<style>` or a `data:` image in a
   chart would pass on the dev server and break the release build.
+  A pie is never inferred, so S20-pie clicks Pie after every run — and a
+  wedge's bounding box is most of the circle, so the pointer checks aim
+  at a quadrant the slice covers rather than hovering the element.
 
 ### Exploratory regressions (S15–S18)
 

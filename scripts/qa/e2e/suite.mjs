@@ -1335,7 +1335,7 @@ await scenario('S20-chart', async ({ page }) => {
   await c.svg().waitFor();
   check('S20.bar', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await c.marks().count()) === 4 && await c.pressed(c.kindGroup().getByRole('button', { name: 'Bar', exact: true })),
     `kind=${await c.svg().getAttribute('data-chart-kind')} marks=${await c.marks().count()}`);
-  check('S20.onlyBar', (await c.kindGroup().getByRole('button').count()) === 1, `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
+  check('S20.implementedKinds', (await c.kindGroup().getByRole('button').allTextContents()).join('|') === 'Bar|Pie', `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
   const legend = await act(page).getByRole('button', { name: /^Series details:/ }).allTextContents();
   check('S20.legend', legend.join('|') === '#1 y1|#2 y2', legend.join('|'));
   // The negative bar hangs from the baseline: its top is the baseline line's y.
@@ -1420,6 +1420,132 @@ await scenario('S20-chart-ja-dark', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   check('S20ja.detail', (await c.detailText()) === '#1 y、1 行目。x: あ、y: 1', await c.detailText());
   await screenshot(page, { path: `${OUT}/shots/S20-ja-dark.png` });
+}, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
+
+// ---------------------------------------------------------------- S20-pie the pie chart
+// A pie is never inferred — nothing in a column's type says its values
+// are shares of a whole — so every check here picks the kind by hand.
+// The rows are built in the query, so the shares are exactly what the
+// SQL says and nothing depends on a fixture's contents.
+const pieRows = (n) => `SELECT * FROM (VALUES ${Array.from({ length: n }, (_, i) => `('c${i}', ${i + 1})`).join(', ')}) AS v(x, y)`;
+
+await scenario('S20-pie', async ({ page }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  const c = chartSql(page);
+  const pieButton = () => c.kindGroup().getByRole('button', { name: 'Pie', exact: true });
+  const chart = async (sql) => {
+    await c.run(sql);
+    await c.modeGroup().getByRole('button', { name: 'Chart', exact: true }).click();
+  };
+  const pickPie = async () => { await pieButton().click(); await act(page).locator('svg[data-chart-kind="pie"]').waitFor(); };
+  const ids = () => c.marks().evaluateAll(els => els.map(el => el.getAttribute('data-slice-id')));
+  const legend = () => act(page).locator('[data-slice-legend]').allTextContents();
+  const note = (pattern) => act(page).locator(`text=${pattern}`).first().textContent().catch(() => 'none');
+
+  await chart(`SELECT * FROM (VALUES ('A', 3), ('B', 1)) AS v(x, y)`);
+  check('S20pie.notInferred', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await pieButton().getAttribute('aria-disabled')) === 'false',
+    `kind=${await c.svg().getAttribute('data-chart-kind')} pieDisabled=${await pieButton().getAttribute('aria-disabled')}`);
+
+  await pickPie();
+  check('S20pie.slices', (await ids()).join('|') === '0|1' && (await legend()).join('|') === 'A: 3 (75.0%)|B: 1 (25.0%)',
+    `ids=${(await ids()).join('|')} legend=${(await legend()).join('|')}`);
+  check('S20pie.fillLight', (await c.fillOf(c.marks().first())) === 'rgb(42, 120, 214)', await c.fillOf(c.marks().first()));
+  check('S20pie.aria', ((await act(page).getByRole('img').getAttribute('aria-label')) ?? '') === 'Pie chart; X: x; series: 1; points: 2', await act(page).getByRole('img').getAttribute('aria-label'));
+
+  // The keyboard walks the slices from the one details box, biggest first.
+  await c.detail().focus();
+  await page.keyboard.press('ArrowRight');
+  check('S20pie.detailFirst', (await c.detailText()) === 'A: 3 (75.0%)', await c.detailText());
+  await page.keyboard.press('End');
+  check('S20pie.detailLast', (await c.detailText()) === 'B: 1 (25.0%)' && (await act(page).locator('[data-mark][data-selected]').getAttribute('data-slice-id')) === '1', await c.detailText());
+  // A wedge's bounding box is most of the circle, so the pointer is aimed
+  // at a quadrant the slice actually covers: the first runs clockwise from
+  // 12 o'clock, so up and to the right is inside it.
+  const circle = await c.svg().boundingBox();
+  await page.mouse.move(circle.x + circle.width * 0.7, circle.y + circle.height * 0.3);
+  await page.waitForTimeout(100);
+  check('S20pie.tooltip', (await act(page).getByRole('tooltip').textContent()) === 'A: 3 (75.0%)', await act(page).getByRole('tooltip').textContent().catch(() => 'none'));
+  await screenshot(page, { path: `${OUT}/shots/S20-pie.png` });
+
+  // Eight categories each keep their own slice.
+  await chart(pieRows(8));
+  await pickPie();
+  check('S20pie.eight', (await ids()).join('|') === '7|6|5|4|3|2|1|0', (await ids()).join('|'));
+
+  // The ninth pushes the tail into Other: a grey slice, last, that still
+  // names the rows it swallowed and sums them exactly (1 + 2 of 45).
+  await chart(pieRows(9));
+  await pickPie();
+  const nine = await ids();
+  check('S20pie.other', nine.length === 8 && nine[7] === 'other' && (await c.fillOf(c.marks().nth(7))) === 'rgb(138, 148, 166)',
+    `ids=${nine.join('|')} fill=${await c.fillOf(c.marks().nth(7))}`);
+  check('S20pie.otherLegend', (await legend())[7] === 'Other (combined): 3 (6.7%)', (await legend())[7]);
+  await screenshot(page, { path: `${OUT}/shots/S20-pie-other.png` });
+  await c.detail().focus();
+  await page.keyboard.press('End');
+  check('S20pie.otherDetail', (await c.detailText()) === 'Other (combined): 3 (6.7%) · Combines 2 rows · c1: 2 (4.4%) · c0: 1 (2.2%)', await c.detailText());
+
+  // Fifty rows still draw eight slices, the last standing for forty-three.
+  await chart(pieRows(50));
+  await pickPie();
+  const fifty = await ids();
+  check('S20pie.fifty', fifty.length === 8 && fifty[7] === 'other', fifty.join('|'));
+  await c.detail().focus();
+  await page.keyboard.press('End');
+  check('S20pie.fortyThree', (await c.detailText()).includes('Combines 43 rows') && (await c.detailText()).includes('c0: 1 (0.1%)'), await c.detailText());
+
+  // A zero has no area: counted above the plot, not drawn. One positive
+  // value left is the whole circle, drawn as a circle.
+  await chart(`SELECT * FROM (VALUES ('a', 3), ('b', 0)) AS v(x, y)`);
+  await pickPie();
+  check('S20pie.zero', (await c.marks().count()) === 1 && (await c.marks().first().evaluate(el => el.tagName)) === 'circle' && (await note('/Zero, so not drawn/')) === 'Zero, so not drawn: 1',
+    `marks=${await c.marks().count()} note=${await note('/Zero, so not drawn/')}`);
+  check('S20pie.approximate', (await act(page).locator('text=/The total and the percentages/').count()) === 0, 'an integer total is exact');
+  await chart(`SELECT * FROM (VALUES ('a', 1.5), ('b', 2.5)) AS v(x, y)`);
+  await pickPie();
+  check('S20pie.approximateFloat', (await note('/The total and the percentages/')) === 'The total and the percentages are approximate.', await note('/The total and the percentages/'));
+
+  // Everything that is not a whole refuses the kind, and says which
+  // condition failed. A truncated result is never among them: it has the
+  // view's ten thousand rows, so the row limit answers first.
+  const refusals = [
+    ['twoSeries', `SELECT * FROM (VALUES ('a', 1, 2)) AS v(x, y, z)`, 'Requires exactly one numeric column after the first.'],
+    ['negative', `SELECT * FROM (VALUES ('a', 1), ('b', -1)) AS v(x, y)`, 'Requires a valid, non-negative value in every row, and at least one above zero.'],
+    ['allZero', `SELECT * FROM (VALUES ('a', 0), ('b', 0)) AS v(x, y)`, 'Requires a valid, non-negative value in every row, and at least one above zero.'],
+    ['nullValue', `SELECT * FROM (VALUES ('a', 1), ('b', CAST(NULL AS INT))) AS v(x, y)`, 'Requires a valid, non-negative value in every row, and at least one above zero.'],
+    ['duplicate', `SELECT * FROM (VALUES ('a', 1), ('a', 2)) AS v(x, y)`, 'Requires a first column with no NULL and no repeated value. Use GROUP BY.'],
+    ['nullCategory', `SELECT * FROM (VALUES ('a', 1), (CAST(NULL AS VARCHAR), 2)) AS v(x, y)`, 'Requires a first column with no NULL and no repeated value. Use GROUP BY.'],
+    ['tooManyRows', pieRows(51), 'Requires 1 to 50 rows. Group the rest in SQL.'],
+    ['numericX', `SELECT id AS x, id AS y FROM t LIMIT 3`, 'Requires a text or boolean first column.'],
+  ];
+  for (const [name, sql, reason] of refusals) {
+    await chart(sql);
+    const title = await pieButton().getAttribute('title');
+    check(`S20pie.refuse.${name}`, (await pieButton().getAttribute('aria-disabled')) === 'true' && title === reason, `disabled=${await pieButton().getAttribute('aria-disabled')} title=${title}`);
+  }
+  // The reason is on the button, not only in its tooltip, so a screen reader reaches it.
+  check('S20pie.refuseSpoken', (await act(page).locator('#chart-kind-pie-reason').textContent()) === 'Requires a text or boolean first column.', await act(page).locator('#chart-kind-pie-reason').textContent().catch(() => 'none'));
+});
+
+await scenario('S20-pie-ja-dark', async ({ page }) => {
+  await openFile(page, `${FIX}/dict.parquet`);
+  await act(page).locator('button:has-text("クエリ")').click();
+  const c = chartSql(page);
+  await c.ta.fill(`SELECT * FROM (VALUES ('あ', 3), ('い', 1)) AS v(x, y)`);
+  await act(page).locator('button:has-text("実行")').click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('span')].some(s => s.textContent === 'クエリ実行中...'));
+  await act(page).getByRole('group', { name: '結果の表示' }).getByRole('button', { name: 'グラフ', exact: true }).click();
+  await act(page).getByRole('group', { name: 'グラフの種類' }).getByRole('button', { name: '円', exact: true }).click();
+  await act(page).locator('svg[data-chart-kind="pie"]').waitFor();
+  check('S20pieJa.legend', (await act(page).locator('[data-slice-legend]').allTextContents()).join('|') === 'あ: 3（75.0%）|い: 1（25.0%）',
+    (await act(page).locator('[data-slice-legend]').allTextContents()).join('|'));
+  check('S20pieJa.fillDark', (await c.fillOf(c.marks().first())) === 'rgb(57, 135, 229)', await c.fillOf(c.marks().first()));
+  check('S20pieJa.aria', ((await act(page).getByRole('img').getAttribute('aria-label')) ?? '') === '円グラフ。X: x、系列数: 1、点数: 2', await act(page).getByRole('img').getAttribute('aria-label'));
+  await c.detail().focus();
+  await page.keyboard.press('ArrowRight');
+  check('S20pieJa.detail', (await c.detailText()) === 'あ: 3（75.0%）', await c.detailText());
+  await screenshot(page, { path: `${OUT}/shots/S20-pie-ja-dark.png` });
 }, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
 
 // ---------------------------------------------------------------- S21 column sort
