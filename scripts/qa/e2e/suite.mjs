@@ -275,6 +275,9 @@ await scenario('S3-filter', async ({ page }) => {
   check('S3.quoteName', (await footer(page)).includes('of 1 '), `"qu\\"ote" = 1: ${await footer(page)} err=${await dataError(page)}`);
   await setRow(0, 'MixedCase', '=', '1'); await apply();
   check('S3.mixedCase', (await footer(page)).includes('of 1 '), `MixedCase = 1: ${await footer(page)} err=${await dataError(page)}`);
+  // A column with an empty name cannot be picked apart from the "pick a
+  // column" placeholder — both are the select's empty value, which is also
+  // what an unfilled row carries. Nothing is applied either way.
   await setRow(0, '', '=', '1'); await apply();
   report('S3.emptyName', 'OBSERVE', `"" = 1: ${await footer(page)} err=${await dataError(page)}`);
   await setRow(0, 'select', '=', '1'); await apply();

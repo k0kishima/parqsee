@@ -95,6 +95,7 @@
         "restoredFilter": "Restored filter",
         "filter": "Filter",
         "filterPlaceholder": "WHERE clause (e.g. id > 5)",
+        "filterColumnPlaceholder": "Column...",
         "filterValuePlaceholder": "Value...",
         "summary": "{{rows}} rows × {{columns}} columns",
         "tabs": {
