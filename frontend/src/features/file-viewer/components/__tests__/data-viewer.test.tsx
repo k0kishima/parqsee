@@ -21,12 +21,10 @@ vi.mock('../../api', () => ({
     mockEvictCache(...args).catch((err: unknown) => console.error('Failed to evict cache:', err)),
 }));
 
-vi.mock('../../../../contexts/SettingsContext', () => ({
-  useSettings: () => ({
-    settings: { rowsPerPage: 50, typeDisplay: 'logical', rowDensity: 'comfortable' },
-    updateSettings: vi.fn(),
-  }),
-}));
+vi.mock('../../../../contexts/SettingsContext', async () => {
+  const { TEST_SETTINGS } = await import('../../../../test/settings');
+  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: vi.fn() }) };
+});
 
 const metadata = {
   num_rows: 100,
