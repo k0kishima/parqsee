@@ -114,6 +114,22 @@ impl Default for ParquetCache {
     }
 }
 
+/// A cached value for `path`, cloned out from under the lock. Both fills
+/// look twice — once before taking the path's gate and once after, because
+/// a concurrent miss may have finished while this call waited for it — so
+/// the lookup is written here rather than four times over.
+fn cached<T: Clone>(cache: &Mutex<HashMap<String, T>>, path: &str) -> Result<Option<T>, String> {
+    let cache = cache.lock().map_err(|e| e.to_string())?;
+    Ok(cache.get(path).cloned())
+}
+
+/// Put a filled value in, under the same lock discipline.
+fn store<T>(cache: &Mutex<HashMap<String, T>>, path: &str, value: T) -> Result<(), String> {
+    let mut cache = cache.lock().map_err(|e| e.to_string())?;
+    cache.insert(path.to_string(), value);
+    Ok(())
+}
+
 impl ParquetCache {
     /// A cache with no bookmarks and nothing persisted (the bridge, tests).
     pub fn new() -> Self {
@@ -193,22 +209,16 @@ impl ParquetCache {
         // Check cache first. A hit may proceed while an already-started query
         // still uses that context; eviction only guarantees later creations
         // cannot repopulate the cache with an older context.
-        {
-            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            if let Some(ctx) = sessions.get(path) {
-                return Ok(ctx.clone());
-            }
+        if let Some(ctx) = cached(&self.sessions, path)? {
+            return Ok(ctx);
         }
 
         let gate = self.session_gate(path)?;
         let _gate = gate.lock().await;
 
         // A concurrent miss may have completed while this call waited.
-        {
-            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            if let Some(ctx) = sessions.get(path) {
-                return Ok(ctx.clone());
-            }
+        if let Some(ctx) = cached(&self.sessions, path)? {
+            return Ok(ctx);
         }
 
         // Create the session and register the parquet file. Single partition,
@@ -247,11 +257,7 @@ impl ParquetCache {
             return Err(e);
         }
 
-        // Store in cache
-        {
-            let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            sessions.insert(path.to_string(), ctx.clone());
-        }
+        store(&self.sessions, path, ctx.clone())?;
 
         Ok(ctx)
     }
@@ -271,22 +277,16 @@ impl ParquetCache {
         F: FnOnce() -> Result<ParquetMetadata, String>,
     {
         // Check cache first
-        {
-            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            if let Some(meta) = metadata_cache.get(path) {
-                return Ok(meta.clone());
-            }
+        if let Some(meta) = cached(&self.metadata, path)? {
+            return Ok(meta);
         }
 
         let gate = self.metadata_gate(path)?;
         let _gate = gate.lock().await;
 
         // A concurrent miss may have completed while this call waited.
-        {
-            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            if let Some(meta) = metadata_cache.get(path) {
-                return Ok(meta.clone());
-            }
+        if let Some(meta) = cached(&self.metadata, path)? {
+            return Ok(meta);
         }
 
         self.access.acquire(path)?;
@@ -298,11 +298,7 @@ impl ParquetCache {
             }
         };
 
-        // Store in cache
-        {
-            let mut metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            metadata_cache.insert(path.to_string(), meta.clone());
-        }
+        store(&self.metadata, path, meta.clone())?;
 
         Ok(meta)
     }
