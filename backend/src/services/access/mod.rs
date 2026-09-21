@@ -354,8 +354,9 @@ impl FileAccess {
     }
 
     /// Whether the file at `path` can be reached: its bookmark, when one is
-    /// recorded and not held, must resolve to the same path, and the file
-    /// must exist. Under the sandbox `exists` alone says nothing — `stat`
+    /// recorded and not held, must resolve to the same file (see
+    /// [`same_file`] — it resolves to the canonical path, which is not
+    /// always the one recorded), and the file must exist. Under the sandbox `exists` alone says nothing — `stat`
     /// succeeds on paths the app cannot open — so the bookmark decides. A
     /// grant taken for the probe ends with it.
     ///
