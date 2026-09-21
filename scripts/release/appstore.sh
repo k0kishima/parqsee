@@ -61,15 +61,7 @@ set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-
-usage() {
-  sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
-}
-
-die() {
-  echo "appstore.sh: $*" >&2
-  exit 1
-}
+. "$HERE/_lib.sh"
 
 TARGET=universal-apple-darwin
 UNSIGNED=0
@@ -118,15 +110,9 @@ if [ "$UNSIGNED" = 0 ]; then
 fi
 if [ "$VALIDATE" = 1 ]; then
   [ "$UNSIGNED" = 0 ] || die "App Store Connect takes signed packages only; --validate / --upload cannot be combined with --unsigned"
-  : "${APPLE_API_KEY:?set APPLE_API_KEY (App Store Connect API key id) for --validate / --upload}"
-  : "${APPLE_API_ISSUER:?set APPLE_API_ISSUER (the issuer id of the key) for --validate / --upload}"
-  if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
-    [ -f "$APPLE_API_KEY_PATH" ] || die "no API key file at $APPLE_API_KEY_PATH"
-  fi
+  need_api_key " for --validate / --upload"
 fi
-for tool in productbuild plutil; do
-  command -v "$tool" >/dev/null 2>&1 || die "$tool not found; this script runs on macOS with Xcode"
-done
+need_tools productbuild plutil
 
 # 1. Build.
 if [ -z "$APP" ]; then

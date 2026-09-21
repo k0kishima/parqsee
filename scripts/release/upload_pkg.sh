@@ -27,14 +27,7 @@
 # if altool is ever retired — this file is the one place to change then.
 set -eu
 
-usage() {
-  sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
-}
-
-die() {
-  echo "upload_pkg.sh: $*" >&2
-  exit 1
-}
+. "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
 
 VALIDATE_ONLY=0
 PKG=
@@ -51,14 +44,8 @@ done
 [ -n "$PKG" ] || die "which package? (see --help)"
 [ -f "$PKG" ] || die "no package at $PKG"
 
-: "${APPLE_API_KEY:?set APPLE_API_KEY (App Store Connect API key id)}"
-: "${APPLE_API_ISSUER:?set APPLE_API_ISSUER (the issuer id of the key)}"
-if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
-  [ -f "$APPLE_API_KEY_PATH" ] || die "no API key file at $APPLE_API_KEY_PATH"
-fi
-for tool in pkgutil xcrun; do
-  command -v "$tool" >/dev/null 2>&1 || die "$tool not found; this script runs on macOS with Xcode"
-done
+need_api_key ""
+need_tools pkgutil xcrun
 
 if ! SIGNATURE=$(pkgutil --check-signature "$PKG" 2>&1); then
   printf '%s\n' "$SIGNATURE" >&2
