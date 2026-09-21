@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::{Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::MemTable;
-use datafusion::prelude::SessionContext;
+use datafusion::prelude::{SessionConfig, SessionContext};
 
 /// The most one result may weigh and still be kept. A wide `SELECT *` of
 /// ten thousand rows over a file of several hundred columns is tens of
@@ -126,6 +126,15 @@ impl QueryResults {
     /// A session with the result registered as table `t`, for the same SQL
     /// a file's profile runs. Built per call: registering a `MemTable` is
     /// an `Arc` clone, unlike opening a parquet file.
+    ///
+    /// Single-partition, as a file's session is and for the same reason:
+    /// narrowing is `SELECT * FROM t WHERE …` with no `ORDER BY`, and the
+    /// rows must come back in the order the grid already shows them — a
+    /// filter is not a sort. With the default partitioning DataFusion
+    /// deals the kept batches out round-robin and reads the partitions
+    /// back one after another, so batch 4 would follow batch 0 on a
+    /// four-core machine. The same setting keeps a file's pages in file
+    /// order (`ParquetCache::get_or_create_session`).
     pub fn session(&self, id: &str) -> Result<SessionContext, String> {
         let held = self.kept.lock().unwrap();
         let kept = held
@@ -133,7 +142,8 @@ impl QueryResults {
             .ok_or_else(|| "This result is no longer available. Run the query again.".to_string())?;
         let table = MemTable::try_new(kept.schema.clone(), vec![kept.batches.clone()])
             .map_err(|e| format!("Failed to read the result: {e}"))?;
-        let ctx = SessionContext::new();
+        let config = SessionConfig::new().with_target_partitions(1);
+        let ctx = SessionContext::new_with_config(config);
         ctx.register_table("t", Arc::new(table))
             .map_err(|e| format!("Failed to read the result: {e}"))?;
         Ok(ctx)
@@ -258,6 +268,53 @@ mod tests {
         assert_eq!(count(&store, &id, "SELECT COUNT(DISTINCT c1) FROM t").await, 3);
         let ctx = store.session(&id).unwrap();
         assert!(ctx.sql("SELECT id FROM t").await.is_err(), "the original names are not what the result is addressed by");
+    }
+
+    /// Narrowing must not reorder. The grid shows the rows in the order
+    /// the query returned them, and a bar that kept a third of them has to
+    /// leave those in that order — a filter is not a sort. DataFusion's
+    /// default session would split a single-partition table round-robin
+    /// for a filter and merge the partitions back in whatever order they
+    /// finish, so the result's session runs single-partition like a
+    /// file's does.
+    // A multi-thread runtime, like the app's: on a single thread the
+    // partitions of an unfixed session happen to finish in order.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn narrowing_keeps_the_rows_in_the_order_the_query_returned_them() {
+        let store = QueryResults::new();
+        // A query's rows arrive in many batches, and it is batches that a
+        // repartition deals out round-robin: more of them than any machine
+        // has cores, or the partitions would each hold one and be read
+        // back in order by luck.
+        let (_, schema) = twins(1);
+        let batches: Vec<RecordBatch> = (0..200)
+            .map(|i| {
+                let start = i * 250;
+                RecordBatch::try_new(
+                    schema.clone(),
+                    vec![
+                        Arc::new(Int64Array::from((start..start + 250).collect::<Vec<_>>())) as ArrayRef,
+                        Arc::new(StringArray::from((start..start + 250).map(|n| format!("n{n}")).collect::<Vec<_>>())) as ArrayRef,
+                    ],
+                )
+                .unwrap()
+            })
+            .collect();
+        let id = store.keep(&batches, &schema).unwrap();
+        let ctx = store.session(&id).unwrap();
+        let kept = ctx
+            .sql("SELECT c0 FROM t WHERE c0 % 3 = 0")
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let ids: Vec<i64> = kept
+            .iter()
+            .flat_map(|b| b.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec())
+            .collect();
+        assert_eq!(ids.len(), 16_667);
+        assert!(ids.windows(2).all(|w| w[0] < w[1]), "the narrowed rows came back out of order");
     }
 
     #[tokio::test]

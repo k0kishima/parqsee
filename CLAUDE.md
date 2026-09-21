@@ -255,7 +255,14 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   and never rewrites the SQL, which would also mean running it again and
   answering differently for a query that is not deterministic; the
   conditions are named above the grid, and the grid, the chart and the
-  row count are all of the narrowed rows. Columns are addressed by
+  row count are all of the narrowed rows. The result's session runs
+  single-partition like a file's, and for the same reason: the narrowing
+  query has no `ORDER BY`, and with the default partitioning DataFusion
+  deals the kept batches out across partitions and merges them back in
+  arrival order, so the rows would come back shuffled on the app's
+  multi-thread runtime (`narrowing_keeps_the_rows_in_the_order_the_query_returned_them`
+  pins this, on a multi-thread test runtime — a single thread finishes
+  the partitions in order and hides it). Columns are addressed by
   position on both sides (`column_alias` / `columnAlias`): two columns of
   one result may share a name, and an expression's name is not an
   identifier. A new result drops the panel and the conditions, and the

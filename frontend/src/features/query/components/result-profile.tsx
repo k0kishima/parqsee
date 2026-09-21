@@ -53,10 +53,13 @@ export function ResultProfilePanel({
     const applied = conditions.flatMap(condition => {
       // A click always means the value it landed on, empty string included.
       const sql = conditionSql({ ...condition, kind: kind.current, explicitValue: true });
+      // The chip reads like the panel's bar: an empty value is shown as
+      // "" rather than as nothing after the operator.
+      const shown = condition.value.trim() === '' ? JSON.stringify(condition.value) : condition.value;
       return sql === null ? [] : [{
         columnIndex,
         operator: condition.operator,
-        label: `${column.name} ${condition.operator}${condition.operator === 'IS NULL' ? '' : ` ${condition.value}`}`,
+        label: `${column.name} ${condition.operator}${condition.operator === 'IS NULL' ? '' : ` ${shown}`}`,
         sql,
       }];
     });
