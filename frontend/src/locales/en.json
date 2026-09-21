@@ -85,6 +85,7 @@
         "loading": "Loading data...",
         "error": "Error Loading File",
         "dataError": "The condition could not be run. The previous result is still shown.",
+        "loadError": "The rows could not be loaded. The previous result is still shown.",
     "filterDropped": "The condition could not be run. It was dropped, and the file is shown without it.",
         "pagination": {
             "showing": "Showing {{start}} to {{end}} of {{total}} entries",
