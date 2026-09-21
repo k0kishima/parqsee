@@ -60,6 +60,10 @@ impl Default for Caps {
 struct Kept {
     batches: Vec<RecordBatch>,
     schema: SchemaRef,
+    /// What the grid calls each column, in the order the result has them.
+    /// The schema above renamed them to their positions, and this is what
+    /// the panel puts in its title.
+    names: Vec<String>,
     bytes: usize,
     /// When it was kept, so the oldest goes first when the caps are reached.
     sequence: u64,
@@ -109,7 +113,8 @@ impl QueryResults {
         let mut sequence = self.next.lock().unwrap();
         *sequence += 1;
         let id = format!("r{}", *sequence);
-        let kept = Kept { batches: renamed, schema: aliased, bytes, sequence: *sequence };
+        let names = schema.fields().iter().map(|f| f.name().clone()).collect();
+        let kept = Kept { batches: renamed, schema: aliased, names, bytes, sequence: *sequence };
         drop(sequence);
 
         let mut held = self.kept.lock().unwrap();
@@ -132,6 +137,21 @@ impl QueryResults {
         ctx.register_table("t", Arc::new(table))
             .map_err(|e| format!("Failed to read the result: {e}"))?;
         Ok(ctx)
+    }
+
+    /// The name the grid shows for column `index`, and the type its values
+    /// have — what a profile needs before it can choose a chart for them.
+    pub fn column(&self, id: &str, index: usize) -> Result<(String, arrow::datatypes::DataType), String> {
+        let held = self.kept.lock().unwrap();
+        let kept = held
+            .get(id)
+            .ok_or_else(|| "This result is no longer available. Run the query again.".to_string())?;
+        let field = kept
+            .schema
+            .fields()
+            .get(index)
+            .ok_or_else(|| format!("This result has no column at position {index}"))?;
+        Ok((kept.names[index].clone(), field.data_type().clone()))
     }
 
     /// Let go of a result the webview will not ask about again: a query

@@ -120,6 +120,35 @@ fn count_of(row: &Value, key: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("The profile query returned no {} column", key))
 }
 
+/// A result column's kind, from the type DataFusion planned for it. The
+/// file's own kinds are read from the parquet schema (`column_kind`),
+/// which a query result does not have: an expression's type is decided by
+/// the plan, and a CAST changes it.
+///
+/// A dictionary column is `Other` — counts, no chart. Its values would
+/// reach the panel through the same JSON rendering the SQL view already
+/// declines to trust for a dictionary (see `chart_type_of`), and a chart
+/// of values is exactly what that would show.
+pub fn column_kind_of(data_type: &DataType) -> ColumnKind {
+    match data_type {
+        DataType::Boolean => ColumnKind::Boolean,
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => ColumnKind::Integer,
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => ColumnKind::Float,
+        DataType::Decimal32(_, _) | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => ColumnKind::Decimal,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => ColumnKind::Text,
+        DataType::Date32 | DataType::Date64 | DataType::Time32(_) | DataType::Time64(_)
+        | DataType::Timestamp(_, _) => ColumnKind::Temporal,
+        DataType::Binary | DataType::LargeBinary | DataType::BinaryView
+        | DataType::FixedSizeBinary(_) => ColumnKind::Binary,
+        DataType::List(_) | DataType::LargeList(_) | DataType::ListView(_)
+        | DataType::LargeListView(_) | DataType::FixedSizeList(_, _)
+        | DataType::Struct(_) | DataType::Map(_, _) | DataType::Union(_, _) => ColumnKind::Nested,
+        _ => ColumnKind::Other,
+    }
+}
+
 /// Profile `column` of the file at `path` over the rows `filter` keeps.
 pub async fn profile_column(
     cache: &ParquetCache,

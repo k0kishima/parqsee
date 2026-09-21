@@ -2,9 +2,10 @@ use arrow::datatypes::DataType;
 use tauri::command;
 
 use crate::commands::guarded;
-use crate::models::{QueryChartType, QueryColumn, QueryResult};
+use crate::models::{ColumnProfile, QueryChartType, QueryColumn, QueryResult};
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
-use crate::services::query_results::QueryResults;
+use crate::services::profile::{column_kind_of, profile, ProfileSource};
+use crate::services::query_results::{column_alias, QueryResults};
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
 /// the JSON round trip both scale with rows x columns; beyond this the UI
@@ -22,6 +23,37 @@ pub async fn execute_sql(
         run_query(&cache, &results, &file_path, &query).await
     })
     .await
+}
+
+/// Profile column `column_index` of a kept result over the rows `filter`
+/// keeps. The rows are the ones the grid has — at most `MAX_QUERY_ROWS`
+/// of them — so a truncated result profiles its first rows and the panel
+/// says so; nothing here re-runs the query.
+#[command]
+pub async fn profile_query_column(
+    results: tauri::State<'_, QueryResults>,
+    result_id: String,
+    column_index: usize,
+    filter: Option<String>,
+) -> Result<ColumnProfile, String> {
+    guarded("The column profile", async {
+        run_profile_query_column(&results, &result_id, column_index, filter).await
+    })
+    .await
+}
+
+/// The profile of a result column, minus the Tauri plumbing, so the E2E
+/// bridge runs exactly what the command runs.
+pub async fn run_profile_query_column(
+    results: &QueryResults,
+    result_id: &str,
+    column_index: usize,
+    filter: Option<String>,
+) -> Result<ColumnProfile, String> {
+    let (name, data_type) = results.column(result_id, column_index)?;
+    let ctx = results.session(result_id)?;
+    let source = ProfileSource::Result(&ctx);
+    profile(&source, &name, &column_alias(column_index), column_kind_of(&data_type), filter).await
 }
 
 /// Let go of a result the webview will not ask about again. It calls this
@@ -239,5 +271,152 @@ mod tests {
         );
         assert_eq!(json[2]["data_type"], "Decimal128(10, 2)");
         assert_eq!(result.rows[0]["total"], "3.00");
+    }
+
+    /// Every Arrow family a result column can have, so a new one cannot
+    /// reach the profile as `Other` without being named here.
+    #[test]
+    fn a_result_column_kind_is_read_from_the_planned_type() {
+        use crate::models::ColumnKind::*;
+        use arrow::datatypes::TimeUnit;
+        let cases: Vec<(DataType, crate::models::ColumnKind)> = vec![
+            (DataType::Boolean, Boolean),
+            (DataType::Int8, Integer),
+            (DataType::UInt64, Integer),
+            (DataType::Float16, Float),
+            (DataType::Float64, Float),
+            (DataType::Decimal128(38, 2), Decimal),
+            (DataType::Decimal256(60, 2), Decimal),
+            (DataType::Utf8, Text),
+            (DataType::LargeUtf8, Text),
+            (DataType::Utf8View, Text),
+            (DataType::Date32, Temporal),
+            (DataType::Date64, Temporal),
+            (DataType::Time32(TimeUnit::Second), Temporal),
+            (DataType::Time64(TimeUnit::Nanosecond), Temporal),
+            (DataType::Timestamp(TimeUnit::Microsecond, None), Temporal),
+            (DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())), Temporal),
+            (DataType::Binary, Binary),
+            (DataType::FixedSizeBinary(4), Binary),
+            (DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), Nested),
+            (DataType::Struct(vec![Field::new("a", DataType::Int64, true)].into()), Nested),
+            (DataType::Null, Other),
+            (DataType::Duration(TimeUnit::Second), Other),
+            // A dictionary's values would reach the panel through the JSON
+            // rendering the SQL view already declines to trust for one.
+            (DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), Other),
+        ];
+        for (data_type, expected) in cases {
+            assert_eq!(column_kind_of(&data_type), expected, "{data_type}");
+        }
+    }
+
+    /// The whole way round for a result: run a query, keep it, profile a
+    /// column of it by position. The values a profile lists have to be the
+    /// ones the table shows, which is why the rows are kept as Arrow — a
+    /// big integer and a decimal are strings by the time the grid has them.
+    #[tokio::test]
+    async fn a_kept_result_profiles_its_columns_by_position() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("grp", DataType::Utf8, true),
+            Field::new("big", DataType::Int64, true),
+            Field::new("day", DataType::Date32, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("a"), Some("a"), None])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![
+                    9_007_199_254_740_993,
+                    9_007_199_254_740_993,
+                    1,
+                ])),
+                Arc::new(Date32Array::from(vec![19_000, 19_001, 19_002])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("query_profile", "result.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+        let results = QueryResults::new();
+
+        // A column with no name of its own, and a decimal from a CAST.
+        let result = run_query(
+            &cache,
+            &results,
+            &path.to_string_lossy(),
+            "SELECT grp, big * 2, big, CAST(big AS DECIMAL(38, 2)) AS exact, day FROM t ORDER BY day",
+        )
+        .await
+        .unwrap();
+        let id = result.result_id.clone().expect("a small result is kept");
+
+        let first = run_profile_query_column(&results, &id, 0, None).await.unwrap();
+        assert_eq!(first.column, "grp");
+        assert_eq!((first.total_rows, first.null_count, first.distinct_count), (3, 1, Some(1)));
+
+        // The second column is an expression: what DataFusion calls it is
+        // not an identifier, and the profile reaches it by position anyway.
+        let derived = run_profile_query_column(&results, &id, 1, None).await.unwrap();
+        assert!(!derived.column.is_empty() && derived.column != "c1", "{}", derived.column);
+        assert_eq!((derived.kind, derived.total_rows), (crate::models::ColumnKind::Integer, 3));
+
+        // The integer past 2^53 keeps its exact digits, as the grid shows them.
+        let big = run_profile_query_column(&results, &id, 2, None).await.unwrap();
+        assert_eq!(big.kind, crate::models::ColumnKind::Integer);
+        match &big.chart {
+            crate::models::ProfileChart::TopValues { values, .. } => assert!(
+                values.iter().any(|v| v.value == "9007199254740993" && v.count == 2),
+                "{values:?}"
+            ),
+            other => panic!("expected values, got {other:?}"),
+        }
+
+        // A decimal from a CAST is a decimal, not the string the grid holds.
+        let exact = run_profile_query_column(&results, &id, 3, None).await.unwrap();
+        assert_eq!(exact.kind, crate::models::ColumnKind::Decimal);
+
+        // A date is temporal, and the filter narrows the same rows the grid would.
+        let day = run_profile_query_column(&results, &id, 4, None).await.unwrap();
+        assert_eq!(day.kind, crate::models::ColumnKind::Temporal);
+        let narrowed = run_profile_query_column(&results, &id, 4, Some("c4 = '2022-01-08'".into()))
+            .await
+            .unwrap();
+        assert_eq!(narrowed.total_rows, 1);
+    }
+
+    #[tokio::test]
+    async fn a_result_with_no_rows_profiles_as_empty() {
+        let schema = Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, true)]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![1, 2]))]).unwrap();
+        let path = temp_path("query_profile", "empty.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+        let results = QueryResults::new();
+
+        let result = run_query(&cache, &results, &path.to_string_lossy(), "SELECT n FROM t WHERE n > 100")
+            .await
+            .unwrap();
+        let id = result.result_id.clone().unwrap();
+        let profile = run_profile_query_column(&results, &id, 0, None).await.unwrap();
+        assert_eq!((profile.total_rows, profile.null_count, profile.distinct_count), (0, 0, Some(0)));
+    }
+
+    #[tokio::test]
+    async fn profiling_a_released_result_says_to_run_the_query_again() {
+        let schema = Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, true)]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![1]))]).unwrap();
+        let path = temp_path("query_profile", "released.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+        let results = QueryResults::new();
+        let result = run_query(&cache, &results, &path.to_string_lossy(), "SELECT n FROM t").await.unwrap();
+        let id = result.result_id.clone().unwrap();
+        results.release(&id);
+
+        let error = run_profile_query_column(&results, &id, 0, None).await.unwrap_err();
+        assert!(error.contains("Run the query again"), "{error}");
+        let missing = run_profile_query_column(&results, "r999", 0, None).await.unwrap_err();
+        assert!(missing.contains("Run the query again"), "{missing}");
     }
 }

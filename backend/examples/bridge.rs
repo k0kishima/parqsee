@@ -30,7 +30,7 @@
 //! front of the `iap_*` commands when a scenario wants the free tier
 //! (`launch({ iap })` in lib.mjs), so nothing of it reaches this binary.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
-use parqsee_lib::commands::query::run_query;
+use parqsee_lib::commands::query::{run_profile_query_column, run_query};
 use parqsee_lib::services::query_results::QueryResults;
 use parqsee_lib::models::{SessionTabInput, SortSpec};
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
@@ -161,6 +161,19 @@ async fn dispatch(
         }
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
         "execute_sql" => json!(run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?).await?),
+        "profile_query_column" => json!(
+            run_profile_query_column(
+                results,
+                &s(&args, "resultId")?,
+                opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
+                opt_s(&args, "filter"),
+            )
+            .await?
+        ),
+        "release_query_result" => {
+            results.release(&s(&args, "resultId")?);
+            Value::Null
+        }
         // There is no menu bar here, and the webview calls this on every
         // launch; answering keeps the harness's console clean.
         "set_menu_language" => Value::Null,
