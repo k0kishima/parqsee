@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ColumnProfile } from '../bindings/ipc/ColumnProfile';
+import type { ColumnCounts } from '../bindings/ipc/ColumnCounts';
+import type { ProfileChart } from '../bindings/ipc/ProfileChart';
 import type { HistogramBucket } from '../bindings/ipc/HistogramBucket';
 import type { ValueCount } from '../bindings/ipc/ValueCount';
 import { formatCellValue } from '../lib/format';
@@ -37,10 +38,16 @@ export interface ColumnProfileViewProps {
    */
   requestKey: string;
   /**
-   * Ask for the profile. Called once per `requestKey`, with the id the
-   * panel cancels it by if it stops waiting.
+   * Ask for the counts. Called once per `requestKey`, with the id the panel
+   * cancels it by if it stops waiting.
    */
-  load: (requestId: string) => Promise<ColumnProfile>;
+  loadCounts: (requestId: string) => Promise<ColumnCounts>;
+  /**
+   * Ask for the chart those counts call for, under the same id. It is a
+   * second scan, and on a large column a far longer one, which is why the
+   * panel shows the counts without waiting for it.
+   */
+  loadChart: (requestId: string, counts: ColumnCounts) => Promise<ProfileChart>;
   /** A line above the counts: what the profile covers, when that is not all of it. */
   notice?: string | null;
   onClose: () => void;
@@ -134,30 +141,33 @@ export function ColumnProfileView(props: ColumnProfileViewProps) {
   return <ProfileRequest key={props.requestKey} {...props} />;
 }
 
-function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onAddConditions }: ColumnProfileViewProps) {
+function ProfileRequest({ name, typeLabel, columnRef, loadCounts, loadChart, notice, onClose, onAddConditions }: ColumnProfileViewProps) {
   const { t } = useTranslation();
-  const [profile, setProfile] = useState<ColumnProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState<ColumnCounts | null>(null);
+  const [chart, setChart] = useState<ProfileChart | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
 
   useEffect(() => {
     const seq = ++requestSeq.current;
     const requestId = nextProfileRequestId();
-    setLoading(true);
     setError(null);
-    load(requestId).then(
-      result => {
+    // Two scans, shown as they arrive: the counts are the numbers above the
+    // chart and on a large column they land seconds before it does. A panel
+    // that waited for both would show a spinner for the whole of it.
+    void (async () => {
+      try {
+        const counted = await loadCounts(requestId);
         if (seq !== requestSeq.current) return;
-        setProfile(result);
-        setLoading(false);
-      },
-      err => {
+        setCounts(counted);
+        const charted = await loadChart(requestId, counted);
+        if (seq !== requestSeq.current) return;
+        setChart(charted);
+      } catch (err) {
         if (seq !== requestSeq.current) return;
         setError(toErrorMessage(err));
-        setLoading(false);
       }
-    );
+    })();
     // Dropping the answer is not enough: the scan holds memory the next
     // profile needs, so the backend is told the panel has moved on. An id
     // that has already answered cancels nothing.
@@ -187,29 +197,28 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
     ]);
 
   const nullRow = (max: number) =>
-    profile && profile.null_count > 0 ? (
+    counts && counts.null_count > 0 ? (
       <BarRow
         label={<span className="italic text-tertiary">{t('viewer.profile.null')}</span>}
         name={t('viewer.profile.null')}
-        count={profile.null_count}
+        count={counts.null_count}
         max={max}
         action={t('viewer.profile.filterNull')}
         onClick={filterNull}
       />
     ) : null;
 
-  const chart = (() => {
-    if (!profile) return null;
-    const { chart } = profile;
+  const chartBlock = (() => {
+    if (!counts || !chart) return null;
     switch (chart.shape) {
       case 'top_values': {
-        const max = Math.max(profile.null_count, ...chart.values.map(v => v.count));
-        const partial = profile.distinct_count !== null && chart.values.length < profile.distinct_count;
+        const max = Math.max(counts.null_count, ...chart.values.map(v => v.count));
+        const partial = counts.distinct_count !== null && chart.values.length < counts.distinct_count;
         return (
           <>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-tertiary">
               {partial
-                ? t('viewer.profile.topValues', { shown: chart.values.length, distinct: profile.distinct_count?.toLocaleString() })
+                ? t('viewer.profile.topValues', { shown: chart.values.length, distinct: counts.distinct_count?.toLocaleString() })
                 : t('viewer.profile.values')}
             </h3>
             <ul className="space-y-0.5">
@@ -237,7 +246,7 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
         );
       }
       case 'histogram': {
-        const max = Math.max(profile.null_count, ...chart.buckets.map(b => b.count));
+        const max = Math.max(counts.null_count, ...chart.buckets.map(b => b.count));
         return (
           <>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-tertiary">{t('viewer.profile.distribution')}</h3>
@@ -267,7 +276,7 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
       case 'unsupported':
         return (
           <>
-            <ul className="space-y-0.5">{nullRow(profile.total_rows)}</ul>
+            <ul className="space-y-0.5">{nullRow(counts.total_rows)}</ul>
             <p className="text-xs text-tertiary">{t('viewer.profile.noChart')}</p>
           </>
         );
@@ -297,42 +306,54 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {error ? (
+        {error && !counts ? (
           <p role="alert" className="text-xs font-mono break-words text-red-600 dark:text-red-400">{error}</p>
-        ) : loading && !profile ? (
-          <div className="flex items-center gap-2 text-xs text-tertiary">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-            {t('viewer.profile.loading')}
-          </div>
-        ) : profile ? (
-          <div className={`space-y-3 ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
+        ) : counts ? (
+          <div className="space-y-3">
             {notice && <p className="text-xs text-tertiary">{notice}</p>}
             <dl className="space-y-1">
-              <Stat label={t('viewer.profile.rows')} value={profile.total_rows.toLocaleString()} />
+              <Stat label={t('viewer.profile.rows')} value={counts.total_rows.toLocaleString()} />
               <Stat
                 label={t('viewer.profile.nulls')}
-                value={`${profile.null_count.toLocaleString()} ${percent(profile.null_count, profile.total_rows)}`.trim()}
+                value={`${counts.null_count.toLocaleString()} ${percent(counts.null_count, counts.total_rows)}`.trim()}
               />
               <Stat
                 label={t('viewer.profile.distinct')}
                 value={
-                  profile.distinct_count === null
+                  counts.distinct_count === null
                     ? '—'
-                    : profile.distinct_approximate
+                    : counts.distinct_approximate
                       // An estimate that printed like a count would be read
                       // as one; the sign says what it is and the line below
                       // says why there is no exact number.
-                      ? t('viewer.profile.distinctApproximate', { value: profile.distinct_count.toLocaleString() })
-                      : profile.distinct_count.toLocaleString()
+                      ? t('viewer.profile.distinctApproximate', { value: counts.distinct_count.toLocaleString() })
+                      : counts.distinct_count.toLocaleString()
                 }
               />
             </dl>
-            {profile.distinct_approximate && (
+            {counts.distinct_approximate && (
               <p className="text-xs text-tertiary">{t('viewer.profile.distinctEstimated')}</p>
             )}
-            {chart}
+            {/* The chart is the second scan. Until it lands the counts stand
+                on their own, and a failure belongs where the bars would be —
+                the numbers above it are already answered. */}
+            {error ? (
+              <p role="alert" className="text-xs font-mono break-words text-red-600 dark:text-red-400">{error}</p>
+            ) : chart ? (
+              chartBlock
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-tertiary" aria-busy="true">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                {t('viewer.profile.loading')}
+              </div>
+            )}
           </div>
-        ) : null}
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-tertiary">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+            {t('viewer.profile.loading')}
+          </div>
+        )}
       </div>
     </aside>
   );

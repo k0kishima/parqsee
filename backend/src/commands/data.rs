@@ -1,7 +1,7 @@
 use crate::commands::guarded;
 use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
-use crate::models::{ColumnProfile, SortSpec};
+use crate::models::{ColumnCounts, ProfileChart, SortSpec};
 use crate::services::profile_requests::ProfileRequests;
 use crate::services::{export, parquet, profile};
 use std::sync::Arc;
@@ -36,21 +36,47 @@ pub async fn count_parquet_data(
     .await
 }
 
-/// The column profile for the panel beside the grid; `filter` is the
-/// grid's `WHERE` fragment, so the panel describes the rows on screen.
-/// `request_id` is what `cancel_profile` ends this scan by.
+/// The counts above the panel's chart; `filter` is the grid's `WHERE`
+/// fragment, so the panel describes the rows on screen. `request_id` is what
+/// `cancel_profile` ends this scan by.
+///
+/// The counts and the chart are separate commands because they are separate
+/// scans: on a large column the counts land in a second or two while the
+/// chart takes far longer, and a panel that waited for both would show
+/// nothing in the meantime.
 #[tauri::command]
-pub async fn profile_column(
+pub async fn profile_column_counts(
     cache: tauri::State<'_, ParquetCache>,
     requests: tauri::State<'_, ProfileRequests>,
     path: String,
     column: String,
     filter: Option<String>,
     request_id: Option<String>,
-) -> Result<ColumnProfile, String> {
-    guarded("Profiling the column", async {
+) -> Result<ColumnCounts, String> {
+    guarded("Counting the column", async {
         requests
-            .run(request_id, profile::profile_column(&cache, &path, &column, filter))
+            .run(request_id, profile::column_counts(&cache, &path, &column, filter))
+            .await
+    })
+    .await
+}
+
+/// The panel's chart of the same column and rows. Which chart it is was
+/// decided by the counts, so they come back in rather than being counted
+/// again.
+#[tauri::command]
+pub async fn profile_column_chart(
+    cache: tauri::State<'_, ParquetCache>,
+    requests: tauri::State<'_, ProfileRequests>,
+    path: String,
+    column: String,
+    filter: Option<String>,
+    counts: ColumnCounts,
+    request_id: Option<String>,
+) -> Result<ProfileChart, String> {
+    guarded("Charting the column", async {
+        requests
+            .run(request_id, profile::column_chart(&cache, &path, &column, filter, &counts))
             .await
     })
     .await

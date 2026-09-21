@@ -1199,14 +1199,14 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   const waitFirstBar = (label, timeout = 60000) => page.waitForFunction(
     ([sel, want]) => document.querySelector(sel)?.getAttribute('aria-label') === want, [PANEL_BARS, label], { timeout }
   );
-  const profiled = (col, filter) => bridge.log.some(l => l.cmd === 'profile_column' && l.args.column === col && (filter === undefined ? l.args.filter == null : l.args.filter === filter));
+  const profiled = (col, filter) => bridge.log.some(l => l.cmd === 'profile_column_counts' && l.args.column === col && (filter === undefined ? l.args.filter == null : l.args.filter === filter));
   const filterInputs = () => act(page).locator('form input[type=text]');
 
   // Every value of a small text column, NULL included, commonest first.
   await openFile(page, `${FIX}/dict.parquet`);
   await profileButton('cat').click();
   await waitBars('a: 2|b: 1|c: 1|NULL: 1');
-  check('S19.values', profiled('cat'), `profile_column calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args))}`);
+  check('S19.values', profiled('cat'), `profile_column_counts calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column_counts').map(l => l.args))}`);
   const stats = await panel().locator('dd').allTextContents();
   check('S19.stats', stats.join('|') === '5|1 20%|3', stats.join('|'));
   check('S19.headerMarked', await profileButton('cat').getAttribute('aria-pressed') === 'true');
@@ -1218,7 +1218,7 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   check('S19.valueFilter', (await footer(page)) === 'Showing 1 to 2 of 2 entries' && await filterInputs().first().inputValue() === 'a', `footer=${await footer(page)} value=${await filterInputs().first().inputValue()}`);
   check('S19.valueClosesPanel', (await panel().count()) === 0 && await profileButton('cat').getAttribute('aria-pressed') === 'false', `panels=${await panel().count()}`);
   check('S19.valueFocused', await page.evaluate(() => document.activeElement instanceof HTMLInputElement && document.activeElement.value), await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
-  check('S19.notReprofiled', !profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.filter))}`);
+  check('S19.notReprofiled', !profiled('cat', `"cat" = 'a'`), `calls=${JSON.stringify(bridge.log.filter(l => l.cmd === 'profile_column_counts').map(l => l.args.filter))}`);
   // A restored predicate must survive a click on another column's chart.
   await page.waitForTimeout(600);
   await page.reload();
@@ -1244,19 +1244,19 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   // The header button toggles; another column's button switches.
   await profileButton('cat').click();
   await waitBars('a: 2|b: 1|c: 1|NULL: 1');
-  await page.evaluate(() => { window.__delays.profile_column = 600; });
+  await page.evaluate(() => { window.__delays.profile_column_counts = 600; });
   await profileButton('n').click();
   check('S19.noStaleBars', (await bars()).length === 0, 'old column bars are not clickable while the new request is pending');
   // Dropping the answer is not enough: a profile is a scan that reserves
   // memory the next one needs, so the superseded request is cancelled in
   // the backend by the id it was asked with.
-  const requestOf = (col) => bridge.log.filter(l => l.cmd === 'profile_column' && l.args.column === col).at(-1)?.args.requestId;
+  const requestOf = (col) => bridge.log.filter(l => l.cmd === 'profile_column_counts' && l.args.column === col).at(-1)?.args.requestId;
   const cancelled = () => bridge.log.filter(l => l.cmd === 'cancel_profile').map(l => l.args.requestId);
   const supersededRequest = requestOf('cat');
   check('S19.cancelsSuperseded', !!supersededRequest && cancelled().includes(supersededRequest), `cat=${supersededRequest} cancelled=${JSON.stringify(cancelled())}`);
   check('S19.keepsTheWantedRequest', !cancelled().includes(requestOf('n')), `n=${requestOf('n')} cancelled=${JSON.stringify(cancelled())}`);
   await waitBars('1: 1|2: 1|3: 1|4: 1|5: 1');
-  await page.evaluate(() => { window.__delays.profile_column = 0; });
+  await page.evaluate(() => { window.__delays.profile_column_counts = 0; });
   await profileButton('n').click();
   check('S19.toggleClosed', (await panel().count()) === 0, `panels=${await panel().count()}`);
   check('S19.cancelsOnClose', cancelled().includes(requestOf('n')), `n=${requestOf('n')} cancelled=${JSON.stringify(cancelled())}`);
@@ -1714,7 +1714,7 @@ await scenario('S22-result-profile', async ({ page, bridge }) => {
   );
   const rowCount = () => act(page).locator('.z-0 tbody tr[data-row]').count();
   const footer = () => act(page).locator('text=/rows?$|^\\d+ rows/').first().textContent().catch(() => 'none');
-  const profiled = () => bridge.log.filter(l => l.cmd === 'profile_query_column').map(l => l.args);
+  const profiled = () => bridge.log.filter(l => l.cmd === 'profile_query_column_counts').map(l => l.args);
 
   // Seven groups over a hundred thousand rows, counted by the query; the
   // profile then describes those seven rows, not the file.

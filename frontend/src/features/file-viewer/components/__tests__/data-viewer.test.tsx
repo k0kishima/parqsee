@@ -8,12 +8,14 @@ const mockOpenParquetFile = vi.fn();
 const mockReadParquetData = vi.fn();
 const mockCountParquetData = vi.fn();
 const mockEvictCache = vi.fn();
-const mockProfileColumn = vi.fn();
+const mockProfileCounts = vi.fn();
+const mockProfileChart = vi.fn();
 vi.mock('../../api', () => ({
   openParquetFile: (...args: unknown[]) => mockOpenParquetFile(...args),
   readParquetData: (...args: unknown[]) => mockReadParquetData(...args),
   countParquetData: (...args: unknown[]) => mockCountParquetData(...args),
-  profileColumn: (...args: unknown[]) => mockProfileColumn(...args),
+  profileColumnCounts: (...args: unknown[]) => mockProfileCounts(...args),
+  profileColumnChart: (...args: unknown[]) => mockProfileChart(...args),
   // The real wrapper swallows the rejection; the double must too, or the
   // "could not be evicted" case below would test an impossible state.
   // api/__tests__/evict-cache-quietly.test.ts pins the real one.
@@ -150,9 +152,11 @@ describe('DataViewer search commands', () => {
 
 describe('DataViewer column profile', () => {
   beforeEach(() => {
-    mockProfileColumn.mockResolvedValue({
+    mockProfileCounts.mockResolvedValue({
       column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2, distinct_approximate: false,
-      chart: { shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0 },
+    });
+    mockProfileChart.mockResolvedValue({
+      shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0,
     });
   });
 
@@ -167,7 +171,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(openButton());
     expect(panel()).toBeInTheDocument();
     expect(openButton()).toHaveAttribute('aria-pressed', 'true');
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined, expect.any(String)));
+    await waitFor(() => expect(mockProfileCounts).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined, expect.any(String)));
 
     await userEvent.click(openButton());
     expect(panel()).not.toBeInTheDocument();
@@ -189,13 +193,15 @@ describe('DataViewer column profile', () => {
     // asked for a profile under the new filter.
     expect(panel()).not.toBeInTheDocument();
     expect(openButton()).toHaveAttribute('aria-pressed', 'false');
-    expect(mockProfileColumn).toHaveBeenCalledTimes(1);
+    expect(mockProfileCounts).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the panel open on a bucket and re-profiles the range under the filter', async () => {
-    mockProfileColumn.mockResolvedValue({
+    mockProfileCounts.mockResolvedValue({
       column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 90, distinct_approximate: false,
-      chart: { shape: 'histogram', buckets: [{ lower: '0', upper: '50', upper_inclusive: false, count: 60 }], other: 40 },
+    });
+    mockProfileChart.mockResolvedValue({
+      shape: 'histogram', buckets: [{ lower: '0', upper: '50', upper_inclusive: false, count: 60 }], other: 40,
     });
     render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
     await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
@@ -204,7 +210,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(await screen.findByRole('button', { name: '0 – 50: 60' }));
 
     await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" >= 0 AND "id" < 50', null));
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50', expect.any(String)));
+    await waitFor(() => expect(mockProfileCounts).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50', expect.any(String)));
     // The panel stayed mounted across the grid's reload, for the drill-down.
     expect(panel()).toBeInTheDocument();
     const values = screen.getAllByPlaceholderText('viewer.filterValuePlaceholder');

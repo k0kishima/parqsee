@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { ColumnProfileView, type ProfileCondition } from '../../../components/column-profile';
 import type { ColumnKind } from '../../../bindings/ipc/ColumnKind';
 import { conditionSql } from '../../../lib/filter-sql';
-import { profileQueryColumn } from '../api/result-profile';
+import { profileQueryColumnChart, profileQueryColumnCounts } from '../api/result-profile';
+import type { ColumnCounts } from '../../../bindings/ipc/ColumnCounts';
 import type { QueryColumn } from '../types';
 import { columnAlias } from '../lib/result-filter';
 import type { AppliedCondition } from '../lib/result-filter';
@@ -43,11 +44,16 @@ export function ResultProfilePanel({
   // as a number, a quoted literal, or isnan() for a NaN.
   const kind = useRef<ColumnKind>('other');
 
-  const load = useCallback(async (requestId: string) => {
-    const profile = await profileQueryColumn(resultId, columnIndex, filter, requestId);
-    kind.current = profile.kind;
-    return profile;
+  const loadCounts = useCallback(async (requestId: string) => {
+    const counts = await profileQueryColumnCounts(resultId, columnIndex, filter, requestId);
+    kind.current = counts.kind;
+    return counts;
   }, [resultId, columnIndex, filter]);
+  const loadChart = useCallback(
+    (requestId: string, counts: ColumnCounts) =>
+      profileQueryColumnChart(resultId, columnIndex, filter, counts, requestId),
+    [resultId, columnIndex, filter],
+  );
 
   const onAddConditions = useCallback((conditions: ProfileCondition[]) => {
     const applied = conditions.flatMap(condition => {
@@ -72,7 +78,8 @@ export function ResultProfilePanel({
       typeLabel={column.data_type}
       columnRef={columnAlias(columnIndex)}
       requestKey={JSON.stringify([resultId, columnIndex, filter ?? ''])}
-      load={load}
+      loadCounts={loadCounts}
+      loadChart={loadChart}
       notice={truncated ? t('viewer.query.result.partialProfile', { rows: rows.toLocaleString() }) : null}
       onClose={onClose}
       onAddConditions={onAddConditions}

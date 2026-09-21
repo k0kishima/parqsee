@@ -213,6 +213,13 @@ panel can print it as `≈ n` rather than as a count. On this file that turns
 values behind it spill to disk and take about 17 s — the same query any text
 column past twenty distinct values gets, on 58M rows.
 
+The panel also asks for the counts and the chart separately now
+(`profile_column_counts` / `profile_column_chart`), because they were always
+two scans and only the first one is quick. On this file the numbers reach the
+panel while the chart is still being read: 0.5 s against 1.0 s for `category`,
+1.8 s against 2.5 s for `id`, 1.9 s against 3.5 s for `ts`, and 4.3 s against
+22.4 s for `token`. The totals are what they were.
+
 Cancellation landed as `services::profile_requests` and the `cancel_profile`
 command: the panel names each request and cancels the ones it supersedes, and
 cancelling is dropping the work, which drops the DataFusion stream and releases

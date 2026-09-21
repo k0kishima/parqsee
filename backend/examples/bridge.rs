@@ -30,14 +30,16 @@
 //! front of the `iap_*` commands when a scenario wants the free tier
 //! (`launch({ iap })` in lib.mjs), so nothing of it reaches this binary.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
-use parqsee_lib::commands::query::{run_filter_query_result, run_profile_query_column, run_query};
+use parqsee_lib::commands::query::{
+    run_filter_query_result, run_query, run_query_column_chart, run_query_column_counts,
+};
 use parqsee_lib::services::query_results::QueryResults;
-use parqsee_lib::models::{SessionTabInput, SortSpec};
+use parqsee_lib::models::{ColumnCounts, SessionTabInput, SortSpec};
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
-use parqsee_lib::services::profile::profile_column;
+use parqsee_lib::services::profile::{column_chart, column_counts};
 use parqsee_lib::services::profile_requests::ProfileRequests;
 use parqsee_lib::services::sample::sample_path;
 use parqsee_lib::services::store::{AlwaysUnlocked, License};
@@ -69,6 +71,13 @@ fn opt_s(args: &Value, key: &str) -> Option<String> {
 fn opt_u(args: &Value, key: &str) -> Option<usize> {
     args.get(key).and_then(|v| v.as_u64()).map(|v| v as usize)
 }
+/// The counts a chart call hands back — the ones its own counts call
+/// answered with, which is how the chart is chosen.
+fn counts(args: &Value) -> Result<ColumnCounts, String> {
+    serde_json::from_value(args.get("counts").cloned().unwrap_or(Value::Null))
+        .map_err(|e| format!("bad counts: {e}"))
+}
+
 /// The `sort` argument of a page read or an export, absent or null for
 /// file order; a malformed one is an error, as it would be over IPC.
 fn opt_sort(args: &Value) -> Result<Option<SortSpec>, String> {
@@ -138,11 +147,25 @@ async fn dispatch(
             .await?
         ),
         "count_parquet_data" => json!(count_data(cache, &s(&args, "path")?, opt_s(&args, "filter")).await?),
-        "profile_column" => json!(
+        "profile_column_counts" => json!(
             requests
                 .run(
                     opt_s(&args, "requestId"),
-                    profile_column(cache, &s(&args, "path")?, &s(&args, "column")?, opt_s(&args, "filter")),
+                    column_counts(cache, &s(&args, "path")?, &s(&args, "column")?, opt_s(&args, "filter")),
+                )
+                .await?
+        ),
+        "profile_column_chart" => json!(
+            requests
+                .run(
+                    opt_s(&args, "requestId"),
+                    column_chart(
+                        cache,
+                        &s(&args, "path")?,
+                        &s(&args, "column")?,
+                        opt_s(&args, "filter"),
+                        &counts(&args)?,
+                    ),
                 )
                 .await?
         ),
@@ -172,15 +195,29 @@ async fn dispatch(
         }
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
         "execute_sql" => json!(run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?).await?),
-        "profile_query_column" => json!(
+        "profile_query_column_counts" => json!(
             requests
                 .run(
                     opt_s(&args, "requestId"),
-                    run_profile_query_column(
+                    run_query_column_counts(
                         results,
                         &s(&args, "resultId")?,
                         opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
                         opt_s(&args, "filter"),
+                    ),
+                )
+                .await?
+        ),
+        "profile_query_column_chart" => json!(
+            requests
+                .run(
+                    opt_s(&args, "requestId"),
+                    run_query_column_chart(
+                        results,
+                        &s(&args, "resultId")?,
+                        opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
+                        opt_s(&args, "filter"),
+                        &counts(&args)?,
                     ),
                 )
                 .await?

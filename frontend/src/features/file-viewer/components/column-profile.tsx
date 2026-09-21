@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { ColumnProfileView } from '../../../components/column-profile';
-import { profileColumn, type ColumnInfo } from '../api';
+import { profileColumnChart, profileColumnCounts, type ColumnCounts, type ColumnInfo } from '../api';
 import type { FilterCondition } from './filter-bar';
 
 interface ColumnProfilePanelProps {
@@ -20,8 +20,13 @@ interface ColumnProfilePanelProps {
  * unlike a query result's.
  */
 export function ColumnProfilePanel({ filePath, column, filter, onClose, onAddConditions }: ColumnProfilePanelProps) {
-  const load = useCallback(
-    (requestId: string) => profileColumn(filePath, column.name, filter || undefined, requestId),
+  const loadCounts = useCallback(
+    (requestId: string) => profileColumnCounts(filePath, column.name, filter || undefined, requestId),
+    [filePath, column.name, filter],
+  );
+  const loadChart = useCallback(
+    (requestId: string, counts: ColumnCounts) =>
+      profileColumnChart(filePath, column.name, filter || undefined, counts, requestId),
     [filePath, column.name, filter],
   );
   return (
@@ -30,7 +35,8 @@ export function ColumnProfilePanel({ filePath, column, filter, onClose, onAddCon
       typeLabel={column.column_type}
       columnRef={column.name}
       requestKey={JSON.stringify([filePath, column.name, filter])}
-      load={load}
+      loadCounts={loadCounts}
+      loadChart={loadChart}
       onClose={onClose}
       onAddConditions={onAddConditions}
     />

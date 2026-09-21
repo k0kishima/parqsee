@@ -4,14 +4,14 @@ import type { ColumnInfo } from '../../../bindings/ipc/ColumnInfo';
 import type { ColumnKind } from '../../../bindings/ipc/ColumnKind';
 import type { FileInfo } from '../../../bindings/ipc/FileInfo';
 import type { ParquetMetadata } from '../../../bindings/ipc/ParquetMetadata';
-import type { ColumnProfile } from '../../../bindings/ipc/ColumnProfile';
+import type { ColumnCounts } from '../../../bindings/ipc/ColumnCounts';
 import type { ProfileChart } from '../../../bindings/ipc/ProfileChart';
 import type { ValueCount } from '../../../bindings/ipc/ValueCount';
 import type { HistogramBucket } from '../../../bindings/ipc/HistogramBucket';
 import type { SortSpec } from '../../../bindings/ipc/SortSpec';
 import type { SortDirection } from '../../../bindings/ipc/SortDirection';
 
-export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata, ColumnProfile, ProfileChart, ValueCount, HistogramBucket, SortSpec, SortDirection };
+export type { ColumnInfo, ColumnKind, FileInfo, ParquetMetadata, ColumnCounts, ProfileChart, ValueCount, HistogramBucket, SortSpec, SortDirection };
 
 export interface ExportDataParams {
     sourcePath: string;
@@ -52,13 +52,22 @@ export const countParquetData = async (path: string, filter?: string): Promise<n
 };
 
 /**
- * What `column` holds under `filter` (the grid's WHERE fragment): counts and
- * a chart of its values. A scan of the file on the backend; ask when the
+ * What `column` holds under `filter` (the grid's WHERE fragment): the counts
+ * above the panel's chart. A scan of the file on the backend; ask when the
  * profile panel is open, not when a file is. `requestId` is what
  * `cancelProfile` ends the scan by.
  */
-export const profileColumn = async (path: string, column: string, filter?: string, requestId?: string): Promise<ColumnProfile> => {
-    return await invoke('profile_column', { path, column, filter, requestId });
+export const profileColumnCounts = async (path: string, column: string, filter?: string, requestId?: string): Promise<ColumnCounts> => {
+    return await invoke('profile_column_counts', { path, column, filter, requestId });
+};
+
+/**
+ * The chart of the same column and rows — a second scan, and on a large
+ * column a much longer one, which is why the panel asks for it separately.
+ * The counts decide which chart it is, so they go back with the request.
+ */
+export const profileColumnChart = async (path: string, column: string, filter: string | undefined, counts: ColumnCounts, requestId?: string): Promise<ProfileChart> => {
+    return await invoke('profile_column_chart', { path, column, filter, counts, requestId });
 };
 
 export const evictCache = async (path: string): Promise<void> => {

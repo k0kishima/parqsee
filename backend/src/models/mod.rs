@@ -339,11 +339,15 @@ pub enum ProfileChart {
     Unsupported,
 }
 
-/// What one column holds under the grid's filter, for the panel beside the
-/// grid. Computed by `services::profile::profile_column`.
+/// What one column holds under the grid's filter, in the numbers the panel
+/// shows above its chart. The first of the two answers a profile is made of
+/// (`services::profile`): they arrive separately because the counts take a
+/// scan and the chart takes another, and on a large file the panel would
+/// otherwise show nothing until both were done. The chart is chosen from
+/// these counts, so the second call is given them back.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "ipc/")]
-pub struct ColumnProfile {
+pub struct ColumnCounts {
     pub column: String,
     pub kind: ColumnKind,
     /// Rows under the filter — the count the grid's footer shows.
@@ -358,5 +362,4 @@ pub struct ColumnProfile {
     /// estimates rather than failing, and says so here — a number the panel
     /// prints unqualified would be read as the count it is not.
     pub distinct_approximate: bool,
-    pub chart: ProfileChart,
 }

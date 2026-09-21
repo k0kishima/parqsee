@@ -9,6 +9,13 @@
 //! queries per profile: the counts, then the chart's own — and the
 //! histogram's range before its buckets.
 //!
+//! The counts and the chart are asked for separately (`counts`, `chart`),
+//! because only the first of those scans is quick: on 58M rows the counts
+//! answer in half a second to four, while the chart of a column with a
+//! distinct value per row takes twenty. The panel shows what it has. Which
+//! chart a column gets follows from the counts, so they are the argument to
+//! `chart` rather than something it reads again.
+//!
 //! Which chart a column gets is decided here from the distinct count, not
 //! from the type alone: a column with at most `TOP_VALUES` distinct values
 //! is listed in full whatever its type (a status code, a boolean, a year),
@@ -50,7 +57,7 @@ use serde_json::Value;
 use arrow::datatypes::SchemaRef;
 use datafusion::prelude::SessionContext;
 
-use crate::models::{ColumnKind, ColumnProfile, HistogramBucket, ProfileChart, ValueCount};
+use crate::models::{ColumnCounts, ColumnKind, HistogramBucket, ProfileChart, ValueCount};
 use crate::services::parquet::{
     batches_to_rows, execute_sql_with_cache, is_memory_exhausted, quote_identifier, where_clause,
     ParquetCache,
@@ -170,48 +177,72 @@ pub fn column_kind_of(data_type: &DataType) -> ColumnKind {
     }
 }
 
-/// Profile `column` of the file at `path` over the rows `filter` keeps.
-pub async fn profile_column(
+/// The counts of `column` in the file at `path`, over the rows `filter`
+/// keeps: the first of the two calls a panel makes.
+pub async fn column_counts(
     cache: &ParquetCache,
     path: &str,
     column: &str,
     filter: Option<String>,
-) -> Result<ColumnProfile, String> {
+) -> Result<ColumnCounts, String> {
+    let kind = file_column_kind(cache, path, column).await?;
+    let source = ProfileSource::File { cache, path };
+    counts(&source, column, &quote_identifier(column), kind, filter).await
+}
+
+/// The chart of `column` in the file at `path`, over the same rows. Which
+/// chart it is was decided by `counts`, so they come back in.
+pub async fn column_chart(
+    cache: &ParquetCache,
+    path: &str,
+    column: &str,
+    filter: Option<String>,
+    counted: &ColumnCounts,
+) -> Result<ProfileChart, String> {
+    let kind = file_column_kind(cache, path, column).await?;
+    let source = ProfileSource::File { cache, path };
+    chart(&source, &quote_identifier(column), kind, filter, counted).await
+}
+
+/// A file column's kind, from the cached schema.
+async fn file_column_kind(
+    cache: &ParquetCache,
+    path: &str,
+    column: &str,
+) -> Result<ColumnKind, String> {
     let metadata = cache.get_or_create_metadata(path).await?;
-    let info = metadata
+    metadata
         .columns
         .iter()
         .find(|c| c.name == column)
-        .ok_or_else(|| format!("This file has no column named \"{}\"", column))?;
-    let kind = info.kind;
-    let source = ProfileSource::File { cache, path };
-    profile(&source, column, &quote_identifier(column), kind, filter).await
+        .map(|c| c.kind)
+        .ok_or_else(|| format!("This file has no column named \"{}\"", column))
 }
 
-/// Profile the column `col` names in `source`, calling it `name` in the
+/// Count the column `col` names in `source`, calling it `name` in the
 /// answer. `col` is already an expression the SQL can use — a quoted file
 /// column, or a result's positional alias — because what a column is
 /// called and how it is addressed are not the same thing once a query
 /// result is in play.
-pub async fn profile(
+pub async fn counts(
     source: &ProfileSource<'_>,
     name: &str,
     col: &str,
     kind: ColumnKind,
     filter: Option<String>,
-) -> Result<ColumnProfile, String> {
+) -> Result<ColumnCounts, String> {
     let filter = where_clause(filter.as_deref()).map(str::to_string);
     let filter = filter.as_deref();
 
     // COUNT(DISTINCT) is not defined on a list or a struct, and an
     // interval's ordering is not one a chart could use either.
     let countable = !matches!(kind, ColumnKind::Nested | ColumnKind::Other);
-    let counts = |distinct: Option<&str>| {
+    let query = |distinct: Option<&str>| {
         let third = distinct.map(|d| format!(", {d}")).unwrap_or_default();
         format!("SELECT COUNT(*), COUNT({col}){third} FROM t{}", where_sql(filter, &[]))
     };
     let (batches, distinct_approximate) = if countable {
-        match source.query(&counts(Some(&format!("COUNT(DISTINCT {col})")))).await {
+        match source.query(&query(Some(&format!("COUNT(DISTINCT {col})")))).await {
             Ok((batches, _)) => (batches, false),
             // An exact count keeps every distinct value in a hash set that
             // cannot spill, so a column with tens of millions of them asks
@@ -226,7 +257,7 @@ pub async fn profile(
                 // other count here arrives as `Int64`, and the cell is read
                 // by type.
                 match source
-                    .query(&counts(Some(&format!("CAST(approx_distinct({col}) AS BIGINT)"))))
+                    .query(&query(Some(&format!("CAST(approx_distinct({col}) AS BIGINT)"))))
                     .await
                 {
                     Ok((batches, _)) => (batches, true),
@@ -236,17 +267,40 @@ pub async fn profile(
             Err(other) => return Err(other),
         }
     } else {
-        (source.query(&counts(None)).await?.0, false)
+        (source.query(&query(None)).await?.0, false)
     };
     let total_rows = count_cell(&batches, 0)?;
     let non_null = count_cell(&batches, 1)?;
-    let distinct_count = if countable { Some(count_cell(&batches, 2)?) } else { None };
 
-    let chart = match distinct_count {
+    Ok(ColumnCounts {
+        column: name.to_string(),
+        kind,
+        total_rows,
+        null_count: total_rows.saturating_sub(non_null),
+        distinct_count: if countable { Some(count_cell(&batches, 2)?) } else { None },
+        distinct_approximate,
+    })
+}
+
+/// The chart for the column `counted` describes: which one it is follows
+/// from the distinct count, not from the type alone, so the counts are the
+/// argument rather than something this re-reads.
+pub async fn chart(
+    source: &ProfileSource<'_>,
+    col: &str,
+    kind: ColumnKind,
+    filter: Option<String>,
+    counted: &ColumnCounts,
+) -> Result<ProfileChart, String> {
+    let filter = where_clause(filter.as_deref()).map(str::to_string);
+    let filter = filter.as_deref();
+    let non_null = counted.total_rows.saturating_sub(counted.null_count);
+
+    Ok(match counted.distinct_count {
         None => ProfileChart::Unsupported,
         // An estimate never takes the branch that lists every value: the
         // list would claim to be complete on a count that is not exact.
-        Some(distinct) if distinct <= TOP_VALUES && !distinct_approximate => {
+        Some(distinct) if distinct <= TOP_VALUES && !counted.distinct_approximate => {
             top_values(source, col, filter, non_null).await?
         }
         Some(_) if matches!(
@@ -257,16 +311,6 @@ pub async fn profile(
             histogram(source, col, kind, filter, non_null).await?
         }
         Some(_) => top_values(source, col, filter, non_null).await?,
-    };
-
-    Ok(ColumnProfile {
-        column: name.to_string(),
-        kind,
-        total_rows,
-        null_count: total_rows.saturating_sub(non_null),
-        distinct_count,
-        distinct_approximate,
-        chart,
     })
 }
 
@@ -555,10 +599,42 @@ mod tests {
         path.to_string_lossy().into_owned()
     }
 
-    async fn profile(path: &str, column: &str, filter: Option<&str>) -> ColumnProfile {
-        profile_column(&ParquetCache::new(), path, column, filter.map(str::to_string))
+    /// The two calls a panel makes, assembled: the assertions below are
+    /// about one column's profile, which is what the pair adds up to.
+    struct Profiled {
+        column: String,
+        kind: ColumnKind,
+        total_rows: usize,
+        null_count: usize,
+        distinct_count: Option<usize>,
+        distinct_approximate: bool,
+        chart: ProfileChart,
+    }
+
+    async fn profile(path: &str, column: &str, filter: Option<&str>) -> Profiled {
+        profile_with(&ParquetCache::new(), path, column, filter)
             .await
             .unwrap_or_else(|e| panic!("{column}: {e}"))
+    }
+
+    async fn profile_with(
+        cache: &ParquetCache,
+        path: &str,
+        column: &str,
+        filter: Option<&str>,
+    ) -> Result<Profiled, String> {
+        let filter = filter.map(str::to_string);
+        let counted = column_counts(cache, path, column, filter.clone()).await?;
+        let chart = column_chart(cache, path, column, filter, &counted).await?;
+        Ok(Profiled {
+            column: counted.column,
+            kind: counted.kind,
+            total_rows: counted.total_rows,
+            null_count: counted.null_count,
+            distinct_count: counted.distinct_count,
+            distinct_approximate: counted.distinct_approximate,
+            chart,
+        })
     }
 
     fn top_values(chart: &ProfileChart) -> (Vec<(Value, usize)>, usize) {
@@ -596,7 +672,7 @@ mod tests {
             )],
         );
 
-        let exact = profile_column(&ParquetCache::new(), &path, "token", None).await.unwrap();
+        let exact = profile_with(&ParquetCache::new(), &path, "token", None).await.unwrap();
         assert_eq!(exact.distinct_count, Some(200_000));
         assert!(!exact.distinct_approximate, "an exact count that fits is not an estimate");
 
@@ -606,7 +682,7 @@ mod tests {
         // compact row format and fits with room for the top-k above it. A
         // bigger pool would count exactly and never reach the estimate.
         let cramped = ParquetCache::new().with_memory_limit(16 * 1024 * 1024);
-        let estimated = profile_column(&cramped, &path, "token", None).await.unwrap();
+        let estimated = profile_with(&cramped, &path, "token", None).await.unwrap();
         assert!(estimated.distinct_approximate, "the count that did not fit is not marked as an estimate");
         let estimate = estimated.distinct_count.expect("an estimate, not nothing");
         // A sketch, not a count: near the truth and never sold as exact.
@@ -785,13 +861,13 @@ mod tests {
         );
         assert_eq!(top_values(&profile(&path, "qu\"ote", None).await.chart).0[0], (Value::from(1), 2));
         assert_eq!(profile(&path, "MixedCase", None).await.distinct_count, Some(3));
-        let err = profile_column(&ParquetCache::new(), &path, "missing", None).await.unwrap_err();
+        let err = column_counts(&ParquetCache::new(), &path, "missing", None).await.unwrap_err();
         assert!(err.contains("no column named \"missing\""), "{err}");
     }
 
     /// Exercise the same literals a bar click sends, through the grid's
     /// count service rather than repeating the histogram's arithmetic.
-    async fn assert_chart_round_trip(path: &str, p: &ColumnProfile) {
+    async fn assert_chart_round_trip(path: &str, p: &Profiled) {
         let cache = ParquetCache::new();
         let col = quote_identifier(&p.column);
         let quoted = |s: &str| format!("'{}'", s.replace('\'', "''"));

@@ -1,17 +1,30 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ColumnProfile } from '../../../bindings/ipc/ColumnProfile';
+import type { ColumnCounts } from '../../../bindings/ipc/ColumnCounts';
+import type { ProfileChart } from '../../../bindings/ipc/ProfileChart';
 
 /**
- * The profile of one column of a kept result, over the rows `filter`
- * keeps. The column is named by position: two columns of one result may
- * share a name, and an expression's name is not an identifier.
+ * The counts of one column of a kept result, over the rows `filter` keeps.
+ * The column is named by position: two columns of one result may share a
+ * name, and an expression's name is not an identifier.
  */
-export const profileQueryColumn = (
+export const profileQueryColumnCounts = (
   resultId: string,
   columnIndex: number,
   filter?: string,
   requestId?: string,
-): Promise<ColumnProfile> => invoke('profile_query_column', { resultId, columnIndex, filter, requestId });
+): Promise<ColumnCounts> => invoke('profile_query_column_counts', { resultId, columnIndex, filter, requestId });
+
+/**
+ * The chart those counts call for, over the same rows — the second of the
+ * two scans a panel makes.
+ */
+export const profileQueryColumnChart = (
+  resultId: string,
+  columnIndex: number,
+  filter: string | undefined,
+  counts: ColumnCounts,
+  requestId?: string,
+): Promise<ProfileChart> => invoke('profile_query_column_chart', { resultId, columnIndex, filter, counts, requestId });
 
 /** The rows of a kept result that `filter` keeps, keyed as the grid renders them. */
 export const filterQueryResult = (

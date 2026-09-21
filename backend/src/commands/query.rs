@@ -5,9 +5,9 @@ use arrow::record_batch::RecordBatch;
 use tauri::command;
 
 use crate::commands::guarded;
-use crate::models::{ColumnProfile, QueryChartType, QueryColumn, QueryResult};
+use crate::models::{ColumnCounts, ProfileChart, QueryChartType, QueryColumn, QueryResult};
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, where_clause, ParquetCache};
-use crate::services::profile::{column_kind_of, profile, ProfileSource};
+use crate::services::profile::{chart, column_kind_of, counts, ProfileSource};
 use crate::services::profile_requests::ProfileRequests;
 use crate::services::query_results::{column_alias, QueryResults};
 
@@ -34,37 +34,75 @@ pub async fn execute_sql(
 /// of them — so a truncated result profiles its first rows and the panel
 /// says so; nothing here re-runs the query.
 #[command]
-pub async fn profile_query_column(
+pub async fn profile_query_column_counts(
     results: tauri::State<'_, QueryResults>,
     requests: tauri::State<'_, ProfileRequests>,
     result_id: String,
     column_index: usize,
     filter: Option<String>,
     request_id: Option<String>,
-) -> Result<ColumnProfile, String> {
-    guarded("The column profile", async {
+) -> Result<ColumnCounts, String> {
+    guarded("The column's counts", async {
         requests
             .run(
                 request_id,
-                run_profile_query_column(&results, &result_id, column_index, filter),
+                run_query_column_counts(&results, &result_id, column_index, filter),
             )
             .await
     })
     .await
 }
 
-/// The profile of a result column, minus the Tauri plumbing, so the E2E
+/// The chart of the same result column, over the same rows; the counts that
+/// chose it come back in (`commands::data::profile_column_chart` says why
+/// the two are separate).
+#[tauri::command]
+pub async fn profile_query_column_chart(
+    results: tauri::State<'_, QueryResults>,
+    requests: tauri::State<'_, ProfileRequests>,
+    result_id: String,
+    column_index: usize,
+    filter: Option<String>,
+    counts: ColumnCounts,
+    request_id: Option<String>,
+) -> Result<ProfileChart, String> {
+    guarded("The column's chart", async {
+        requests
+            .run(
+                request_id,
+                run_query_column_chart(&results, &result_id, column_index, filter, &counts),
+            )
+            .await
+    })
+    .await
+}
+
+/// The counts of a result column, minus the Tauri plumbing, so the E2E
 /// bridge runs exactly what the command runs.
-pub async fn run_profile_query_column(
+pub async fn run_query_column_counts(
     results: &QueryResults,
     result_id: &str,
     column_index: usize,
     filter: Option<String>,
-) -> Result<ColumnProfile, String> {
+) -> Result<ColumnCounts, String> {
     let (name, data_type) = results.column(result_id, column_index)?;
     let ctx = results.session(result_id)?;
     let source = ProfileSource::Result(&ctx);
-    profile(&source, &name, &column_alias(column_index), column_kind_of(&data_type), filter).await
+    counts(&source, &name, &column_alias(column_index), column_kind_of(&data_type), filter).await
+}
+
+/// The chart of a result column, the same way.
+pub async fn run_query_column_chart(
+    results: &QueryResults,
+    result_id: &str,
+    column_index: usize,
+    filter: Option<String>,
+    counted: &ColumnCounts,
+) -> Result<ProfileChart, String> {
+    let (_, data_type) = results.column(result_id, column_index)?;
+    let ctx = results.session(result_id)?;
+    let source = ProfileSource::Result(&ctx);
+    chart(&source, &column_alias(column_index), column_kind_of(&data_type), filter, counted).await
 }
 
 /// The rows of a kept result that `filter` keeps, keyed by the names the
@@ -419,20 +457,32 @@ mod tests {
         .unwrap();
         let id = result.result_id.clone().expect("a small result is kept");
 
-        let first = run_profile_query_column(&results, &id, 0, None).await.unwrap();
+        // The two calls the panel makes for one column, as it makes them.
+        async fn profile(
+            results: &QueryResults,
+            id: &str,
+            index: usize,
+            filter: Option<String>,
+        ) -> Result<(ColumnCounts, ProfileChart), String> {
+            let counts = run_query_column_counts(results, id, index, filter.clone()).await?;
+            let chart = run_query_column_chart(results, id, index, filter, &counts).await?;
+            Ok((counts, chart))
+        }
+
+        let (first, _) = profile(&results, &id, 0, None).await.unwrap();
         assert_eq!(first.column, "grp");
         assert_eq!((first.total_rows, first.null_count, first.distinct_count), (3, 1, Some(1)));
 
         // The second column is an expression: what DataFusion calls it is
         // not an identifier, and the profile reaches it by position anyway.
-        let derived = run_profile_query_column(&results, &id, 1, None).await.unwrap();
+        let (derived, _) = profile(&results, &id, 1, None).await.unwrap();
         assert!(!derived.column.is_empty() && derived.column != "c1", "{}", derived.column);
         assert_eq!((derived.kind, derived.total_rows), (crate::models::ColumnKind::Integer, 3));
 
         // The integer past 2^53 keeps its exact digits, as the grid shows them.
-        let big = run_profile_query_column(&results, &id, 2, None).await.unwrap();
+        let (big, big_chart) = profile(&results, &id, 2, None).await.unwrap();
         assert_eq!(big.kind, crate::models::ColumnKind::Integer);
-        match &big.chart {
+        match &big_chart {
             crate::models::ProfileChart::TopValues { values, .. } => assert!(
                 values.iter().any(|v| v.value == "9007199254740993" && v.count == 2),
                 "{values:?}"
@@ -441,13 +491,13 @@ mod tests {
         }
 
         // A decimal from a CAST is a decimal, not the string the grid holds.
-        let exact = run_profile_query_column(&results, &id, 3, None).await.unwrap();
+        let (exact, _) = profile(&results, &id, 3, None).await.unwrap();
         assert_eq!(exact.kind, crate::models::ColumnKind::Decimal);
 
         // A date is temporal, and the filter narrows the same rows the grid would.
-        let day = run_profile_query_column(&results, &id, 4, None).await.unwrap();
+        let (day, _) = profile(&results, &id, 4, None).await.unwrap();
         assert_eq!(day.kind, crate::models::ColumnKind::Temporal);
-        let narrowed = run_profile_query_column(&results, &id, 4, Some("c4 = '2022-01-08'".into()))
+        let (narrowed, _) = profile(&results, &id, 4, Some("c4 = '2022-01-08'".into()))
             .await
             .unwrap();
         assert_eq!(narrowed.total_rows, 1);
@@ -510,8 +560,8 @@ mod tests {
             .await
             .unwrap();
         let id = result.result_id.clone().unwrap();
-        let profile = run_profile_query_column(&results, &id, 0, None).await.unwrap();
-        assert_eq!((profile.total_rows, profile.null_count, profile.distinct_count), (0, 0, Some(0)));
+        let counts = run_query_column_counts(&results, &id, 0, None).await.unwrap();
+        assert_eq!((counts.total_rows, counts.null_count, counts.distinct_count), (0, 0, Some(0)));
     }
 
     #[tokio::test]
@@ -526,9 +576,9 @@ mod tests {
         let id = result.result_id.clone().unwrap();
         results.release(&id);
 
-        let error = run_profile_query_column(&results, &id, 0, None).await.unwrap_err();
+        let error = run_query_column_counts(&results, &id, 0, None).await.unwrap_err();
         assert!(error.contains("Run the query again"), "{error}");
-        let missing = run_profile_query_column(&results, "r999", 0, None).await.unwrap_err();
+        let missing = run_query_column_counts(&results, "r999", 0, None).await.unwrap_err();
         assert!(missing.contains("Run the query again"), "{missing}");
     }
 }
