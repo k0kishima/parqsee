@@ -28,6 +28,7 @@ export function result(
     execution_time_ms: 1,
     truncated: false,
     max_rows: 10_000,
+    result_id: 'r1',
     ...extra,
   };
 }

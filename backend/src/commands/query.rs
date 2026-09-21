@@ -4,6 +4,7 @@ use tauri::command;
 use crate::commands::guarded;
 use crate::models::{QueryChartType, QueryColumn, QueryResult};
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
+use crate::services::query_results::QueryResults;
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
 /// the JSON round trip both scale with rows x columns; beyond this the UI
@@ -13,11 +14,28 @@ pub const MAX_QUERY_ROWS: usize = 10_000;
 #[command]
 pub async fn execute_sql(
     cache: tauri::State<'_, ParquetCache>,
+    results: tauri::State<'_, QueryResults>,
     file_path: String,
     query: String,
 ) -> Result<QueryResult, String> {
     guarded("The query", async {
-        run_query(&cache, &file_path, &query).await
+        run_query(&cache, &results, &file_path, &query).await
+    })
+    .await
+}
+
+/// Let go of a result the webview will not ask about again. It calls this
+/// when a re-run replaces one, when a superseded run's answer arrives
+/// anyway, and when the tab holding it closes; the store's own caps are
+/// the backstop for a call that never comes.
+#[command]
+pub async fn release_query_result(
+    results: tauri::State<'_, QueryResults>,
+    result_id: String,
+) -> Result<(), String> {
+    guarded("Releasing the result", async {
+        results.release(&result_id);
+        Ok(())
     })
     .await
 }
@@ -26,6 +44,7 @@ pub async fn execute_sql(
 /// (`examples/bridge.rs`) runs exactly what the command runs.
 pub async fn run_query(
     cache: &ParquetCache,
+    results: &QueryResults,
     file_path: &str,
     query: &str,
 ) -> Result<QueryResult, String> {
@@ -45,6 +64,9 @@ pub async fn run_query(
         .collect();
 
     let rows = batches_to_rows(&batches)?;
+    // Kept in their own types, because the JSON above is not the data any
+    // more: a decimal and a big integer are strings in it.
+    let result_id = results.keep(&batches, &schema);
 
     Ok(QueryResult {
         columns,
@@ -52,6 +74,7 @@ pub async fn run_query(
         execution_time_ms: start.elapsed().as_millis(),
         truncated,
         max_rows: MAX_QUERY_ROWS,
+        result_id,
     })
 }
 
@@ -186,6 +209,7 @@ mod tests {
 
         let result = run_query(
             &cache,
+            &QueryResults::new(),
             &path.to_string_lossy(),
             "SELECT cat, avg(n) AS mean, CAST(sum(n) AS DECIMAL(10, 2)) AS total, CAST(count(*) AS VARCHAR) AS label, min(day) AS first_day FROM t GROUP BY cat ORDER BY cat",
         )

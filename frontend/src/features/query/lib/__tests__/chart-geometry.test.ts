@@ -13,6 +13,7 @@ function result(rows: Record<string, unknown>[], series = ['y']): QueryResult {
     execution_time_ms: 1,
     truncated: false,
     max_rows: 10_000,
+  result_id: 'r1',
   };
 }
 
@@ -130,6 +131,7 @@ function timeResult(xType: QueryChartType, rows: Record<string, unknown>[], seri
     execution_time_ms: 1,
     truncated: false,
     max_rows: 10_000,
+  result_id: 'r1',
   };
 }
 
@@ -249,6 +251,7 @@ function numericResult(rows: Record<string, unknown>[], series = ['y']): QueryRe
     execution_time_ms: 1,
     truncated: false,
     max_rows: 10_000,
+  result_id: 'r1',
   };
 }
 
