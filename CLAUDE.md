@@ -485,7 +485,13 @@ command's answer carries the higher `revision`, since the two can cross.
    invalidate older results. The count/page sequence checks its version at
    both ends and refuses results if the file changed during the read. Even
    unfiltered sorts obtain their count from the versioned query path rather
-   than cached UI metadata. Schema/UI metadata still refresh explicitly.
+   than cached UI metadata. Schema/UI metadata still refresh explicitly,
+   and a file whose version has changed since it was opened is not read at
+   all: `check_unchanged` refuses the page, the count, the export and the
+   profile with a message asking for a Refresh, rather than let the
+   session's registered schema cast the new file into the old one or
+   `range_reader` cut it to the old row count. The SQL view is exempt on
+   purpose.
    The frontend count and the sort's mirrored-window count reuse
    the same result. Refresh/close evicts entries; a query from an evicted
    session cannot insert them again. Stable/volatile functions (including
