@@ -1,6 +1,17 @@
+import { assertNever } from '../../../lib/exhaustive';
+import {
+  instantOfMonthIndex,
+  instantOfYear,
+  startOfUtcWeek,
+  utcFields,
+  utcMonthIndex,
+  utcYear,
+} from './chart-time';
+
 /**
- * Numeric axes: a domain worth showing, ticks on round values, labels that
- * fit. Pure functions of numbers — nothing here measures the DOM.
+ * Axes: a domain worth showing, ticks on round values, labels that fit —
+ * for numbers first, and for instants below. Pure functions of numbers;
+ * nothing here measures the DOM.
  */
 
 export interface Domain {
@@ -128,4 +139,201 @@ export function tickLabels(ticks: number[], locale: string): { ticks: number[]; 
     if (current.length <= 1) return { ticks: current, labels: current.map(t => formatTick(t, locale)) };
     current = current.filter((_, i) => i % 2 === 0);
   }
+}
+
+/**
+ * Time axes. A time axis cannot be the linear one with different labels:
+ * its round numbers are calendar boundaries, and the step between them
+ * is one of the handful a clock and a calendar actually have — there is
+ * no 3.5-hour or 0.4-month tick, and a month is not 30 days.
+ */
+
+export type TimeUnit = 'millisecond' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+
+export interface TimeStep {
+  unit: TimeUnit;
+  count: number;
+}
+
+export interface TimeAxis {
+  step: TimeStep;
+  ticks: number[];
+  labels: string[];
+}
+
+const MS: Record<Exclude<TimeUnit, 'month' | 'year'>, number> = {
+  millisecond: 1,
+  second: 1_000,
+  minute: 60_000,
+  hour: 3_600_000,
+  day: 86_400_000,
+  week: 604_800_000,
+};
+
+/** Only for choosing a step: the mean Gregorian month and year, never used to place a tick. */
+const APPROXIMATE = { month: 2_629_746_000, year: 31_556_952_000 };
+
+/**
+ * The steps an axis may use, coarsest last. Sub-second steps divide a
+ * second, sub-minute ones a minute, and so on up, so every tick of a step
+ * is also a boundary of the unit above it; 7 and 14 days are weeks rather
+ * than day counts, because that is what makes them fall on the same
+ * weekday. Past five years the list continues by ten.
+ */
+const CANDIDATE_STEPS: readonly TimeStep[] = [
+  ...[1, 2, 5, 10, 20, 50, 100, 200, 500].map(count => ({ unit: 'millisecond' as const, count })),
+  ...[1, 2, 5, 10, 15, 30].map(count => ({ unit: 'second' as const, count })),
+  ...[1, 2, 5, 10, 15, 30].map(count => ({ unit: 'minute' as const, count })),
+  ...[1, 2, 3, 6, 12].map(count => ({ unit: 'hour' as const, count })),
+  ...[1, 2].map(count => ({ unit: 'day' as const, count })),
+  ...[1, 2].map(count => ({ unit: 'week' as const, count })),
+  ...[1, 3, 6].map(count => ({ unit: 'month' as const, count })),
+  ...[1, 2, 5].map(count => ({ unit: 'year' as const, count })),
+];
+
+/** How long a step lasts on average — the question a step is chosen by, not placed by. */
+export function approximateStepMs(step: TimeStep): number {
+  if (step.unit === 'month' || step.unit === 'year') return step.count * APPROXIMATE[step.unit];
+  return step.count * MS[step.unit];
+}
+
+const ORDER: TimeUnit[] = ['millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year'];
+
+/**
+ * The finest step that covers `span` in at most `targetCount` ticks. A
+ * date column passes `day` as its floor: a column of days has nothing to
+ * say at 6 p.m., and an axis that ticked there would invent a precision
+ * the values do not have.
+ */
+export function chooseTimeStep(span: number, targetCount: number, floor: TimeUnit = 'millisecond'): TimeStep {
+  const target = Math.max(1, targetCount);
+  const fits = (step: TimeStep) => !(span > 0) || span / approximateStepMs(step) <= target;
+  const from = ORDER.indexOf(floor);
+  for (const step of CANDIDATE_STEPS) {
+    if (ORDER.indexOf(step.unit) < from) continue;
+    if (fits(step)) return step;
+  }
+  for (let magnitude = 10; magnitude <= 1e9; magnitude *= 10) {
+    for (const factor of [1, 2, 5]) {
+      const step = { unit: 'year' as const, count: factor * magnitude };
+      if (fits(step)) return step;
+    }
+  }
+  // Nothing spans more than ±100,000,000 days, so this is unreachable in practice.
+  return { unit: 'year', count: 1e10 };
+}
+
+/** The Monday the epoch week began on: weeks are laid out from here, not from the epoch itself. */
+const WEEK_ANCHOR = startOfUtcWeek(0);
+
+/**
+ * The ticks of `step` inside the domain, in order. Fixed-length steps are
+ * counted from the epoch (midnight, and so also the top of every hour and
+ * minute it divides), weeks from the Monday of the epoch's week, and
+ * months and years from the calendar itself — a step of three months is
+ * January, April, July and October, not every 91.3 days.
+ */
+export function timeTicks(domain: Domain, step: TimeStep): number[] {
+  if (!(domain.max > domain.min) || !Number.isFinite(domain.max - domain.min)) return [];
+  const ticks: number[] = [];
+  const limit = 1000;
+
+  if (step.unit === 'month' || step.unit === 'year') {
+    const index = step.unit === 'year' ? utcYear(domain.min) : utcMonthIndex(domain.min);
+    const instantOf = step.unit === 'year' ? instantOfYear : instantOfMonthIndex;
+    let at = Math.floor(index / step.count) * step.count;
+    if ((instantOf(at) ?? -Infinity) < domain.min) at += step.count;
+    while (ticks.length < limit) {
+      const tick = instantOf(at);
+      if (tick === null || tick > domain.max) break;
+      ticks.push(tick);
+      at += step.count;
+    }
+    return ticks;
+  }
+
+  const size = step.count * MS[step.unit];
+  const anchor = step.unit === 'week' ? WEEK_ANCHOR : 0;
+  let tick = Math.ceil((domain.min - anchor) / size) * size + anchor;
+  while (tick <= domain.max && ticks.length < limit) {
+    ticks.push(tick);
+    tick += size;
+  }
+  return ticks;
+}
+
+const pad = (value: number, width: number) => String(Math.abs(value)).padStart(width, '0');
+
+/**
+ * A year as an axis writes it: four digits, and a sign with as many as it
+ * takes outside them — the same spelling the values arrive in.
+ */
+export function formatYear(year: number): string {
+  if (year < 0) return `-${pad(year, 4)}`;
+  return year > 9999 ? `+${year}` : pad(year, 4);
+}
+
+/** The date of an instant, `YYYY-MM-DD`, which is also a day tick's label. */
+export function formatUtcDate(ms: number): string {
+  const { year, month, day } = utcFields(ms);
+  return `${formatYear(year)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
+/**
+ * A tick's label: as much of the instant as the step distinguishes and no
+ * more. What the label leaves off the front — the year below a day, the
+ * date below an hour — the axis names once beside it rather than on every
+ * tick (`timeAxisDates`).
+ */
+export function formatTimeTick(ms: number, unit: TimeUnit): string {
+  const { year, month, day, hour, minute, second, millisecond } = utcFields(ms);
+  switch (unit) {
+    case 'year': return formatYear(year);
+    case 'month': return `${formatYear(year)}-${pad(month, 2)}`;
+    case 'week':
+    case 'day':
+      return formatUtcDate(ms);
+    case 'hour':
+    case 'minute':
+      return `${pad(month, 2)}-${pad(day, 2)} ${pad(hour, 2)}:${pad(minute, 2)}`;
+    case 'second': return `${pad(hour, 2)}:${pad(minute, 2)}:${pad(second, 2)}`;
+    case 'millisecond': return `${pad(hour, 2)}:${pad(minute, 2)}:${pad(second, 2)}.${pad(millisecond, 3)}`;
+    default: return assertNever(unit, 'time unit');
+  }
+}
+
+/**
+ * The days the axis covers, for the note beside an axis whose labels are
+ * clock times: one date when it stays inside a day, the first and the
+ * last otherwise. Null above the hour, where every label carries its own
+ * date already.
+ */
+export function timeAxisDates(domain: Domain, unit: TimeUnit): [string] | [string, string] | null {
+  if (ORDER.indexOf(unit) > ORDER.indexOf('hour')) return null;
+  const first = formatUtcDate(domain.min);
+  const last = formatUtcDate(domain.max);
+  return first === last ? [first] : [first, last];
+}
+
+/**
+ * The axis for a span of time: the step it ticks by, the ticks and their
+ * labels. `targetCount` is how many ticks the width has room for; the
+ * step chosen is the finest that stays inside it.
+ */
+export function timeAxis(domain: Domain, targetCount: number, floor: TimeUnit = 'millisecond'): TimeAxis {
+  const step = chooseTimeStep(domain.max - domain.min, targetCount, floor);
+  const ticks = timeTicks(domain, step);
+  return { step, ticks, labels: ticks.map(tick => formatTimeTick(tick, step.unit)) };
+}
+
+/**
+ * Room around a single instant, so a result with one distinct X is a
+ * point in the middle of an axis rather than a domain of no width. A day
+ * for a date column, a second for a timestamp: the unit the column's own
+ * values are counted in.
+ */
+export function timeDomain(extent: Domain, floor: TimeUnit = 'millisecond'): Domain {
+  if (extent.max > extent.min) return extent;
+  const half = floor === 'day' ? MS.hour * 12 : MS.second / 2;
+  return { min: extent.min - half, max: extent.min + half };
 }

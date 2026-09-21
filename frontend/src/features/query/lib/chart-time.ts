@@ -138,3 +138,57 @@ export function parseTimestampValue(raw: unknown): ParsedInstant {
   if (!Number.isFinite(value) || Math.abs(value) > MAX_INSTANT) return PRECISION;
   return { ok: true, value, subMillisecond };
 }
+
+/**
+ * The UTC calendar, as the tick generator needs it. Months and years are
+ * addressed by index rather than by duration: stepping a chart's axis by
+ * "one month" has to land on the first of the next month, and a fixed 30
+ * days walks off the calendar within a year.
+ */
+
+const DAY_MS = 86_400_000;
+
+/** The month `ms` falls in, counted from January of year 0. */
+export const utcMonthIndex = (ms: number): number => {
+  const date = new Date(ms);
+  return date.getUTCFullYear() * 12 + date.getUTCMonth();
+};
+
+/** Midnight on the first of the month `index` names, or null when a date cannot hold it. */
+export function instantOfMonthIndex(index: number): number | null {
+  const year = Math.floor(index / 12);
+  return utcInstant(year, index - year * 12 + 1, 1);
+}
+
+export const utcYear = (ms: number): number => new Date(ms).getUTCFullYear();
+
+/** Midnight on the first of January, or null when a date cannot hold it. */
+export const instantOfYear = (year: number): number | null => utcInstant(year, 1, 1);
+
+/** Midnight of the day `ms` falls in. */
+export const startOfUtcDay = (ms: number): number => Math.floor(ms / DAY_MS) * DAY_MS;
+
+/**
+ * Midnight of the Monday of the week `ms` falls in. Weeks start on Monday
+ * rather than on the epoch's own Thursday, which is what a week means on
+ * an axis; ISO and both of the app's locales agree on it.
+ */
+export function startOfUtcWeek(ms: number): number {
+  const day = startOfUtcDay(ms);
+  const fromMonday = (new Date(day).getUTCDay() + 6) % 7;
+  return day - fromMonday * DAY_MS;
+}
+
+/** The UTC fields of an instant, for an axis label. */
+export function utcFields(ms: number) {
+  const date = new Date(ms);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds(),
+    millisecond: date.getUTCMilliseconds(),
+  };
+}
