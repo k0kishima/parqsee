@@ -130,7 +130,7 @@ pub async fn export_data(
         filter,
         sort,
     )
-    .await
+        .await
 }
 
 /// `export_data` with the finalisation's filesystem calls taken from `fs`;
@@ -196,7 +196,7 @@ async fn export_data_with(
             tokio::task::spawn_blocking(move || {
                 export_range(&source_path, offset, limit, format, &staging)
             })
-            .await
+                .await
             .map_err(|e| format!("Export task failed: {}", e))?
         }
         (filter, order_by) => {
@@ -210,7 +210,7 @@ async fn export_data_with(
                 format,
                 &staging_path,
             )
-            .await
+                .await
         }
     };
 
@@ -234,11 +234,11 @@ fn staging_path_for(export_path: &str) -> PathBuf {
     let name = Path::new(export_path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "export".to_string());
+            .unwrap_or_else(|| "export".to_string());
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
-        .unwrap_or(0);
+            .unwrap_or(0);
     std::env::temp_dir().join(format!("{name}.{}.{nanos}.partial", std::process::id()))
 }
 
@@ -414,12 +414,12 @@ async fn export_query(
     let plan = plan_query_checked(&ctx, &query).await?;
     let df = ctx
         .execute_logical_plan(plan)
-        .await
+            .await
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
     let mut stream = df
         .execute_stream()
-        .await
+            .await
         .map_err(|e| format!("Failed to read filtered rows: {}", e))?;
 
     // The file writes are synchronous, so they run on the blocking pool and
@@ -607,7 +607,35 @@ mod tests {
             None,
             None,
         )
-        .await
+            .await
+    }
+
+    /// [`export_data`] with paths as paths and the range as one argument.
+    ///
+    /// The command takes owned strings and eight positional arguments, of
+    /// which most tests below have to write four `None`s that say nothing
+    /// about what the test is for. Offset and limit become one `range`
+    /// because the grid never asks for one without the other.
+    async fn export(
+        cache: &ParquetCache,
+        src: &Path,
+        out: &Path,
+        format: &str,
+        range: Option<(usize, usize)>,
+        filter: Option<&str>,
+        sort: Option<SortSpec>,
+    ) -> Result<usize, String> {
+        export_data(
+            cache,
+            src.to_string_lossy().into_owned(),
+            out.to_string_lossy().into_owned(),
+            format.into(),
+            range.map(|(offset, _)| offset),
+            range.map(|(_, limit)| limit),
+            filter.map(Into::into),
+            sort,
+        )
+            .await
     }
 
     /// What the four-row fixture exports as, produced by the rename path.
@@ -636,7 +664,7 @@ mod tests {
                 Arc::new(Float64Array::from(vec![0.5, 1.5, 2.5, 3.5])),
             ],
         )
-        .unwrap();
+            .unwrap();
         let path = temp_path(&format!("{name}.parquet"));
         write_parquet(&path, &batch, None);
         path
@@ -646,18 +674,9 @@ mod tests {
     async fn csv_keeps_columns_in_schema_order_and_honours_the_range() {
         let src = write_fixture("csv_range");
         let out = temp_path("out.csv");
-        let n = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            Some(1),
-            Some(2),
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&ParquetCache::new(), &src, &out, "csv", Some((1, 2)), None, None)
+            .await
+            .unwrap();
         assert_eq!(n, 2);
         let text = std::fs::read_to_string(&out).unwrap();
         let text = text.trim_start_matches('\u{feff}');
@@ -680,26 +699,17 @@ mod tests {
             vec![Arc::new(
                 Decimal128Array::from(vec![123456789i128])
                     .with_precision_and_scale(20, 4)
-                    .unwrap(),
+                        .unwrap(),
             )],
         )
-        .unwrap();
+            .unwrap();
         let src = temp_path("decimal.parquet");
         write_parquet(&src, &batch, None);
 
         let out = temp_path("decimal.json");
-        let n = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "json".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&ParquetCache::new(), &src, &out, "json", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(n, 1);
         let parsed: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
@@ -713,18 +723,9 @@ mod tests {
 
         // id 2, 3 and 4 match; the range then addresses the filtered rows.
         let out = temp_path("filtered.csv");
-        let n = export_data(
-            &cache,
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            Some("\"id\" > 1".into()),
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&cache, &src, &out, "csv", None, Some("\"id\" > 1"), None)
+            .await
+            .unwrap();
         assert_eq!(n, 3);
         let text = std::fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
@@ -732,18 +733,9 @@ mod tests {
         assert_eq!(lines.len(), 4);
 
         let out = temp_path("filtered_range.csv");
-        let n = export_data(
-            &cache,
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            Some(1),
-            Some(1),
-            Some("\"id\" > 1".into()),
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&cache, &src, &out, "csv", Some((1, 1)), Some("\"id\" > 1"), None)
+            .await
+            .unwrap();
         assert_eq!(n, 1);
         let text = std::fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
@@ -767,18 +759,9 @@ mod tests {
 
         // name DESC NULLS FIRST: the null, then e, "c, d", a.
         let out = temp_path("sorted.csv");
-        let n = export_data(
-            &cache,
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            None,
-            by_name_desc(),
-        )
-        .await
-        .unwrap();
+        let n = export(&cache, &src, &out, "csv", None, None, by_name_desc())
+            .await
+            .unwrap();
         assert_eq!(n, 4);
         let text = std::fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
@@ -786,18 +769,9 @@ mod tests {
 
         // The second and third rows of the sorted result, with a filter on top.
         let out = temp_path("sorted_range.csv");
-        let n = export_data(
-            &cache,
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            Some(1),
-            Some(2),
-            Some("\"id\" > 1".into()),
-            by_name_desc(),
-        )
-        .await
-        .unwrap();
+        let n = export(&cache, &src, &out, "csv", Some((1, 2)), Some("\"id\" > 1"), by_name_desc())
+            .await
+            .unwrap();
         assert_eq!(n, 2);
         let text = std::fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
@@ -806,21 +780,9 @@ mod tests {
         // A sort by a column the file does not have is refused before any
         // file is created.
         let out = temp_path("sorted_missing.csv");
-        let err = export_data(
-            &cache,
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            None,
-            Some(SortSpec {
-                column: "gone".into(),
-                direction: SortDirection::Asc,
-            }),
-        )
-        .await
-        .unwrap_err();
+        let err = export(&cache, &src, &out, "csv", None, None, Some(SortSpec { column: "gone".into(), direction: SortDirection::Asc }))
+            .await
+            .unwrap_err();
         assert!(err.contains("gone"), "{err}");
         assert!(!out.exists());
     }
@@ -830,9 +792,7 @@ mod tests {
         let src = write_fixture("sort_export_memory");
         let out = temp_path("sort_export_memory.csv");
         let cache = ParquetCache::new().with_memory_limit(1);
-        let err = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
-            "csv".into(), Some(1), Some(1), None,
-            Some(SortSpec { column: "name".into(), direction: SortDirection::Asc })).await.unwrap_err();
+        let err = export(&cache, &src, &out, "csv", Some((1, 1)), None, Some(SortSpec { column: "name".into(), direction: SortDirection::Asc })).await.unwrap_err();
         assert!(err.contains("sorted export"), "{err}");
         assert!(!err.contains("SQL view"), "{err}");
         assert!(!out.exists());
@@ -846,13 +806,11 @@ mod tests {
             for filter in [None, Some("id > 1".to_string())] {
                 let sort = Some(SortSpec { column: "name".into(), direction });
                 let full = temp_path("sorted_full.json");
-                export_data(&cache, src.to_string_lossy().into_owned(), full.to_string_lossy().into_owned(),
-                    "json".into(), None, None, filter.clone(), sort.clone()).await.unwrap();
+                export(&cache, &src, &full, "json", None, filter.as_deref(), sort.clone()).await.unwrap();
                 let expected: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&full).unwrap()).unwrap();
                 for (offset, limit) in [(0, 2), (2, 1), (3, 10), (4, 2), (0, 0)] {
                     let out = temp_path("sorted_page.json");
-                    let n = export_data(&cache, src.to_string_lossy().into_owned(), out.to_string_lossy().into_owned(),
-                        "json".into(), Some(offset), Some(limit), filter.clone(), sort.clone()).await.unwrap();
+                    let n = export(&cache, &src, &out, "json", Some((offset, limit)), filter.as_deref(), sort.clone()).await.unwrap();
                     let actual: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
                     let want = expected.iter().skip(offset).take(limit).cloned().collect::<Vec<_>>();
                     assert_eq!(actual, want, "{direction:?} {filter:?} offset={offset} limit={limit}");
@@ -880,18 +838,9 @@ mod tests {
         write_parquet(&src, &batch, None);
 
         let out = temp_path("nested.csv");
-        let n = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&ParquetCache::new(), &src, &out, "csv", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(n, 1);
         let text = std::fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().collect();
@@ -906,49 +855,22 @@ mod tests {
         std::fs::write(&out, "previous good export").unwrap();
 
         // A filter the planner rejects.
-        let err = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            Some("\"no_such_column\" = 1".into()),
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err = export(&ParquetCache::new(), &src, &out, "csv", None, Some("\"no_such_column\" = 1"), None)
+            .await
+            .unwrap_err();
         assert!(err.contains("SQL execution failed"), "unexpected error: {err}");
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
 
         // A source that does not exist.
-        export_data(
-            &ParquetCache::new(),
-            temp_path("missing.parquet").to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap_err();
+        export(&ParquetCache::new(), &temp_path("missing.parquet"), &out, "csv", None, None, None)
+            .await
+            .unwrap_err();
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
 
         // An unsupported format.
-        export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "xlsx".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap_err();
+        export(&ParquetCache::new(), &src, &out, "xlsx", None, None, None)
+            .await
+            .unwrap_err();
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "previous good export");
 
         // No staging leftovers either — not next to the destination, which the
@@ -967,18 +889,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("granted.csv");
 
-        let rows = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "csv".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let rows = export(&ParquetCache::new(), &src, &out, "csv", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(rows, 4);
 
         let entries: Vec<String> = std::fs::read_dir(&dir)
@@ -994,18 +907,9 @@ mod tests {
     async fn json_exports_all_rows_by_default() {
         let src = write_fixture("json_all");
         let out = temp_path("out.json");
-        let n = export_data(
-            &ParquetCache::new(),
-            src.to_string_lossy().into_owned(),
-            out.to_string_lossy().into_owned(),
-            "json".into(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let n = export(&ParquetCache::new(), &src, &out, "json", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(n, 4);
         let parsed: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
         let rows = parsed.as_array().unwrap();
