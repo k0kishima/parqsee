@@ -185,6 +185,7 @@ pub async fn column_counts(
     column: &str,
     filter: Option<String>,
 ) -> Result<ColumnCounts, String> {
+    cache.check_unchanged(path)?;
     let kind = file_column_kind(cache, path, column).await?;
     let source = ProfileSource::File { cache, path };
     counts(&source, column, &quote_identifier(column), kind, filter).await
@@ -199,6 +200,7 @@ pub async fn column_chart(
     filter: Option<String>,
     counted: &ColumnCounts,
 ) -> Result<ProfileChart, String> {
+    cache.check_unchanged(path)?;
     let kind = file_column_kind(cache, path, column).await?;
     let source = ProfileSource::File { cache, path };
     chart(&source, &quote_identifier(column), kind, filter, counted).await
@@ -863,6 +865,36 @@ mod tests {
         assert_eq!(profile(&path, "MixedCase", None).await.distinct_count, Some(3));
         let err = column_counts(&ParquetCache::new(), &path, "missing", None).await.unwrap_err();
         assert!(err.contains("no column named \"missing\""), "{err}");
+    }
+
+    /// A profile is a count and a chart of what the panel says is on
+    /// screen. Over a file that was replaced under the tab it would be a
+    /// picture of another file's values beside the old file's row count.
+    #[tokio::test]
+    async fn a_profile_after_the_file_was_rewritten_is_refused() {
+        let path = fixture(
+            "rewritten_profile.parquet",
+            vec![("id", Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef)],
+        );
+        let cache = ParquetCache::new();
+        let counted = column_counts(&cache, &path, "id", None).await.unwrap();
+        assert_eq!(counted.total_rows, 3);
+
+        let replacement = RecordBatch::try_from_iter(vec![(
+            "id",
+            Arc::new(Int64Array::from(vec![9])) as ArrayRef,
+        )])
+        .unwrap();
+        test_support::rewrite_parquet(std::path::Path::new(&path), &replacement);
+
+        let err = column_counts(&cache, &path, "id", None).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+        let err = column_chart(&cache, &path, "id", None, &counted).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+
+        cache.evict(&path).await.unwrap();
+        let counted = column_counts(&cache, &path, "id", None).await.unwrap();
+        assert_eq!(counted.total_rows, 1);
     }
 
     /// Exercise the same literals a bar click sends, through the grid's

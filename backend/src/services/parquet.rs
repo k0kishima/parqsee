@@ -75,7 +75,10 @@ struct FileVersion {
 impl FileVersion {
     // Call only after a metadata/session fill has acquired sandbox access.
     fn read(path: &str) -> Result<Self, String> {
-        let metadata = std::fs::metadata(path).map_err(|e| format!("Cannot stat {path}: {e}"))?;
+        // Worded like the reader's own failure: opening a file is where this
+        // is reached first, and a file that is gone or unreadable must read
+        // the same on the error screen whichever of the two noticed.
+        let metadata = std::fs::metadata(path).map_err(|e| format!("Cannot open {path}: {e}"))?;
         Ok(Self {
             size: metadata.len(),
             modified: metadata.modified().map_err(|e| format!("Cannot read modification time for {path}: {e}"))?,
@@ -102,6 +105,20 @@ struct CachedResult {
 pub struct ParquetCache {
     sessions: Mutex<HashMap<String, datafusion::execution::context::SessionContext>>,
     metadata: Mutex<HashMap<String, ParquetMetadata>>,
+    /// The version of each open file at the moment it was opened. Every
+    /// path that returns or writes rows — pages, counts, exports, profiles
+    /// — compares it with the file on disk first and refuses to read when
+    /// the two differ, because a file replaced under an open tab is a
+    /// different file that nothing downstream would notice: the DataFusion
+    /// session keeps the schema it registered, so its adapter quietly casts
+    /// the new file's columns into the old shape and NULL-fills the ones it
+    /// no longer has, while `range_reader` cuts the new file to the row
+    /// count the old footer reported — page 1500 of a file that is now five
+    /// rows long reads as no rows at all, under a footer still counting
+    /// 100,000. A refresh (`evict`, then opening the file again) is the one
+    /// way back, since only that re-reads the schema, the row count and this
+    /// version together.
+    versions: Mutex<HashMap<String, FileVersion>>,
     results: Mutex<VecDeque<CachedResult>>,
     /// Per-path gates make a cache fill and eviction one atomic transition
     /// without serializing operations for unrelated files.
@@ -144,6 +161,7 @@ impl ParquetCache {
         Self {
             sessions: Mutex::new(HashMap::new()),
             metadata: Mutex::new(HashMap::new()),
+            versions: Mutex::new(HashMap::new()),
             results: Mutex::new(VecDeque::new()),
             session_gates: Mutex::new(HashMap::new()),
             metadata_gates: Mutex::new(HashMap::new()),
@@ -261,15 +279,40 @@ impl ParquetCache {
             return Err(e);
         }
 
+        // Only when nothing has recorded one yet: the metadata fill reads
+        // the schema and the row count the tab shows, so its version is the
+        // one every later read has to match.
+        if let Err(e) = FileVersion::read(path).and_then(|version| {
+            let mut versions = self.versions.lock().map_err(|e| e.to_string())?;
+            versions.entry(path.to_string()).or_insert(version);
+            Ok(())
+        }) {
+            self.release_unless_used(path, &self.metadata_gates);
+            return Err(e);
+        }
+
         store(&self.sessions, path, ctx.clone())?;
 
         Ok(ctx)
     }
 
     /// Get cached metadata, or compute and cache it.
+    ///
+    /// Reading the file's schema is also what opens it, so this is where the
+    /// version every later read is held to is recorded. It is read before
+    /// the schema and checked after it, so the two cannot straddle a
+    /// rewrite: recording the version of a file whose row count came from
+    /// the one before it would let every later page through against a
+    /// footer that no longer describes it.
     pub async fn get_or_create_metadata(&self, path: &str) -> Result<ParquetMetadata, String> {
-        self.get_or_create_metadata_with(path, || compute_metadata(path))
-            .await
+        self.get_or_create_metadata_with(path, || {
+            let version = FileVersion::read(path)?;
+            let meta = compute_metadata(path)?;
+            version.check(path)?;
+            store(&self.versions, path, version)?;
+            Ok(meta)
+        })
+        .await
     }
 
     async fn get_or_create_metadata_with<F>(
@@ -370,8 +413,24 @@ impl ParquetCache {
         if let Ok(mut metadata_cache) = self.metadata.lock() {
             metadata_cache.remove(path);
         }
+        if let Ok(mut versions) = self.versions.lock() {
+            versions.remove(path);
+        }
         self.access.release(path);
         Ok(())
+    }
+
+    /// Refuse to read a file that changed since it was opened. A path with
+    /// no recorded version is not open, and is read as it is found.
+    pub fn check_unchanged(&self, path: &str) -> Result<(), String> {
+        let recorded = {
+            let versions = self.versions.lock().map_err(|e| e.to_string())?;
+            versions.get(path).cloned()
+        };
+        match recorded {
+            Some(version) => version.check(path),
+            None => Ok(()),
+        }
     }
 }
 
@@ -1379,6 +1438,7 @@ pub async fn read_data(
     filter: Option<String>,
     sort: Option<SortSpec>,
 ) -> Result<Vec<Value>, String> {
+    cache.check_unchanged(path)?;
     if let Some(sort) = sort {
         let batches = sorted_page_batches(cache, path, offset, limit, filter, sort, ResultCachePolicy::Populate)
             .await.map_err(|e| {
@@ -1428,6 +1488,7 @@ async fn count_data_with_policy(
     filter: Option<String>,
     policy: ResultCachePolicy,
 ) -> Result<usize, String> {
+    cache.check_unchanged(path)?;
     let query = match where_clause(filter.as_deref()) {
         Some(f) => format!("SELECT COUNT(*) FROM t WHERE {}", f),
         None => "SELECT COUNT(*) FROM t".to_string(),
@@ -1869,6 +1930,15 @@ pub async fn execute_sql_with_cache(
 /// lets `a.id` and `b.id` both reach the Arrow schema as `id`. The
 /// qualifier is the only thing that tells the two apart, so a caller that
 /// has to name the columns needs it (`commands::query::unique_column_names`).
+///
+/// Unlike the browse paths, this does not refuse a file that changed since
+/// it was opened (`ParquetCache::check_unchanged`). The grid answers such a
+/// file with a message because the page it would draw contradicts the row
+/// count and the header beside it; a query states its own shape in its
+/// `SELECT`, has no Refresh of its own to offer, and querying a file that
+/// has just been rewritten is a reasonable thing to want. What it sees is
+/// still the session's registered schema, so a rewrite that changed the
+/// columns answers for the old ones until the tab is refreshed.
 pub async fn execute_sql_limited(
     cache: &ParquetCache,
     file_path: &str,
@@ -2477,6 +2547,11 @@ mod tests {
         );
     }
 
+    /// A count and the sorted window drawn beside it must always come from
+    /// the same file: the count cached for the old one over rows read from
+    /// the new one is a footer that contradicts the grid. The overwrite is
+    /// refused until the tab is refreshed, and after the refresh the two
+    /// agree again — whether the file grew or shrank.
     #[tokio::test]
     async fn overwritten_files_do_not_mix_cached_counts_and_fresh_sort_windows() {
         let path = temp_path("sort_overwrite.parquet");
@@ -2489,18 +2564,19 @@ mod tests {
         let cache = ParquetCache::new();
         cache.get_or_create_metadata(&file).await.unwrap();
         assert_eq!(super::count_data(&cache, &file, Some("id >= 0".into())).await.unwrap(), 10);
-        write(20);
-        for filter in [Some("id >= 0".into()), None] {
-            let rows = super::read_data(&cache, &file, 6, 2, filter.clone(),
-                Some(SortSpec { column: "id".into(), direction: SortDirection::Asc })).await.unwrap();
-            assert_eq!(rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>(), vec![6, 7]);
-            assert_eq!(super::count_data(&cache, &file, filter).await.unwrap(), 20);
+        for rows_written in [20, 8] {
+            write(rows_written);
+            let err = super::count_data(&cache, &file, Some("id >= 0".into())).await.unwrap_err();
+            assert!(err.contains("Refresh"), "{err}");
+            cache.evict(&file).await.unwrap();
+            cache.get_or_create_metadata(&file).await.unwrap();
+            for filter in [Some("id >= 0".into()), None] {
+                let rows = super::read_data(&cache, &file, 6, 2, filter.clone(),
+                    Some(SortSpec { column: "id".into(), direction: SortDirection::Asc })).await.unwrap();
+                assert_eq!(rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>(), vec![6, 7]);
+                assert_eq!(super::count_data(&cache, &file, filter).await.unwrap(), rows_written as usize);
+            }
         }
-        write(8);
-        let rows = super::read_data(&cache, &file, 6, 2, Some("id >= 0".into()),
-            Some(SortSpec { column: "id".into(), direction: SortDirection::Asc })).await.unwrap();
-        assert_eq!(rows.iter().map(|r| r["id"].as_i64().unwrap()).collect::<Vec<_>>(), vec![6, 7]);
-        assert_eq!(super::count_data(&cache, &file, Some("id >= 0".into())).await.unwrap(), 8);
     }
 
     #[tokio::test]
@@ -2657,10 +2733,111 @@ mod tests {
         assert_eq!(before.size, super::FileVersion::read(&file).unwrap().size,
             "the timestamp must invalidate even a same-size overwrite");
         assert!(before.check(&file).unwrap_err().contains("file changed"));
+        // The page cached for the old file is not served for the new one:
+        // the read is refused outright, and a refresh is what brings the
+        // new rows back.
+        let err = super::read_data(&cache, &file, 0, 1, None, sort.clone()).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+        cache.evict(&file).await.unwrap();
         let rows = super::read_data(&cache, &file, 0, 1, None, sort.clone()).await.unwrap();
         assert_eq!(rows[0]["id"], 4);
         std::fs::remove_file(&path).unwrap();
         assert!(super::read_data(&cache, &file, 0, 1, None, sort).await.is_err());
+    }
+
+    fn write_numbered(path: &Path, rows: i64) {
+        let batch = RecordBatch::try_from_iter(vec![(
+            "id",
+            Arc::new(Int64Array::from_iter_values(0..rows)) as ArrayRef,
+        )])
+        .unwrap();
+        write_parquet(path, &batch, None);
+    }
+
+    /// What an unrelated program writing over the open file leaves behind:
+    /// fewer rows and another schema entirely.
+    fn five_rows_two_columns() -> RecordBatch {
+        RecordBatch::try_from_iter(vec![
+            ("id", Arc::new(Int64Array::from_iter_values(100..105)) as ArrayRef),
+            (
+                "label",
+                Arc::new(StringArray::from(vec!["a", "b", "c", "d", "e"])) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+
+    /// An unfiltered page comes straight out of the parquet reader with the
+    /// offset pushed down, so a rewritten file would be cut to the old row
+    /// count without anything failing: page 3 of the old file reads as no
+    /// rows at all under the footer of the new one.
+    #[tokio::test]
+    async fn an_unfiltered_page_after_the_file_was_rewritten_is_refused_until_refresh() {
+        let path = temp_path("rewritten_unfiltered.parquet");
+        write_numbered(&path, 20);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        let rows = super::read_data(&cache, &file, 0, 5, None, None).await.unwrap();
+        assert_eq!(rows[0]["id"], 0);
+
+        test_support::rewrite_parquet(&path, &five_rows_two_columns());
+
+        let err = super::read_data(&cache, &file, 10, 5, None, None).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+
+        cache.evict(&file).await.unwrap();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        let rows = super::read_data(&cache, &file, 0, 5, None, None).await.unwrap();
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0]["id"], 100);
+        assert_eq!(rows[0]["label"], "a");
+    }
+
+    /// A filtered page goes through the session instead, whose schema is the
+    /// one the file had when it was registered: the schema adapter would
+    /// cast or NULL-fill the new file's columns into it and answer.
+    #[tokio::test]
+    async fn a_filtered_page_after_the_file_was_rewritten_is_refused() {
+        let path = temp_path("rewritten_filtered.parquet");
+        write_numbered(&path, 20);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        let filter = Some("id >= 0".to_string());
+        let rows = super::read_data(&cache, &file, 0, 5, filter.clone(), None).await.unwrap();
+        assert_eq!(rows.len(), 5);
+
+        test_support::rewrite_parquet(&path, &five_rows_two_columns());
+
+        let err = super::read_data(&cache, &file, 0, 5, filter.clone(), None).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+
+        cache.evict(&file).await.unwrap();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        let rows = super::read_data(&cache, &file, 0, 5, filter, None).await.unwrap();
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0]["id"], 100);
+    }
+
+    /// The count the footer says the grid is paging over.
+    #[tokio::test]
+    async fn a_count_after_the_file_was_rewritten_is_refused() {
+        let path = temp_path("rewritten_count.parquet");
+        write_numbered(&path, 20);
+        let file = path.to_string_lossy().to_string();
+        let cache = ParquetCache::new();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        assert_eq!(super::count_data(&cache, &file, None).await.unwrap(), 20);
+
+        test_support::rewrite_parquet(&path, &five_rows_two_columns());
+
+        let err = super::count_data(&cache, &file, None).await.unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+
+        cache.evict(&file).await.unwrap();
+        cache.get_or_create_metadata(&file).await.unwrap();
+        assert_eq!(super::count_data(&cache, &file, None).await.unwrap(), 5);
     }
 
     #[tokio::test]
