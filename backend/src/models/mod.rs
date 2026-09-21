@@ -282,6 +282,10 @@ pub struct QueryResult {
     /// True when the result was cut at `max_rows`.
     pub truncated: bool,
     pub max_rows: usize,
+    /// How to ask about these rows again — profiling a column of them, or
+    /// narrowing them. None when the result was too large to keep, which
+    /// is the panel's reason for having nothing to show.
+    pub result_id: Option<String>,
 }
 
 /// One value of a column and how many rows hold it.

@@ -27,7 +27,7 @@ const int: QueryChartType = { kind: 'integer' };
 const byCategory: QueryResult = {
   columns: [{ name: 'x', data_type: 'Utf8', chart_type: cat }, { name: 'y', data_type: 'Int64', chart_type: int }],
   rows: [{ x: 'a', y: 1 }, { x: 'b', y: 2 }],
-  execution_time_ms: 1, truncated: false, max_rows: 10_000,
+  execution_time_ms: 1, truncated: false, max_rows: 10_000, result_id: 'r1',
 };
 const byNumber: QueryResult = {
   ...byCategory,

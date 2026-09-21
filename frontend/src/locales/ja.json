@@ -113,6 +113,11 @@
       "error": "エラー",
       "tableName": "テーブル名: t",
       "placeholder": "SQL クエリを入力...（例: SELECT * FROM t）",
+      "result": {
+        "narrowed": "{{total}} 行中 {{shown}} 行に絞り込み中",
+        "removeCondition": "この条件を外す",
+        "partialProfile": "返却された {{rows}} 行の分布です（クエリ全体の分布ではありません）。"
+      },
       "chart": {
           "resultView": "結果の表示",
           "table": "表",

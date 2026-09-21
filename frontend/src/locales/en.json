@@ -113,6 +113,11 @@
             "error": "Error",
             "tableName": "Table name: t",
             "placeholder": "Write your SQL query here... (e.g., SELECT * FROM t)",
+            "result": {
+                "narrowed": "Narrowed to {{shown}} of {{total}} rows",
+                "removeCondition": "Remove this condition",
+                "partialProfile": "Of the {{rows}} rows returned, not of everything the query matches."
+            },
             "chart": {
                 "resultView": "Result view",
                 "table": "Table",

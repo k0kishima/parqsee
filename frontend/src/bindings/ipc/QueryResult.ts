@@ -10,4 +10,10 @@ rows: Record<string, unknown>[], execution_time_ms: number,
 /**
  * True when the result was cut at `max_rows`.
  */
-truncated: boolean, max_rows: number, };
+truncated: boolean, max_rows: number, 
+/**
+ * How to ask about these rows again — profiling a column of them, or
+ * narrowing them. None when the result was too large to keep, which
+ * is the panel's reason for having nothing to show.
+ */
+result_id: string | null, };

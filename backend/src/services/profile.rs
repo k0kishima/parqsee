@@ -2,11 +2,12 @@
 //! the panel that opens beside the grid — the row count, how many are
 //! NULL, how many distinct values there are, and a chart of the values.
 //!
-//! Everything is a query over the shared session (`execute_sql_with_cache`,
-//! so the filter goes through the same read-only check the grid's does),
-//! with the grid's `WHERE` fragment applied, so the panel describes the rows
-//! the grid shows. Two or three queries per profile: the counts, then the
-//! chart's own — and the histogram's range before its buckets.
+//! Everything is a query over a `ProfileSource` — a file's shared session,
+//! so the filter goes through the same read-only check the grid's does, or
+//! the rows a SQL query returned — with the grid's `WHERE` fragment
+//! applied, so the panel describes the rows the grid shows. Two or three
+//! queries per profile: the counts, then the chart's own — and the
+//! histogram's range before its buckets.
 //!
 //! Which chart a column gets is decided here from the distinct count, not
 //! from the type alone: a column with at most `TOP_VALUES` distinct values
@@ -26,10 +27,45 @@ use arrow::datatypes::{DataType, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use serde_json::Value;
 
+use arrow::datatypes::SchemaRef;
+use datafusion::prelude::SessionContext;
+
 use crate::models::{ColumnKind, ColumnProfile, HistogramBucket, ProfileChart, ValueCount};
 use crate::services::parquet::{
     batches_to_rows, execute_sql_with_cache, quote_identifier, where_clause, ParquetCache,
 };
+
+/// What a profile aggregates over. Both answer SQL against a table called
+/// `t`, which is the only thing the queries below assume: a file goes
+/// through its cached session, a kept query result through a `MemTable`
+/// of the rows the webview was given.
+pub enum ProfileSource<'a> {
+    File { cache: &'a ParquetCache, path: &'a str },
+    /// A session with a kept result registered as `t`
+    /// (`services::query_results`). The SQL run against it is this
+    /// module's own, never the user's, so it needs no read-only check.
+    Result(&'a SessionContext),
+}
+
+impl ProfileSource<'_> {
+    async fn query(&self, sql: &str) -> Result<(Vec<RecordBatch>, SchemaRef), String> {
+        match self {
+            Self::File { cache, path } => execute_sql_with_cache(cache, path, sql).await,
+            Self::Result(ctx) => {
+                let df = ctx
+                    .sql(sql)
+                    .await
+                    .map_err(|e| format!("Failed to read the result: {e}"))?;
+                let schema = df.schema().inner().clone();
+                let batches = df
+                    .collect()
+                    .await
+                    .map_err(|e| format!("Failed to read the result: {e}"))?;
+                Ok((batches, schema))
+            }
+        }
+    }
+}
 
 /// How many values a `TopValues` chart lists, and the most distinct values
 /// a column may have and still be listed in full. Twenty rows fit the panel
@@ -84,6 +120,35 @@ fn count_of(row: &Value, key: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("The profile query returned no {} column", key))
 }
 
+/// A result column's kind, from the type DataFusion planned for it. The
+/// file's own kinds are read from the parquet schema (`column_kind`),
+/// which a query result does not have: an expression's type is decided by
+/// the plan, and a CAST changes it.
+///
+/// A dictionary column is `Other` — counts, no chart. Its values would
+/// reach the panel through the same JSON rendering the SQL view already
+/// declines to trust for a dictionary (see `chart_type_of`), and a chart
+/// of values is exactly what that would show.
+pub fn column_kind_of(data_type: &DataType) -> ColumnKind {
+    match data_type {
+        DataType::Boolean => ColumnKind::Boolean,
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => ColumnKind::Integer,
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => ColumnKind::Float,
+        DataType::Decimal32(_, _) | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => ColumnKind::Decimal,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => ColumnKind::Text,
+        DataType::Date32 | DataType::Date64 | DataType::Time32(_) | DataType::Time64(_)
+        | DataType::Timestamp(_, _) => ColumnKind::Temporal,
+        DataType::Binary | DataType::LargeBinary | DataType::BinaryView
+        | DataType::FixedSizeBinary(_) => ColumnKind::Binary,
+        DataType::List(_) | DataType::LargeList(_) | DataType::ListView(_)
+        | DataType::LargeListView(_) | DataType::FixedSizeList(_, _)
+        | DataType::Struct(_) | DataType::Map(_, _) | DataType::Union(_, _) => ColumnKind::Nested,
+        _ => ColumnKind::Other,
+    }
+}
+
 /// Profile `column` of the file at `path` over the rows `filter` keeps.
 pub async fn profile_column(
     cache: &ParquetCache,
@@ -98,7 +163,22 @@ pub async fn profile_column(
         .find(|c| c.name == column)
         .ok_or_else(|| format!("This file has no column named \"{}\"", column))?;
     let kind = info.kind;
-    let col = quote_identifier(column);
+    let source = ProfileSource::File { cache, path };
+    profile(&source, column, &quote_identifier(column), kind, filter).await
+}
+
+/// Profile the column `col` names in `source`, calling it `name` in the
+/// answer. `col` is already an expression the SQL can use — a quoted file
+/// column, or a result's positional alias — because what a column is
+/// called and how it is addressed are not the same thing once a query
+/// result is in play.
+pub async fn profile(
+    source: &ProfileSource<'_>,
+    name: &str,
+    col: &str,
+    kind: ColumnKind,
+    filter: Option<String>,
+) -> Result<ColumnProfile, String> {
     let filter = where_clause(filter.as_deref()).map(str::to_string);
     let filter = filter.as_deref();
 
@@ -113,26 +193,26 @@ pub async fn profile_column(
     } else {
         format!("SELECT COUNT(*), COUNT({col}) FROM t{}", where_sql(filter, &[]))
     };
-    let (batches, _) = execute_sql_with_cache(cache, path, &counts_query).await?;
+    let (batches, _) = source.query(&counts_query).await?;
     let total_rows = count_cell(&batches, 0)?;
     let non_null = count_cell(&batches, 1)?;
     let distinct_count = if countable { Some(count_cell(&batches, 2)?) } else { None };
 
     let chart = match distinct_count {
         None => ProfileChart::Unsupported,
-        Some(distinct) if distinct <= TOP_VALUES => top_values(cache, path, &col, filter, non_null).await?,
+        Some(distinct) if distinct <= TOP_VALUES => top_values(source, col, filter, non_null).await?,
         Some(_) if matches!(
             kind,
             ColumnKind::Integer | ColumnKind::Float | ColumnKind::Decimal | ColumnKind::Temporal
         ) =>
         {
-            histogram(cache, path, &col, kind, filter, non_null).await?
+            histogram(source, col, kind, filter, non_null).await?
         }
-        Some(_) => top_values(cache, path, &col, filter, non_null).await?,
+        Some(_) => top_values(source, col, filter, non_null).await?,
     };
 
     Ok(ColumnProfile {
-        column: column.to_string(),
+        column: name.to_string(),
         kind,
         total_rows,
         null_count: total_rows.saturating_sub(non_null),
@@ -144,8 +224,7 @@ pub async fn profile_column(
 /// The `TOP_VALUES` commonest non-null values. Ties are broken by the value
 /// itself so the list is the same on every run.
 async fn top_values(
-    cache: &ParquetCache,
-    path: &str,
+    source: &ProfileSource<'_>,
     col: &str,
     filter: Option<&str>,
     non_null: usize,
@@ -155,7 +234,7 @@ async fn top_values(
         where_sql(filter, &[format!("{col} IS NOT NULL")]),
         TOP_VALUES
     );
-    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    let (batches, _) = source.query(&query).await?;
     let values = batches_to_rows(&batches)?
         .into_iter()
         .map(|mut row| {
@@ -280,8 +359,7 @@ fn bucket_width(axis: &Axis, kind: ColumnKind, range: f64) -> f64 {
 }
 
 async fn histogram(
-    cache: &ParquetCache,
-    path: &str,
+    source: &ProfileSource<'_>,
     col: &str,
     kind: ColumnKind,
     filter: Option<&str>,
@@ -303,12 +381,12 @@ async fn histogram(
         "SELECT MIN({col}), MAX({col}) FROM t{}",
         where_sql(filter, &conditions)
     );
-    let (batches, schema) = execute_sql_with_cache(cache, path, &range_query).await?;
+    let (batches, schema) = source.query(&range_query).await?;
     let data_type = schema.field(0).data_type().clone();
     // A double cannot safely choose decimal boundaries at arbitrary precision.
     // Keep exact rendered values for those columns instead of fabricating bins.
     if matches!(&data_type, DataType::Decimal128(precision, _) | DataType::Decimal256(precision, _) if *precision > 15) {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     }
     let axis = if kind == ColumnKind::Temporal { Axis::Temporal(data_type) } else { Axis::Number };
     let Some(batch) = batches.iter().find(|b| b.num_rows() > 0) else {
@@ -342,17 +420,17 @@ async fn histogram(
         || (matches!(kind, ColumnKind::Integer | ColumnKind::Decimal)
             && (min.abs() > safe_integer || max.abs() > safe_integer))
     {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     }
     let width = bucket_width(&axis, kind, range);
     if !width.is_finite() || width <= 0.0 || !(min / width).is_finite() {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     }
     let edges = bucket_edges(min, max, width);
     if edges.iter().any(|(lo, hi)| !lo.is_finite() || !hi.is_finite() || lo >= hi)
         || edges[0].0 > min || edges.last().unwrap().1 <= max
     {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     }
 
     let day_end = match &axis {
@@ -373,10 +451,10 @@ async fn histogram(
         })
     }).collect::<Result<Vec<_>, String>>();
     let Ok(mut buckets) = labelled else {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     };
     if buckets.iter().any(|b| b.lower == b.upper && !b.upper_inclusive) {
-        return top_values(cache, path, col, filter, non_null).await;
+        return top_values(source, col, filter, non_null).await;
     }
 
     // Count with exactly the predicates the filter bar submits, on the
@@ -392,7 +470,7 @@ async fn histogram(
             literal(&b.lower), literal(&b.upper))
     }).collect::<Vec<_>>().join(", ");
     let query = format!("SELECT {aggregates} FROM t{}", where_sql(filter, &conditions));
-    let (batches, _) = execute_sql_with_cache(cache, path, &query).await?;
+    let (batches, _) = source.query(&query).await?;
     for (index, bucket) in buckets.iter_mut().enumerate() {
         bucket.count = count_cell(&batches, index)?;
     }

@@ -1,12 +1,14 @@
-import React, { RefObject, useCallback, useMemo, useRef, useState } from 'react';
+import React, { RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { executeSql } from '../api/execute-sql';
+import { filterQueryResult, releaseQueryResult } from '../api/result-profile';
 import { QueryEditor } from '../components/query-editor';
-import { QueryResults, type ChartControls, type ResultMode } from '../components/query-results';
+import { QueryResults, type ChartControls, type ProfileControls, type ResultMode } from '../components/query-results';
 import { IMPLEMENTED_CHART_KINDS } from '../components/query-chart';
 import { buildChartModel } from '../lib/chart-data';
 import type { ChartKind } from '../lib/chart-types';
 import { QueryResult } from '../types';
+import { applyConditions, filterSqlOf, type AppliedCondition } from '../lib/result-filter';
 import { toErrorMessage } from '../../../lib/tauri';
 
 interface QueryViewProps {
@@ -40,16 +42,47 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     // Answers to a run the user has since superseded are dropped.
     const generation = useRef(0);
 
+    // The profile beside the result, and what it narrowed the result to.
+    // A new result is a new set of rows, so both start again with it:
+    // conditions from the old one would name columns the new one may not
+    // have, and would claim a row count nothing on screen produced.
+    const [profileColumn, setProfileColumn] = useState<number | null>(null);
+    const [conditions, setConditions] = useState<AppliedCondition[]>([]);
+    const [narrowedRows, setNarrowedRows] = useState<Record<string, unknown>[] | null>(null);
+    const [narrowError, setNarrowError] = useState<string | undefined>();
+
+    // The backend holds the rows of every result it is asked to keep. The
+    // webview is what knows a result is finished with: a re-run replaced
+    // it, its answer was superseded, or the tab closed. The store's own
+    // caps collect what a missed call leaves behind.
+    const kept = useRef<string | null>(null);
+    const keep = useCallback((next: QueryResult | undefined) => {
+        const id = next?.result_id ?? null;
+        if (kept.current !== null && kept.current !== id) releaseQueryResult(kept.current);
+        kept.current = id;
+    }, []);
+    useEffect(() => () => { if (kept.current !== null) releaseQueryResult(kept.current); }, []);
+
     const handleExecute = async (query: string) => {
         const run = ++generation.current;
         setIsLoading(true);
         setError(undefined);
         try {
             const data = await executeSql(filePath, query);
-            if (run !== generation.current) return;
+            if (run !== generation.current) {
+                // A run the user superseded: its rows are held by the
+                // backend and nothing will ask about them again.
+                if (data.result_id) releaseQueryResult(data.result_id);
+                return;
+            }
             const sameSql = lastSql.current === query;
             lastSql.current = query;
+            keep(data);
             setResult(data);
+            setProfileColumn(null);
+            setConditions([]);
+            setNarrowedRows(null);
+            setNarrowError(undefined);
             setNotice(null);
             if (!sameSql) {
                 setChartOverride(null);
@@ -64,13 +97,50 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             if (run !== generation.current) return;
             console.error(err);
             setError(toErrorMessage(err));
+            keep(undefined);
             setResult(undefined);
+            setProfileColumn(null);
+            setConditions([]);
+            setNarrowedRows(null);
         } finally {
             if (run === generation.current) setIsLoading(false);
         }
     };
 
-    const model = useMemo(() => (result ? buildChartModel(result, IMPLEMENTED_CHART_KINDS) : null), [result]);
+    // What is on screen: the rows the conditions keep, so the grid, the
+    // chart and the row count all describe one set of rows.
+    const shown = useMemo(
+        () => (result && narrowedRows ? { ...result, rows: narrowedRows } : result),
+        [result, narrowedRows],
+    );
+
+    const narrow = useCallback(async (next: AppliedCondition[], resultId: string) => {
+        setConditions(next);
+        try {
+            const rows = await filterQueryResult(resultId, filterSqlOf(next));
+            setNarrowedRows(next.length === 0 ? null : rows);
+            setNarrowError(undefined);
+        } catch (err) {
+            console.error(err);
+            setNarrowError(toErrorMessage(err));
+        }
+    }, []);
+
+    const profile: ProfileControls | undefined = result?.result_id
+        ? {
+            resultId: result.result_id,
+            openColumn: profileColumn,
+            onOpenColumn: setProfileColumn,
+            conditions,
+            onNarrow: next => { void narrow(applyConditions(conditions, next), result.result_id!); },
+            onRemoveCondition: index => { void narrow(conditions.filter((_, i) => i !== index), result.result_id!); },
+            onClearConditions: () => { void narrow([], result.result_id!); },
+            totalRows: result.rows.length,
+            filter: filterSqlOf(conditions),
+        }
+        : undefined;
+
+    const model = useMemo(() => (shown ? buildChartModel(shown, IMPLEMENTED_CHART_KINDS) : null), [shown]);
     const onKindChange = useCallback((kind: ChartKind) => { setChartOverride(kind); setNotice(null); }, []);
     const chart: ChartControls | undefined = model
         ? {
@@ -89,7 +159,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
                 <QueryEditor onExecute={handleExecute} isLoading={isLoading} isActiveRef={isActiveRef} />
             </div>
             <div className="flex-1 overflow-hidden relative z-0 flex flex-col">
-                <QueryResults result={result} error={error} isLoading={isLoading} chart={chart} />
+                <QueryResults result={shown} error={error ?? narrowError} isLoading={isLoading} chart={chart} profile={profile} />
             </div>
         </div>
     );

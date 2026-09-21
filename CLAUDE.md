@@ -59,11 +59,13 @@ parqsee/
 ├── frontend/                     # React frontend
 │   ├── src/
 │   │   ├── app/                  # App shell: provider tree and router
-│   │   ├── components/           # Shared UI: Modal (the centred dialog shell every modal uses)
+│   │   ├── components/           # Shared UI: Modal (the centred dialog shell every modal uses),
+│   │   │                         # column-profile (the panel both grids open)
 │   │   ├── contexts/             # SettingsContext, RecentFilesContext, WorkspaceContext
 │   │   ├── features/             # Feature-based modules (see below)
 │   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown, useColumnVirtualizer)
-│   │   ├── lib/                  # Shared helpers (path, format, tauri, i18n, settings-storage, column-widths)
+│   │   ├── lib/                  # Shared helpers (path, format, tauri, i18n, settings-storage,
+│   │   │                         # column-widths, filter-sql)
 │   │   ├── locales/              # en.json, ja.json
 │   │   └── test/setup.ts         # Vitest setup and global mocks
 │   ├── package.json
@@ -72,7 +74,9 @@ parqsee/
 ├── backend/                      # Tauri backend
 │   ├── src/
 │   │   ├── commands/             # Tauri command handlers (file, data, query, workspace, iap, menu)
-│   │   ├── services/             # parquet (cache, reads, SQL), export, access (sandbox bookmarks), store (free tier / purchase), menu_labels (the menu's strings)
+│   │   ├── services/             # parquet (cache, reads, SQL), profile, query_results (the rows a
+│   │   │                         # query returned), export, access (sandbox bookmarks), store (free
+│   │   │                         # tier / purchase), menu_labels (the menu's strings)
 │   │   ├── models/               # Serde types shared with the frontend
 │   │   ├── menu.rs               # Open Recent, and the menu's language
 │   │   ├── lib.rs                # Builder, plugins, command registration
@@ -238,6 +242,32 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   slice is wide. Slices run clockwise from 12 o'clock, biggest first,
   and carry their category, value and percentage in the legend rather
   than inside the circle
+  The profile of a result column (`components/result-profile.tsx`, the
+  chart button on a result column's header) is the same panel the browse
+  grid opens, over the rows the query returned rather than over a file:
+  the backend keeps those rows as Arrow under a `result_id`
+  (`services::query_results`), because by the time the grid has them a
+  big integer and a decimal are strings and a distinct count over those
+  would be a count of strings. It profiles what came back and no more —
+  at most `MAX_QUERY_ROWS` — and says so when the result was cut at that
+  limit, rather than letting a sample's distribution pass for the data's.
+  A bar narrows the result (`lib/result-filter.ts`, `filter_query_result`)
+  and never rewrites the SQL, which would also mean running it again and
+  answering differently for a query that is not deterministic; the
+  conditions are named above the grid, and the grid, the chart and the
+  row count are all of the narrowed rows. The result's session runs
+  single-partition like a file's, and for the same reason: the narrowing
+  query has no `ORDER BY`, and with the default partitioning DataFusion
+  deals the kept batches out across partitions and merges them back in
+  arrival order, so the rows would come back shuffled on the app's
+  multi-thread runtime (`narrowing_keeps_the_rows_in_the_order_the_query_returned_them`
+  pins this, on a multi-thread test runtime — a single thread finishes
+  the partitions in order and hides it). Columns are addressed by
+  position on both sides (`column_alias` / `columnAlias`): two columns of
+  one result may share a name, and an expression's name is not an
+  identifier. A new result drops the panel and the conditions, and the
+  rows kept for the old one are released — as they are for a superseded
+  run's answer and a closed tab, with the store's caps as the backstop
 - `layout` — the top row's controls (`HeaderActions`: Open File / Open Folder / Recent Files / Settings, shared by the header and the tab bar) and the tab bar, with the right-click menu over a tab: copy path,
   reveal in Finder, close it, close the others, close the ones to its
   right, reopen the last closed tab. The bulk closes go through
@@ -330,7 +360,10 @@ Argument names are camelCase on the JS side.
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?, sort?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered, sorted result — the sequence the grid paginates over. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
-| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's |
+| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's. The result carries a `result_id` while the backend is holding its rows for the profile, and none when it was too large to keep |
+| `profile_query_column` | `(resultId, columnIndex, filter?)` → `ColumnProfile` | The profile of one column of a kept result, over the rows `filter` keeps. The column is named by position; the rows are the ones the webview was given, never the whole result of the query |
+| `filter_query_result` | `(resultId, filter?)` → `Value[]` | The rows of a kept result that `filter` keeps, keyed as the grid renders them |
+| `release_query_result` | `(resultId)` → `void` | Let go of a result: a re-run replaced it, a superseded run's answer arrived, or its tab closed |
 | `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?, revision}`, derived from the App Store entitlements on every call; waits for the launch-time read (20 s at most, then the free tier at revision 0 with the reason, and the read arrives as `iap-status` when it lands) |
 | `iap_products` | `()` → `IapProduct[]` | The full version (one product) with the storefront's name, description and `display_price`; empty in a build without a store |
 | `iap_purchase` | `(productId)` → `IapPurchaseResult` | Buy the product `iap_products` returned; `outcome` is `purchased`, `cancelled` or `pending` and `status` is the state afterwards |
@@ -820,6 +853,13 @@ context (tabs, roots, recent files, the sample file, the free tier's tab limit a
 and at restore, reopening closed tabs), the license context and its pure parts (tab-limit
 derivation, reducer: free → unlocked and back on a refund, restore,
 cancelled / failed / pending purchases, the upgrade prompt),
+the SQL result's profile (`features/query`: the column profiled by
+position over the kept result, a bar narrowing the rows without touching
+the SQL, the conditions named and cleared, the notice on a truncated
+result, a re-run dropping the panel and releasing the old rows, no
+button for a result the backend could not keep; `lib/result-filter`'s
+replacement of a condition in the same slot, the two upper bounds
+sharing one),
 `lib/path`, `lib/column-widths`, `lib/settings-storage`'s
 system-language guess and
 `hooks/useVirtualRange`; `cargo test --lib` covers the extension matching in
@@ -830,6 +870,12 @@ characters, 64-bit limits, duplicate columns), webview rendering of decimals /
 big integers / NaN (Decimal32/64 included), the read-only SQL view, result
 truncation, the chart type of every Arrow type and of a query's planned
 columns (`commands::query`), export,
+the query result store and the profile of a result column in
+`services::query_results` and `commands::query` (a column reached by
+position whatever it was named, an expression column, exact digits past
+2^53, a released result asking for the query again, the caps dropping
+the oldest and sparing the newest, a result too large not kept at all,
+a narrowed result's rows keyed as the grid renders them),
 the column profile in `services::profile` (the full list and the commonest
 values, integer / float / date / timestamp bins and their edge labels as
 filter literals, NaN and the infinities kept out of the bins, nested
@@ -894,7 +940,12 @@ because it is never inferred, eight slices and the ninth folded into
 Other with its breakdown and its own colour, forty-three rows behind
 one slice, a zero counted and a single value as a circle, and every
 condition that refuses the kind named on its button; run all four under
-`csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
+`csp-server` too), the profile of a SQL result (S22: the counts over the
+returned rows rather than the file, a column with no name of its own
+reached by position, the exact digits of an integer past 2^53, a bar
+narrowing the grid and the footer with it while the SQL stays as
+written, the note on a truncated result, a re-run closing the panel and
+releasing the rows; under `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
 Finder drag and drop, Reveal in Finder, the clipboard, large-file timing,

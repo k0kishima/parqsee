@@ -30,7 +30,8 @@
 //! front of the `iap_*` commands when a scenario wants the free tier
 //! (`launch({ iap })` in lib.mjs), so nothing of it reaches this binary.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
-use parqsee_lib::commands::query::run_query;
+use parqsee_lib::commands::query::{run_filter_query_result, run_profile_query_column, run_query};
+use parqsee_lib::services::query_results::QueryResults;
 use parqsee_lib::models::{SessionTabInput, SortSpec};
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
 use parqsee_lib::services::opened::PendingOpen;
@@ -81,6 +82,7 @@ async fn dispatch(
     access: &FileAccess,
     license: &License,
     pending: &PendingOpen,
+    results: &QueryResults,
     cmd: &str,
     args: Value,
 ) -> Result<Value, String> {
@@ -158,7 +160,23 @@ async fn dispatch(
             json!(rows)
         }
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
-        "execute_sql" => json!(run_query(cache, &s(&args, "filePath")?, &s(&args, "query")?).await?),
+        "execute_sql" => json!(run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?).await?),
+        "profile_query_column" => json!(
+            run_profile_query_column(
+                results,
+                &s(&args, "resultId")?,
+                opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
+                opt_s(&args, "filter"),
+            )
+            .await?
+        ),
+        "filter_query_result" => json!(
+            run_filter_query_result(results, &s(&args, "resultId")?, opt_s(&args, "filter")).await?
+        ),
+        "release_query_result" => {
+            results.release(&s(&args, "resultId")?);
+            Value::Null
+        }
         // There is no menu bar here, and the webview calls this on every
         // launch; answering keeps the harness's console clean.
         "set_menu_language" => Value::Null,
@@ -175,6 +193,7 @@ async fn main() {
     let access = Arc::new(FileAccess::load(Box::new(NoopBookmarks), Some(&data_dir)));
     let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
     let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
+    let results = Arc::new(QueryResults::new());
     license.init().await;
     let pending = Arc::new(PendingOpen::seeded(
         std::env::var("PARQSEE_PENDING_FILES")
@@ -202,6 +221,7 @@ async fn main() {
         let access = access.clone();
         let license = license.clone();
         let pending = pending.clone();
+        let results = results.clone();
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -211,7 +231,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &access, &license, &pending, &cmd, args).await {
+            let resp = match dispatch(&cache, &access, &license, &pending, &results, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };

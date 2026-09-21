@@ -252,6 +252,7 @@ pub fn run() {
             let access = Arc::new(FileAccess::load(bookmark_provider(), data_dir.as_deref()));
             app.manage(Arc::clone(&access));
             app.manage(ParquetCache::with_access(access));
+            app.manage(crate::services::query_results::QueryResults::new());
 
             // The purchase state. Read in the background; `iap_status` waits
             // for the first read (`License::status`).
@@ -302,6 +303,9 @@ pub fn run() {
             commands::data::export_default_dir,
             commands::data::evict_cache,
             commands::query::execute_sql,
+            commands::query::release_query_result,
+            commands::query::profile_query_column,
+            commands::query::filter_query_result,
             commands::iap::iap_status,
             commands::iap::iap_products,
             commands::iap::iap_purchase,
