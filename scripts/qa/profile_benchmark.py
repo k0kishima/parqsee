@@ -97,6 +97,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--page-limit", type=positive_int, default=100, help="rows per page read in the concurrency and pileup sections")
     parser.add_argument("--busy-column", help="the column profiled in the concurrency, pileup and abandonment sections (default: the first --columns entry)")
     parser.add_argument("--lead-ms", type=positive_int, default=300, help="how long a profile runs before the page read or the closing tab")
+    parser.add_argument("--sort-column", help="also measure a deep sorted page during the profile: the grid's one memory-hungry read, which shares the profile's pool")
     parser.add_argument("--gap-ms", type=positive_int, default=150, help="the pause between two profiles in the pileup section")
     parser.add_argument("--skip", action="append", choices=SECTIONS, default=[], help="a section to leave out, repeatable")
     parser.add_argument("--output", type=Path, help="JSON result path (default: a timestamped file in the system temp directory)")
@@ -377,29 +378,44 @@ def measure_columns(spawn: Spawn, dataset: str, args: argparse.Namespace) -> lis
     return results
 
 
-def measure_concurrency(spawn: Spawn, dataset: str, args: argparse.Namespace) -> dict[str, Any]:
+def measure_concurrency(spawn: Spawn, dataset: str, total_rows: int, args: argparse.Namespace) -> dict[str, Any]:
     """A page read on its own, then the same read while a profile is running.
 
-    Two reads, because they take different paths: the unfiltered page the grid
-    asks for is the parquet reader's, which never meets DataFusion, while a
-    filtered page is a query in the same session and under the same memory pool
-    as the profile.
+    The reads take different paths: the unfiltered page the grid asks for is
+    the parquet reader's, which never meets DataFusion; a filtered page is a
+    query in the same session and under the same memory pool as the profile;
+    and a deep sorted page (`--sort-column`) is the one read of the grid's that
+    wants the pool for itself.
     """
     column = busy_column(args)
     sql = next((f for _, f in args.filters if f), None)
     page = {"path": dataset, "offset": 0, "limit": args.page_limit}
     filtered_page = {**page, "filter": sql} if sql else None
+    sorted_page = (
+        {**page, "offset": total_rows // 2, "sort": {"column": args.sort_column, "direction": "asc"}}
+        if args.sort_column
+        else None
+    )
 
     def alone(request: dict[str, Any]) -> list[float]:
+        # The session is dropped between samples, as it is before each read
+        # measured during a profile: a sorted page is kept in the cache the
+        # `ParquetCache` holds, and a second identical read would be a hit
+        # measured against a miss.
+        samples = []
         with fresh_bridge(spawn, dataset) as bridge:
-            # The first read of a run pays for opening the file; the samples
-            # that count follow it.
-            return [bridge.call("read_parquet_data", request)[0] for _ in range(args.repetitions + 1)][1:]
+            for repetition in range(args.repetitions):
+                if repetition:
+                    reopen(bridge, dataset)
+                samples.append(bridge.call("read_parquet_data", request)[0])
+        return samples
 
-    def during(request: dict[str, Any]) -> tuple[list[float], list[float], dict[str, Any]]:
+    def during(request: dict[str, Any]) -> tuple[list[float], list[float], dict[str, Any], str | None, str | None]:
         reads: list[float] = []
         profiles: list[float] = []
         usage: dict[str, Any] = {}
+        read_error = None
+        profile_error = None
         with fresh_bridge(spawn, dataset) as bridge:
             for repetition in range(args.repetitions):
                 if repetition:
@@ -409,31 +425,48 @@ def measure_concurrency(spawn: Spawn, dataset: str, args: argparse.Namespace) ->
                 time.sleep(args.lead_ms / 1000)
                 if running.done.is_set():
                     raise RuntimeError(f"the profile of {column} finished within the lead; use a bigger dataset or a shorter lead")
-                read_ms, _ = bridge.call("read_parquet_data", request)
-                total_ms, _ = running.wait(args.timeout)
+                # Both of them may be refused, and which one is the answer:
+                # the profile and the page share the session's memory pool,
+                # so a profile large enough to exhaust it can take the grid's
+                # own query down with it.
+                try:
+                    read_ms, _ = bridge.call("read_parquet_data", request)
+                    reads.append(read_ms)
+                except RuntimeError as error:
+                    read_error = str(error)
+                try:
+                    total_ms, _ = running.wait(args.timeout)
+                    profiles.append(total_ms)
+                except RuntimeError as error:
+                    profile_error = str(error)
                 usage = bridge.usage.measure(mark)
-                reads.append(read_ms)
-                profiles.append(total_ms)
-        return reads, profiles, usage
+        return reads, profiles, usage, read_error, profile_error
 
     result: dict[str, Any] = {"profiled_column": column, "page_limit": args.page_limit, "lead_ms": args.lead_ms}
-    for name, request in (("unfiltered", page), ("filtered", filtered_page)):
+    for name, request in (("unfiltered", page), ("filtered", filtered_page), ("deep_sorted", sorted_page)):
         if request is None:
             continue
         solo = alone(request)
-        reads, profiles, usage = during(request)
+        reads, profiles, usage, read_error, profile_error = during(request)
         result[name] = {
             "filter_sql": request.get("filter"),
+            "sort": request.get("sort"),
+            "offset": request["offset"],
             "page_alone_ms": solo,
             "page_during_profile_ms": reads,
             "profile_ms": profiles,
             "median_page_alone_ms": statistics.median(solo),
-            "median_page_during_profile_ms": statistics.median(reads),
+            "median_page_during_profile_ms": statistics.median(reads) if reads else None,
+            "page_error_during_profile": read_error,
+            "profile_error": profile_error,
             "usage_during": usage,
         }
+        during_ms = result[name]["median_page_during_profile_ms"]
         print(
             f"{name} page read: {result[name]['median_page_alone_ms']:.0f}ms alone, "
-            f"{result[name]['median_page_during_profile_ms']:.0f}ms during a profile of {column}",
+            + (f"{during_ms:.0f}ms" if during_ms is not None else f"REFUSED ({read_error})")
+            + f" during a profile of {column}"
+            + (f"; the profile itself was refused: {profile_error[:100]}" if profile_error else ""),
             flush=True,
         )
     return result
@@ -556,7 +589,7 @@ def main() -> None:
         if "columns" in sections:
             measured["columns"] = measure_columns(spawn, str(dataset), args)
         if "concurrency" in sections:
-            measured["concurrency"] = measure_concurrency(spawn, str(dataset), args)
+            measured["concurrency"] = measure_concurrency(spawn, str(dataset), metadata["num_rows"], args)
         if "pileup" in sections:
             measured["pileup"] = measure_pileup(spawn, str(dataset), args)
         if "abandonment" in sections:
@@ -582,6 +615,7 @@ def main() -> None:
             "repetitions": args.repetitions,
             "warmups_discarded": args.warmups,
             "sections": sections,
+            "sort_column": args.sort_column,
             "rss_sample_ms": args.sample_ms,
             "bridge_process_per_case": True,
             "session_evicted_and_reopened_between_repetitions": True,
