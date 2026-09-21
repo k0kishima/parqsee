@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import sortableKindsCases from '../../../../../../contracts/sortable-kinds-cases.json';
+import type { ColumnKind } from '../../../../bindings/ipc/ColumnKind';
 import { isSortableColumn, nextSort } from '../sort';
 
 describe('nextSort', () => {
@@ -23,5 +25,13 @@ describe('isSortableColumn', () => {
     }
     expect(isSortableColumn({ kind: 'nested' })).toBe(false);
     expect(isSortableColumn({ kind: 'other' })).toBe(false);
+  });
+});
+
+describe('isSortableColumn', () => {
+  it('follows the shared sortable-kinds contract the backend is held to', () => {
+    for (const testCase of sortableKindsCases) {
+      expect(isSortableColumn({ kind: testCase.kind as ColumnKind }), testCase.kind).toBe(testCase.sortable);
+    }
   });
 });

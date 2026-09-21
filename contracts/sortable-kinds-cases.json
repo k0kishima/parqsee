@@ -1,0 +1,11 @@
+[
+  { "kind": "boolean", "sortable": true },
+  { "kind": "integer", "sortable": true },
+  { "kind": "float", "sortable": true },
+  { "kind": "decimal", "sortable": true },
+  { "kind": "text", "sortable": true },
+  { "kind": "temporal", "sortable": true },
+  { "kind": "binary", "sortable": true },
+  { "kind": "nested", "sortable": false },
+  { "kind": "other", "sortable": false }
+]

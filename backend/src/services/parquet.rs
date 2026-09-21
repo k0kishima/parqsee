@@ -1924,6 +1924,48 @@ mod tests {
     }
 
     #[derive(serde::Deserialize)]
+    struct SortableKindCase {
+        kind: ColumnKind,
+        sortable: bool,
+    }
+
+    /// Every `ColumnKind`, listed in a `match` so that adding a variant
+    /// stops this test compiling. `is_sortable` uses `matches!` and would
+    /// silently call a new kind sortable, and the header's
+    /// `isSortableColumn` would silently agree — the contract is only worth
+    /// anything if a new kind cannot reach either side without being named
+    /// in it.
+    fn every_kind() -> Vec<ColumnKind> {
+        let all = vec![
+            ColumnKind::Boolean, ColumnKind::Integer, ColumnKind::Float, ColumnKind::Decimal,
+            ColumnKind::Text, ColumnKind::Temporal, ColumnKind::Binary, ColumnKind::Nested,
+            ColumnKind::Other,
+        ];
+        for kind in &all {
+            match kind {
+                ColumnKind::Boolean | ColumnKind::Integer | ColumnKind::Float
+                | ColumnKind::Decimal | ColumnKind::Text | ColumnKind::Temporal
+                | ColumnKind::Binary | ColumnKind::Nested | ColumnKind::Other => {}
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn sortable_kinds_follow_the_contract_the_header_is_held_to() {
+        let cases: Vec<SortableKindCase> = serde_json::from_str(include_str!(
+            "../../../contracts/sortable-kinds-cases.json"
+        ))
+        .expect("the shared sortable-kinds contract must be valid JSON");
+        for case in &cases {
+            assert_eq!(super::is_sortable(case.kind), case.sortable, "{:?}", case.kind);
+        }
+        for kind in every_kind() {
+            assert!(cases.iter().any(|c| c.kind == kind), "the contract does not name {kind:?}");
+        }
+    }
+
+    #[derive(serde::Deserialize)]
     struct IdentifierQuotingCase {
         name: String,
         quoted: String,
