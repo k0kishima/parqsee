@@ -47,11 +47,11 @@ export function daysInMonth(year: number, month: number): number {
 }
 
 /** Whether the fields name a day that exists: `2024-02-30` does not. */
-export const isCalendarDate = (year: number, month: number, day: number) =>
+const isCalendarDate = (year: number, month: number, day: number) =>
   day >= 1 && day <= daysInMonth(year, month);
 
 /** Whether the fields name a time of day. A leap second is not one — no writer emits it. */
-export const isClockTime = (hour: number, minute: number, second: number) =>
+const isClockTime = (hour: number, minute: number, second: number) =>
   hour <= 23 && minute <= 59 && second <= 59;
 
 /**
@@ -166,7 +166,7 @@ export const utcYear = (ms: number): number => new Date(ms).getUTCFullYear();
 export const instantOfYear = (year: number): number | null => utcInstant(year, 1, 1);
 
 /** Midnight of the day `ms` falls in. */
-export const startOfUtcDay = (ms: number): number => Math.floor(ms / DAY_MS) * DAY_MS;
+const startOfUtcDay = (ms: number): number => Math.floor(ms / DAY_MS) * DAY_MS;
 
 /**
  * Midnight of the Monday of the week `ms` falls in. Weeks start on Monday
