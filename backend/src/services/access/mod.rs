@@ -126,6 +126,19 @@ fn display_name(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
+/// Whether `resolved` and `recorded` name the same file. A bookmark resolves
+/// to the canonical path — symlinks followed, the case the filesystem has,
+/// `/tmp` as `/private/tmp` — while the recorded path is the one the user
+/// opened, so the two are only equal once both are canonicalised. A path
+/// that cannot be canonicalised (gone, or unreadable) is compared as it is
+/// written, which is what it was compared as before it went.
+fn same_file(resolved: &Path, recorded: &str) -> bool {
+    fn real(path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+    real(resolved) == real(Path::new(recorded))
+}
+
 impl FileAccess {
     /// Load the store from `dir/bookmarks.json` (or start empty when `dir`
     /// is `None`) and re-acquire every workspace root. A root whose bookmark
@@ -235,7 +248,7 @@ impl FileAccess {
         let mut changed = false;
         for path in paths {
             match self.resolve_recorded(&mut state, &path) {
-                Ok(Some(resolved)) if resolved.path == Path::new(&path) => {
+                Ok(Some(resolved)) if same_file(&resolved.path, &path) => {
                     state.held.insert(path, resolved.token);
                 }
                 Ok(Some(resolved)) => {
@@ -276,7 +289,7 @@ impl FileAccess {
         }
         match self.resolve_recorded(&mut state, path) {
             Ok(Some(resolved)) => {
-                if resolved.path != Path::new(path) {
+                if !same_file(&resolved.path, path) {
                     eprintln!(
                         "bookmark for {path} now resolves to {}",
                         resolved.path.display()
@@ -373,7 +386,7 @@ impl FileAccess {
                         self.refresh_stale(&mut state, path, &resolved.path);
                     }
                 }
-                resolved.path == Path::new(path) && resolved.path.exists()
+                same_file(&resolved.path, path) && resolved.path.exists()
             }
             Err(_) => false,
         }
@@ -431,10 +444,24 @@ impl FileAccess {
     /// Open `path` as a workspace root: bookmark it, hold its grant until
     /// `remove_root`, and persist it. `path` must be a directory the app can
     /// read now (the folder dialog grants that).
+    ///
+    /// The root is recorded by its real path, not the one it was picked
+    /// through. Foundation refuses to bookmark a symlink to a directory
+    /// (`NSCocoaErrorDomain 256, "Could not open() the item"`), so a folder
+    /// reached through one could not be opened at all; and the files under
+    /// it get their own bookmarks, which resolve to the real path, so
+    /// recording the root the same way keeps the explorer's tree and those
+    /// paths in one shape. A path that cannot be canonicalised is recorded
+    /// as it was given.
     pub fn add_root(&self, path: &str) -> Result<WorkspaceRoot, String> {
         if !Path::new(path).is_dir() {
             return Err(format!("{path} is not a directory"));
         }
+        let path = Path::new(path)
+            .canonicalize()
+            .map(|real| real.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.to_string());
+        let path = path.as_str();
         let bookmark = self.provider.create(Path::new(path))?;
         let root = WorkspaceRoot {
             path: path.to_string(),
@@ -722,12 +749,6 @@ mod tests {
     fn fixture(name: &str) -> (PathBuf, String) {
         let dir = temp_path("access", name);
         std::fs::create_dir_all(dir.join("data")).unwrap();
-        // The temp directory is itself reached through a symlink on macOS
-        // (`/var` â `/private/var`), and the fake resolves a bookmark to the
-        // canonical path as the real provider does. A test that is not about
-        // that starts from the real path, so the paths it writes are the ones
-        // its bookmarks hand back.
-        let dir = dir.canonicalize().unwrap();
         let file = dir.join("data").join("a.parquet");
         std::fs::write(&file, b"parquet").unwrap();
         (dir, file.to_string_lossy().into_owned())
