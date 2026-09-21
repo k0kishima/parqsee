@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { LINE_MARK_RADIUS, PLOT_MARGIN, type LineGeometry, type LineVertex } from '../../lib/chart-geometry';
+import { LINE_MARK_RADIUS, PLOT_MARGIN, type LineGeometry, type PlottedPoint } from '../../lib/chart-geometry';
 import type { ChartModel } from '../../lib/chart-types';
 import { seriesColor, seriesDash } from '../chart-style';
 import type { MarkRef } from './chart-chrome';
@@ -96,7 +96,7 @@ export function LineChart({ model, geometry, height, selected }: LineChartProps)
  * selected one. The selected mark is outlined rather than enlarged, so
  * that where it sits does not move as the reader walks the series.
  */
-function Mark({ vertex, isolated, selected }: { vertex: LineVertex; isolated?: boolean; selected?: boolean }) {
+function Mark({ vertex, isolated, selected }: { vertex: PlottedPoint; isolated?: boolean; selected?: boolean }) {
   return (
     <circle
       data-row-index={vertex.rowIndex}

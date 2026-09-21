@@ -189,15 +189,16 @@ export function pieGeometry(slices: readonly { id: string; value: number }[], vi
 }
 
 /**
- * The inset at each end of a line's plot: a mark on the first or last
- * point is a circle, and half of it would be outside an axis that ran to
- * the very edge.
+ * The inset at each end of a plot drawn against a continuous X: a mark on
+ * the first or last point is a symbol with width, and half of it would be
+ * outside an axis that ran to the very edge.
  */
-const LINE_INSET = 10;
-/** The radius of a drawn point: an isolated one, or the selected one. */
+const PLOT_INSET = 10;
+/** The radius of a point a line draws in its own right: an isolated one, or the selected one. */
 export const LINE_MARK_RADIUS = 3.5;
 
-export interface LineVertex {
+/** A plotted (row, series) pair, placed. */
+export interface PlottedPoint {
   rowIndex: number;
   seriesOrdinal: number;
   value: number;
@@ -206,26 +207,99 @@ export interface LineVertex {
   y: number;
 }
 
-export interface LineSeriesGeometry {
-  ordinal: number;
-  /** The runs of consecutive rows, as one path; empty when nothing connects. */
-  path: string;
-  /** Points with no neighbouring row to join, which a line cannot show on its own. */
-  isolated: LineVertex[];
-  /** Every vertex of the series, in row order. */
-  vertices: LineVertex[];
-}
-
-export interface LineGeometry {
+export interface CartesianAxes {
   contentWidth: number;
   plotHeight: number;
-  series: LineSeriesGeometry[];
   xScale: LinearScale;
   yScale: LinearScale;
   xTicks: AxisTick[];
   yTicks: AxisTick[];
   /** The days the clock-time labels below belong to, or null when they carry their own. */
   xDates: string[] | null;
+}
+
+/**
+ * The two axes of a plot against a continuous X: the scales, the ticks
+ * and their labels. A time axis ticks by the calendar and a numeric one
+ * by round numbers, which is the only difference between the kinds that
+ * use this — everything after it is what each one draws between them.
+ *
+ * `padX` is the one place they disagree about the domain. A line runs
+ * from its first row to its last, and an axis that ended anywhere else
+ * would suggest the query returned rows there; a cloud of marks is given
+ * the same 5% the Y axis gets, so the extremes are not sitting on the
+ * frame with half a symbol outside it.
+ */
+function cartesianAxes(
+  model: ChartModel,
+  viewport: { width: number; height: number },
+  locale: string,
+  padX: boolean,
+): CartesianAxes | null {
+  if (!model.yExtent || !model.xExtent) return null;
+  const kind = model.x?.kind;
+  const overTime = kind === 'date' || kind === 'timestamp';
+  const plotHeight = Math.max(0, viewport.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom);
+  const contentWidth = Math.max(0, viewport.width);
+  const plotWidth = Math.max(1, contentWidth - PLOT_INSET * 2);
+
+  const floor = kind === 'date' ? 'day' : 'millisecond';
+  const xDomain = overTime
+    ? timeDomain(model.xExtent, floor)
+    : (padX || !(model.xExtent.max > model.xExtent.min) ? paddedDomain(model.xExtent) : model.xExtent);
+  const xScale = linearScale(xDomain, [PLOT_INSET, PLOT_INSET + plotWidth]);
+  const yDomain = paddedDomain(model.yExtent);
+  const yScale = linearScale(yDomain, [PLOT_MARGIN.top + plotHeight, PLOT_MARGIN.top]);
+
+  const yLabels = tickLabels(linearTicks(yDomain, Math.max(2, Math.min(8, Math.floor(plotHeight / 50)))), locale);
+  const yTicks = yLabels.ticks.map((value, i) => ({ value, position: yScale(value), label: yLabels.labels[i] }));
+
+  // A label needs about 120px of its own; the step is the finest that fits.
+  const xCount = Math.max(2, Math.floor(plotWidth / 120));
+  let xTicks: AxisTick[];
+  let xDates: string[] | null = null;
+  if (overTime) {
+    const axis = timeAxis(xDomain, xCount, floor);
+    xTicks = axis.ticks.map((value, i) => ({ value, position: xScale(value), label: axis.labels[i] }));
+    xDates = timeAxisDates(xDomain, axis.step.unit);
+  } else {
+    const labels = tickLabels(linearTicks(xDomain, xCount), locale);
+    xTicks = labels.ticks.map((value, i) => ({ value, position: xScale(value), label: labels.labels[i] }));
+  }
+  return { contentWidth, plotHeight, xScale, yScale, xTicks, yTicks, xDates };
+}
+
+/** Every plotted point placed by `axes`, in the order `points` came. */
+function placedPoints(model: ChartModel, axes: CartesianAxes): PlottedPoint[] {
+  const xOf = new Map(model.rows.filter(row => row.value !== null).map(row => [row.rowIndex, row.value as number]));
+  const placed: PlottedPoint[] = [];
+  for (const point of model.points) {
+    const x = xOf.get(point.rowIndex);
+    if (x === undefined) continue;
+    placed.push({
+      rowIndex: point.rowIndex,
+      seriesOrdinal: point.seriesOrdinal,
+      value: point.y,
+      raw: point.raw,
+      x: axes.xScale(x),
+      y: axes.yScale(point.y),
+    });
+  }
+  return placed;
+}
+
+export interface LineSeriesGeometry {
+  ordinal: number;
+  /** The runs of consecutive rows, as one path; empty when nothing connects. */
+  path: string;
+  /** Points with no neighbouring row to join, which a line cannot show on its own. */
+  isolated: PlottedPoint[];
+  /** Every vertex of the series, in row order. */
+  vertices: PlottedPoint[];
+}
+
+export interface LineGeometry extends CartesianAxes {
+  series: LineSeriesGeometry[];
 }
 
 /**
@@ -245,53 +319,11 @@ export function lineGeometry(
   viewport: { width: number; height: number },
   locale: string,
 ): LineGeometry | null {
-  if (!model.yExtent || !model.xExtent || model.series.length === 0) return null;
-  const kind = model.x?.kind;
-  const overTime = kind === 'date' || kind === 'timestamp';
-  const plotHeight = Math.max(0, viewport.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom);
-  const contentWidth = Math.max(0, viewport.width);
-  const plotWidth = Math.max(1, contentWidth - LINE_INSET * 2);
-
-  const floor = kind === 'date' ? 'day' : 'millisecond';
-  const xDomain = overTime
-    ? timeDomain(model.xExtent, floor)
-    : (model.xExtent.max > model.xExtent.min ? model.xExtent : paddedDomain(model.xExtent));
-  const xScale = linearScale(xDomain, [LINE_INSET, LINE_INSET + plotWidth]);
-  const yDomain = paddedDomain(model.yExtent);
-  const yScale = linearScale(yDomain, [PLOT_MARGIN.top + plotHeight, PLOT_MARGIN.top]);
-
-  const yLabels = tickLabels(linearTicks(yDomain, Math.max(2, Math.min(8, Math.floor(plotHeight / 50)))), locale);
-  const yTicks = yLabels.ticks.map((value, i) => ({ value, position: yScale(value), label: yLabels.labels[i] }));
-
-  // A label needs about 120px of its own; the step is the finest that fits.
-  const xCount = Math.max(2, Math.floor(plotWidth / 120));
-  let xTicks: AxisTick[];
-  let xDates: string[] | null = null;
-  if (overTime) {
-    const axis = timeAxis(xDomain, xCount, floor);
-    xTicks = axis.ticks.map((value, i) => ({ value, position: xScale(value), label: axis.labels[i] }));
-    xDates = timeAxisDates(xDomain, axis.step.unit);
-  } else {
-    const labels = tickLabels(linearTicks(xDomain, xCount), locale);
-    xTicks = labels.ticks.map((value, i) => ({ value, position: xScale(value), label: labels.labels[i] }));
-  }
-
-  const xOf = new Map(model.rows.filter(row => row.value !== null).map(row => [row.rowIndex, row.value as number]));
+  const axes = cartesianAxes(model, viewport, locale, false);
+  if (!axes || model.series.length === 0) return null;
+  const placed = placedPoints(model, axes);
   const series = model.series.map(s => {
-    const vertices: LineVertex[] = [];
-    for (const point of model.points) {
-      if (point.seriesOrdinal !== s.ordinal) continue;
-      const x = xOf.get(point.rowIndex);
-      if (x === undefined) continue;
-      vertices.push({
-        rowIndex: point.rowIndex,
-        seriesOrdinal: s.ordinal,
-        value: point.y,
-        raw: point.raw,
-        x: xScale(x),
-        y: yScale(point.y),
-      });
-    }
+    const vertices = placed.filter(point => point.seriesOrdinal === s.ordinal);
     const runs = consecutiveRuns(vertices);
     return {
       ordinal: s.ordinal,
@@ -300,13 +332,38 @@ export function lineGeometry(
       vertices,
     };
   });
+  return { ...axes, series };
+}
 
-  return { contentWidth, plotHeight, series, xScale, yScale, xTicks, yTicks, xDates };
+export interface ScatterGeometry extends CartesianAxes {
+  /** Every mark, in the order they are drawn. */
+  marks: PlottedPoint[];
+}
+
+/**
+ * A mark per plotted (row, series) pair against two numeric axes, and
+ * nothing else: no jitter, no binning, no thinning, no trend line. The
+ * marks are drawn in column order and then row order, so a series later
+ * in the SELECT lies over an earlier one and the overlap is a property of
+ * the query rather than of the data's arrival. Marks that land on the
+ * same pixel stay separate points — the detail box walks them one by one,
+ * which is the only way to tell apart what the plot cannot.
+ */
+export function scatterGeometry(
+  model: ChartModel,
+  viewport: { width: number; height: number },
+  locale: string,
+): ScatterGeometry | null {
+  const axes = cartesianAxes(model, viewport, locale, true);
+  if (!axes || model.series.length === 0) return null;
+  const placed = placedPoints(model, axes);
+  const marks = model.series.flatMap(s => placed.filter(point => point.seriesOrdinal === s.ordinal));
+  return { ...axes, marks };
 }
 
 /** The vertices split into runs of rows that follow one another with nothing left out between them. */
-function consecutiveRuns(vertices: readonly LineVertex[]): LineVertex[][] {
-  const runs: LineVertex[][] = [];
+function consecutiveRuns(vertices: readonly PlottedPoint[]): PlottedPoint[][] {
+  const runs: PlottedPoint[][] = [];
   for (const vertex of vertices) {
     const current = runs[runs.length - 1];
     if (current && vertex.rowIndex === current[current.length - 1].rowIndex + 1) current.push(vertex);
@@ -315,7 +372,7 @@ function consecutiveRuns(vertices: readonly LineVertex[]): LineVertex[][] {
   return runs;
 }
 
-const polyline = (run: readonly LineVertex[]): string =>
+const polyline = (run: readonly PlottedPoint[]): string =>
   run.map((vertex, i) => `${i === 0 ? 'M' : 'L'} ${round(vertex.x)} ${round(vertex.y)}`).join(' ');
 
 /**
@@ -328,8 +385,8 @@ export function nearestVertex(
   geometry: LineGeometry,
   at: { x: number; y: number },
   radius = 40,
-): LineVertex | null {
-  let best: LineVertex | null = null;
+): PlottedPoint | null {
+  let best: PlottedPoint | null = null;
   let bestDistance = radius * radius;
   for (const series of geometry.series) {
     for (const vertex of series.vertices) {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { QueryChartType, QueryResult } from '../../types';
 import { buildChartModel } from '../chart-data';
-import { arcPath, barGeometry, labelStride, lineGeometry, nearestVertex, pieGeometry, PLOT_MARGIN } from '../chart-geometry';
+import { arcPath, barGeometry, labelStride, lineGeometry, nearestVertex, pieGeometry, PLOT_MARGIN, scatterGeometry } from '../chart-geometry';
 
 const cat: QueryChartType = { kind: 'category' };
 const int: QueryChartType = { kind: 'integer' };
@@ -239,5 +239,56 @@ describe('lineGeometry', () => {
     expect(nearestVertex(geometry, { x: target.x + 3, y: target.y - 4 })).toBe(target);
     expect(nearestVertex(geometry, { x: target.x, y: target.y }, 40)).toBe(target);
     expect(nearestVertex(geometry, { x: target.x + 300, y: target.y + 300 })).toBeNull();
+  });
+});
+
+function numericResult(rows: Record<string, unknown>[], series = ['y']): QueryResult {
+  return {
+    columns: [{ name: 'x', data_type: 'Int64', chart_type: int }, ...series.map(name => ({ name, data_type: 'Int64', chart_type: int }))],
+    rows,
+    execution_time_ms: 1,
+    truncated: false,
+    max_rows: 10_000,
+  };
+}
+
+describe('scatterGeometry', () => {
+  it('places a mark per plotted pair, in column order and then row order', () => {
+    const model = buildChartModel(numericResult([
+      { x: 1, y1: 10, y2: 20 },
+      { x: 2, y1: 11, y2: null },
+      { x: 3, y1: 12, y2: 22 },
+    ], ['y1', 'y2']));
+    const geometry = scatterGeometry(model, viewport, 'en')!;
+    expect(geometry.marks.map(m => [m.seriesOrdinal, m.rowIndex])).toEqual([[0, 0], [0, 1], [0, 2], [1, 0], [1, 2]]);
+    // Each mark keeps the row it came from, and its value as it arrived.
+    expect(geometry.marks[4]).toMatchObject({ rowIndex: 2, seriesOrdinal: 1, value: 22, raw: 22 });
+    // X grows to the right, Y upwards.
+    expect(geometry.marks[0].x).toBeLessThan(geometry.marks[2].x);
+    expect(geometry.marks[0].y).toBeGreaterThan(geometry.marks[2].y);
+  });
+
+  it('pads both axes, so the extremes are not sitting on the frame', () => {
+    const model = buildChartModel(numericResult([{ x: 0, y: 0 }, { x: 10, y: 100 }]));
+    const geometry = scatterGeometry(model, viewport, 'en')!;
+    const [low, high] = geometry.marks;
+    expect(geometry.xScale.domain).toEqual({ min: -0.5, max: 10.5 });
+    expect(geometry.yScale.domain).toEqual({ min: -5, max: 105 });
+    expect(low.x).toBeGreaterThan(geometry.xScale.range[0]);
+    expect(high.x).toBeLessThan(geometry.xScale.range[1]);
+    expect(low.y).toBeLessThan(PLOT_MARGIN.top + geometry.plotHeight);
+    expect(high.y).toBeGreaterThan(PLOT_MARGIN.top);
+  });
+
+  it('draws every point the model allows, without thinning them', () => {
+    const rows = Array.from({ length: 10_000 }, (_, i) => ({ x: i, y: i % 97 }));
+    const model = buildChartModel(numericResult(rows));
+    expect(model.problem).toBeNull();
+    expect(scatterGeometry(model, viewport, 'en')!.marks).toHaveLength(10_000);
+  });
+
+  it('has no plot without a coordinate for X', () => {
+    const labels = buildChartModel(result([{ x: 'a', y: 1 }]));
+    expect(scatterGeometry(labels, viewport, 'en')).toBeNull();
   });
 });
