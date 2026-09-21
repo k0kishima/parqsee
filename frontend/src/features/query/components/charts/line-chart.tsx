@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { LINE_MARK_RADIUS, PLOT_MARGIN, type LineGeometry, type PlottedPoint } from '../../lib/chart-geometry';
+import { LINE_MARK_RADIUS, type LineGeometry, type PlottedPoint } from '../../lib/chart-geometry';
 import type { ChartModel } from '../../lib/chart-types';
 import { seriesColor, seriesDash } from '../chart-style';
-import type { MarkRef } from './chart-chrome';
+import { CartesianAxisLabels, CartesianGrid, type MarkRef } from './chart-chrome';
 
 interface LineChartProps {
   model: ChartModel;
@@ -24,8 +24,6 @@ interface LineChartProps {
  */
 export function LineChart({ model, geometry, height, selected }: LineChartProps) {
   const { t } = useTranslation();
-  const axisY = PLOT_MARGIN.top + geometry.plotHeight;
-  const zeroY = geometry.yScale.domain.min < 0 && geometry.yScale.domain.max > 0 ? geometry.yScale(0) : null;
   const selectedVertex = selected
     ? geometry.series[selected.seriesOrdinal]?.vertices.find(vertex => vertex.rowIndex === selected.rowIndex) ?? null
     : null;
@@ -46,18 +44,7 @@ export function LineChart({ model, geometry, height, selected }: LineChartProps)
       aria-hidden="true"
       focusable="false"
     >
-      <g aria-hidden="true">
-        {geometry.yTicks.map(tick => (
-          <line key={`y${tick.value}`} x1={0} x2={geometry.contentWidth} y1={tick.position} y2={tick.position} stroke="var(--chart-grid)" strokeWidth={1} />
-        ))}
-        {geometry.xTicks.map(tick => (
-          <line key={`x${tick.value}`} x1={tick.position} x2={tick.position} y1={PLOT_MARGIN.top} y2={axisY} stroke="var(--chart-grid)" strokeWidth={1} />
-        ))}
-        {zeroY !== null && (
-          <line x1={0} x2={geometry.contentWidth} y1={zeroY} y2={zeroY} stroke="var(--chart-axis)" strokeWidth={1} />
-        )}
-        <line x1={0} x2={geometry.contentWidth} y1={axisY} y2={axisY} stroke="var(--chart-axis)" strokeWidth={1} />
-      </g>
+      <CartesianGrid axes={geometry} />
       <g fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round">
         {geometry.series.map(series => (
           series.path === '' ? null : (
@@ -77,16 +64,7 @@ export function LineChart({ model, geometry, height, selected }: LineChartProps)
         )))}
         {selectedVertex && <Mark vertex={selectedVertex} selected />}
       </g>
-      <g aria-hidden="true" fill="var(--text-tertiary)" fontSize={11}>
-        {geometry.xTicks.map(tick => (
-          <g key={tick.value}>
-            <line x1={tick.position} x2={tick.position} y1={axisY} y2={axisY + 5} stroke="var(--chart-axis)" strokeWidth={1} />
-            <text x={tick.position} y={axisY + 18} textAnchor="middle">{tick.label}</text>
-          </g>
-        ))}
-        {dates && <text x={0} y={axisY + 34}>{dates}</text>}
-        {zone && <text x={geometry.contentWidth} y={axisY + 34} textAnchor="end">{zone}</text>}
-      </g>
+      <CartesianAxisLabels axes={geometry} left={dates} right={zone} />
     </svg>
   );
 }

@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatCellValue } from '../../../lib/format';
-import { barGeometry, lineGeometry, nearestVertex, PLOT_MARGIN, Y_AXIS_WIDTH, type AxisTick } from '../lib/chart-geometry';
+import { barGeometry, lineGeometry, nearestVertex, scatterGeometry, PLOT_MARGIN, Y_AXIS_WIDTH, type AxisTick } from '../lib/chart-geometry';
 import { EXCLUSION_REASONS, type ChartKind, type ChartModel, type ChartPoint, type ChartProblem } from '../lib/chart-types';
 import { pieData } from '../lib/pie-data';
 import { BarChart } from './charts/bar-chart';
 import { LineChart } from './charts/line-chart';
 import { PieChart } from './charts/pie-chart';
+import { ScatterChart } from './charts/scatter-chart';
 import { ChartDetailBox, ChartTooltip, tooltipPosition, useChartSummary, useElementSize, useLabelOf, usePointerAt, usePointerMark, type MarkRef } from './charts/chart-chrome';
 import { seriesColor } from './chart-style';
 
@@ -15,7 +16,7 @@ import { seriesColor } from './chart-style';
  * four; the UI offers and infers only these, so a stage that adds a
  * renderer adds it here and nowhere else.
  */
-export const IMPLEMENTED_CHART_KINDS: readonly ChartKind[] = ['bar', 'line', 'pie'];
+export const IMPLEMENTED_CHART_KINDS: readonly ChartKind[] = ['bar', 'line', 'scatter', 'pie'];
 
 /**
  * The kinds that place X on an axis of its own. Only there does the order
@@ -128,16 +129,27 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
   const size = useElementSize(plotRef);
   const descriptionId = useId();
 
-  const measured = size.width > 0 && size.height > 0;
-  const bars = useMemo(
-    () => (kind === 'bar' && measured ? barGeometry(model, { width: size.width, height: size.height }, locale) : null),
-    [model, kind, measured, size.width, size.height, locale],
-  );
-  const line = useMemo(
-    () => (kind === 'line' && measured ? lineGeometry(model, { width: size.width, height: size.height }, locale) : null),
-    [model, kind, measured, size.width, size.height, locale],
-  );
-  const yTicks = bars?.yTicks ?? line?.yTicks ?? [];
+  // The plot of the active kind, once the pane has been measured. Every
+  // kind's geometry carries the Y ticks the axis beside it draws.
+  const plot = useMemo(() => {
+    if (size.width <= 0 || size.height <= 0) return null;
+    const viewport = { width: size.width, height: size.height };
+    switch (kind) {
+      case 'bar': {
+        const geometry = barGeometry(model, viewport, locale);
+        return geometry && { kind, geometry };
+      }
+      case 'line': {
+        const geometry = lineGeometry(model, viewport, locale);
+        return geometry && { kind, geometry };
+      }
+      case 'scatter': {
+        const geometry = scatterGeometry(model, viewport, locale);
+        return geometry && { kind, geometry };
+      }
+      default: return null;
+    }
+  }, [model, kind, size.width, size.height, locale]);
 
   // The detail and the tooltip describe one point. `selected` is what the
   // keyboard and the legend chose (and the pointer, while it hovers).
@@ -209,16 +221,16 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
   }, []));
   // A line draws no mark per point, so the pointer is answered by measuring.
   const onVertexPointerMove = usePointerAt(plotRef, useCallback((at) => {
-    if (!line) return;
-    const vertex = nearestVertex(line, at);
+    if (plot?.kind !== 'line') return;
+    const vertex = nearestVertex(plot.geometry, at);
     if (!vertex) {
       setTooltipAt(null);
       return;
     }
     setSelected({ rowIndex: vertex.rowIndex, seriesOrdinal: vertex.seriesOrdinal });
     setTooltipAt(at);
-  }, [line]));
-  const onPointerMove = line ? onVertexPointerMove : onMarkPointerMove;
+  }, [plot]));
+  const onPointerMove = plot?.kind === 'line' ? onVertexPointerMove : onMarkPointerMove;
 
   const point = pointAt(selected);
   const description = point ? describePoint(point) : null;
@@ -241,17 +253,18 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
   return (
     <>
       <div className="flex-1 min-h-0 flex overflow-hidden" style={{ minHeight: 240 }}>
-        <YAxis ticks={yTicks} height={size.height} title={model.series.length === 1 ? model.series[0].name : t('viewer.query.chart.values')} />
+        <YAxis ticks={plot?.geometry.yTicks ?? []} height={size.height} title={model.series.length === 1 ? model.series[0].name : t('viewer.query.chart.values')} />
         <div
           ref={plotRef}
           className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden"
           onPointerMove={onPointerMove}
           onPointerLeave={() => setTooltipAt(null)}
         >
-          {(bars || line) && (
+          {plot && (
             <div role="img" aria-label={summary} aria-describedby={descriptionId} className="h-full">
-              {bars && <BarChart model={model} geometry={bars} height={size.height} selected={selected} labelOf={labelOf} />}
-              {line && <LineChart model={model} geometry={line} height={size.height} selected={selected} />}
+              {plot.kind === 'bar' && <BarChart model={model} geometry={plot.geometry} height={size.height} selected={selected} labelOf={labelOf} />}
+              {plot.kind === 'line' && <LineChart model={model} geometry={plot.geometry} height={size.height} selected={selected} />}
+              {plot.kind === 'scatter' && <ScatterChart geometry={plot.geometry} height={size.height} selected={selected} />}
             </div>
           )}
           {description && tooltipStyle && <ChartTooltip text={description} style={tooltipStyle} />}

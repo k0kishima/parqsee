@@ -21,3 +21,18 @@ const DASHES = [undefined, '8 3', '2 3', '8 3 2 3'];
 
 /** The `stroke-dasharray` of series `ordinal`, or undefined for a solid line. */
 export const seriesDash = (ordinal: number) => DASHES[ordinal % SERIES_DASH_COUNT];
+
+/** How many mark shapes there are before they repeat. */
+export const SERIES_SYMBOL_COUNT = 4;
+
+/**
+ * The shapes a scatter's marks take, by series. Like the dash on a line,
+ * the shape doubles the colour rather than replacing it: colour is read
+ * faster, and a shape carries where colour cannot — in a print-out, for a
+ * colour-blind reader, and where two series overlap and the fills mix.
+ */
+export type SeriesSymbol = 'circle' | 'square' | 'triangle' | 'diamond';
+
+const SYMBOLS: SeriesSymbol[] = ['circle', 'square', 'triangle', 'diamond'];
+
+export const seriesSymbol = (ordinal: number): SeriesSymbol => SYMBOLS[ordinal % SERIES_SYMBOL_COUNT];
