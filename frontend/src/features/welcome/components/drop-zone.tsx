@@ -54,7 +54,7 @@ export const DropZone: React.FC<DropZoneProps> = ({ onFileSelect, onBrowse, onOp
               relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-200
               ${isDragging
                     ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-[1.02]'
-                    : 'border-blue-200 bg-white hover:border-blue-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:shadow-none'
+                    : 'border-blue-200 bg-white hover:border-blue-300 hover:shadow-md dark:border-primary dark:bg-gray-800 dark:hover:border-secondary dark:hover:shadow-none'
                 }
             `}
             onDragOver={handleDragOver}

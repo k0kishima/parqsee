@@ -28,7 +28,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading, 
     // `QueryView`, and a second one on top of it drew a 2px line where
     // every other divider in the app is 1px.
     const containerBg = 'bg-white dark:bg-gray-900';
-    const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800';
+    const toolbarBg = 'bg-gray-50 border-primary dark:bg-gray-800';
     const textareaColor = 'text-gray-900 dark:text-gray-100';
 
     return (

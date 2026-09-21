@@ -47,6 +47,12 @@
     --text-tertiary: var(--color-slate-600);
     --border-primary: var(--color-slate-200);
     --border-secondary: var(--color-slate-300);
+    /*
+     * The lines inside a grid, between rows and cells. A step below
+     * `--border-primary` on purpose: a table draws one of these per row,
+     * and at the divider's own weight the grid reads as a wireframe.
+     */
+    --border-subtle: var(--color-slate-100);
     --bg-selected: var(--color-blue-50);
 
     /* Button Tokens */
@@ -80,6 +86,7 @@
     --text-tertiary: var(--color-slate-400);
     --border-primary: var(--color-slate-700);
     --border-secondary: var(--color-slate-600);
+    --border-subtle: var(--color-slate-800);
     --bg-selected: color-mix(in oklab, var(--color-blue-900) 30%, transparent);
 
     /* Button Tokens (Dark) */
@@ -109,6 +116,14 @@
 @utility text-tertiary { color: var(--text-tertiary); }
 @utility border-primary { border-color: var(--border-primary); }
 @utility border-secondary { border-color: var(--border-secondary); }
+@utility border-subtle { border-color: var(--border-subtle); }
+
+/*
+ * The same three colours for `divide-y`, which paints its line on the
+ * children rather than on the element it is written on.
+ */
+@utility divide-primary { & > :not(:last-child) { border-color: var(--border-primary); } }
+@utility divide-subtle { & > :not(:last-child) { border-color: var(--border-subtle); } }
 
 @layer utilities {
   /* Button Components */

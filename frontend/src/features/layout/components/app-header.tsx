@@ -24,7 +24,7 @@ interface AppHeaderProps {
 export const AppHeader = ({ isSidebarOpen, onToggleSidebar, onOpenFile, onOpenFolder, onOpenRecentFile, onOpenSettings }: AppHeaderProps) => {
     const { t } = useTranslation();
     return (
-        <div className={`px-2 flex items-center border-b bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 ${TOP_ROW_HEIGHT}`}>
+        <div className={`px-2 flex items-center border-b bg-white border-primary dark:bg-gray-800 ${TOP_ROW_HEIGHT}`}>
             <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
             {/* The app name, not a label for what is below: with tabs this
                 spot is the tab strip, and the sidebar carries its own
