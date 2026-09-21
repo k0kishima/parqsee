@@ -10,7 +10,8 @@ export const profileQueryColumn = (
   resultId: string,
   columnIndex: number,
   filter?: string,
-): Promise<ColumnProfile> => invoke('profile_query_column', { resultId, columnIndex, filter });
+  requestId?: string,
+): Promise<ColumnProfile> => invoke('profile_query_column', { resultId, columnIndex, filter, requestId });
 
 /** The rows of a kept result that `filter` keeps, keyed as the grid renders them. */
 export const filterQueryResult = (

@@ -21,7 +21,7 @@ interface ColumnProfilePanelProps {
  */
 export function ColumnProfilePanel({ filePath, column, filter, onClose, onAddConditions }: ColumnProfilePanelProps) {
   const load = useCallback(
-    () => profileColumn(filePath, column.name, filter || undefined),
+    (requestId: string) => profileColumn(filePath, column.name, filter || undefined, requestId),
     [filePath, column.name, filter],
   );
   return (

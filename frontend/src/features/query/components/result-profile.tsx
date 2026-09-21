@@ -43,8 +43,8 @@ export function ResultProfilePanel({
   // as a number, a quoted literal, or isnan() for a NaN.
   const kind = useRef<ColumnKind>('other');
 
-  const load = useCallback(async () => {
-    const profile = await profileQueryColumn(resultId, columnIndex, filter);
+  const load = useCallback(async (requestId: string) => {
+    const profile = await profileQueryColumn(resultId, columnIndex, filter, requestId);
     kind.current = profile.kind;
     return profile;
   }, [resultId, columnIndex, filter]);

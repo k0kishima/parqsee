@@ -167,7 +167,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(openButton());
     expect(panel()).toBeInTheDocument();
     expect(openButton()).toHaveAttribute('aria-pressed', 'true');
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined));
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined, expect.any(String)));
 
     await userEvent.click(openButton());
     expect(panel()).not.toBeInTheDocument();
@@ -204,7 +204,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(await screen.findByRole('button', { name: '0 – 50: 60' }));
 
     await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" >= 0 AND "id" < 50', null));
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50'));
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50', expect.any(String)));
     // The panel stayed mounted across the grid's reload, for the drill-down.
     expect(panel()).toBeInTheDocument();
     const values = screen.getAllByPlaceholderText('viewer.filterValuePlaceholder');

@@ -2,6 +2,7 @@ use crate::commands::guarded;
 use crate::services::access::FileAccess;
 use crate::services::parquet::ParquetCache;
 use crate::models::{ColumnProfile, SortSpec};
+use crate::services::profile_requests::ProfileRequests;
 use crate::services::{export, parquet, profile};
 use std::sync::Arc;
 
@@ -37,15 +38,37 @@ pub async fn count_parquet_data(
 
 /// The column profile for the panel beside the grid; `filter` is the
 /// grid's `WHERE` fragment, so the panel describes the rows on screen.
+/// `request_id` is what `cancel_profile` ends this scan by.
 #[tauri::command]
 pub async fn profile_column(
     cache: tauri::State<'_, ParquetCache>,
+    requests: tauri::State<'_, ProfileRequests>,
     path: String,
     column: String,
     filter: Option<String>,
+    request_id: Option<String>,
 ) -> Result<ColumnProfile, String> {
     guarded("Profiling the column", async {
-        profile::profile_column(&cache, &path, &column, filter).await
+        requests
+            .run(request_id, profile::profile_column(&cache, &path, &column, filter))
+            .await
+    })
+    .await
+}
+
+/// Stop a profile the webview has stopped waiting for — either panel's, a
+/// file's column or a query result's. The panel calls this as it asks for
+/// the next one, because a profile's memory is reserved out of the file
+/// session's pool and the scan nobody wants would otherwise leave the one
+/// on screen without it (`services::profile_requests`).
+#[tauri::command]
+pub async fn cancel_profile(
+    requests: tauri::State<'_, ProfileRequests>,
+    request_id: String,
+) -> Result<(), String> {
+    guarded("Cancelling the profile", async {
+        requests.cancel(&request_id);
+        Ok(())
     })
     .await
 }

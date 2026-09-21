@@ -205,3 +205,10 @@ These three answers are what the measurement above was run to settle (#30).
   rather than waits, and it fails with a DataFusion sentence about
   `AggregateStream` reservations. That is a defect of its own, not a tuning
   question.
+
+Cancellation landed as `services::profile_requests` and the `cancel_profile`
+command: the panel names each request and cancels the ones it supersedes, and
+cancelling is dropping the work, which drops the DataFusion stream and releases
+its reservation. Clicking along the same four columns afterwards ended three
+runs out of three with the `ts` panel's bars after about 3.8 s — what that
+profile costs on its own — instead of the error it showed before.

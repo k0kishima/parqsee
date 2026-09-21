@@ -5,6 +5,7 @@ import type { ColumnProfile } from '../bindings/ipc/ColumnProfile';
 import type { HistogramBucket } from '../bindings/ipc/HistogramBucket';
 import type { ValueCount } from '../bindings/ipc/ValueCount';
 import { formatCellValue } from '../lib/format';
+import { cancelProfile, nextProfileRequestId } from '../lib/profile-request';
 import { toErrorMessage } from '../lib/tauri';
 import { assertNever } from '../lib/exhaustive';
 
@@ -35,8 +36,11 @@ export interface ColumnProfileViewProps {
    * did not describe.
    */
   requestKey: string;
-  /** Ask for the profile. Called once per `requestKey`. */
-  load: () => Promise<ColumnProfile>;
+  /**
+   * Ask for the profile. Called once per `requestKey`, with the id the
+   * panel cancels it by if it stops waiting.
+   */
+  load: (requestId: string) => Promise<ColumnProfile>;
   /** A line above the counts: what the profile covers, when that is not all of it. */
   notice?: string | null;
   onClose: () => void;
@@ -139,9 +143,10 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
 
   useEffect(() => {
     const seq = ++requestSeq.current;
+    const requestId = nextProfileRequestId();
     setLoading(true);
     setError(null);
-    load().then(
+    load(requestId).then(
       result => {
         if (seq !== requestSeq.current) return;
         setProfile(result);
@@ -153,7 +158,10 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
         setLoading(false);
       }
     );
-    return () => { ++requestSeq.current; };
+    // Dropping the answer is not enough: the scan holds memory the next
+    // profile needs, so the backend is told the panel has moved on. An id
+    // that has already answered cancels nothing.
+    return () => { ++requestSeq.current; void cancelProfile(requestId); };
     // `load` closes over the request this panel was mounted for, and the
     // panel is remounted when that changes; re-running on its identity
     // would ask again on every render of the parent.

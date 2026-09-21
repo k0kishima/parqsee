@@ -30,14 +30,15 @@
 //! session's 2 GiB pool after about 1.9 GB (the process had 4.3 GB resident by
 //! then: the pool tracks less than arrow actually holds). The webview is left
 //! with DataFusion's own sentence about `AggregateStream` reservations.
-//! Nothing here is cancelled either, so a superseded profile keeps scanning
-//! and keeps its reservation: clicking along four columns of that file ends
-//! with the profile the user is waiting for refused, while the one they
-//! abandoned finishes. A profile that is merely slow does not disturb the
-//! grid — a page read beside one stays within a few milliseconds of its own
-//! time, a deep sorted page within 2% — so the cost of not cancelling is paid
-//! by the next profile, not by the rows. `scripts/qa/PERFORMANCE.md` has the
-//! measurement and what was decided from it (#30).
+//! That reservation is also why a superseded profile is cancelled rather
+//! than merely ignored (`services::profile_requests`): while nothing stopped
+//! the abandoned scan, clicking along four columns of that file ended with
+//! the profile the user was waiting for refused and the one they had left
+//! behind finishing. A profile that is merely slow does not disturb the grid
+//! — a page read beside one stays within a few milliseconds of its own time,
+//! a deep sorted page within 2% — so what not cancelling cost was the next
+//! profile, not the rows. `scripts/qa/PERFORMANCE.md` has the measurement and
+//! what was decided from it (#30).
 
 use arrow::array::{Array, Int64Array};
 use arrow::datatypes::{DataType, TimeUnit};

@@ -9,6 +9,12 @@ vi.mock('../../api', () => ({
   profileColumn: (...args: unknown[]) => mockProfileColumn(...args),
 }));
 
+const mockCancelProfile = vi.fn();
+vi.mock('../../../../lib/profile-request', async (original) => ({
+  ...(await original<typeof import('../../../../lib/profile-request')>()),
+  cancelProfile: (...args: unknown[]) => mockCancelProfile(...args),
+}));
+
 const cat: ColumnInfo = { name: 'cat', column_type: 'STRING', kind: 'text', logical_type: 'STRING', physical_type: 'BYTE_ARRAY' };
 const price: ColumnInfo = { name: 'price', column_type: 'DOUBLE', kind: 'float', logical_type: null, physical_type: 'DOUBLE' };
 
@@ -37,10 +43,13 @@ const histogram: ColumnProfile = {
 function renderPanel(column: ColumnInfo, filter = '') {
   const onAddConditions = vi.fn();
   const onClose = vi.fn();
-  render(
+  const { rerender, unmount } = render(
     <ColumnProfilePanel filePath="/data/t.parquet" column={column} filter={filter} onClose={onClose} onAddConditions={onAddConditions} />
   );
-  return { onAddConditions, onClose };
+  const show = (next: ColumnInfo, nextFilter = '') => rerender(
+    <ColumnProfilePanel filePath="/data/t.parquet" column={next} filter={nextFilter} onClose={onClose} onAddConditions={onAddConditions} />
+  );
+  return { onAddConditions, onClose, show, unmount };
 }
 
 describe('ColumnProfilePanel', () => {
@@ -54,7 +63,7 @@ describe('ColumnProfilePanel', () => {
     expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
 
     expect(await screen.findByText('5')).toBeInTheDocument();
-    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'cat', undefined);
+    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'cat', undefined, expect.any(String));
     expect(screen.getByText('1 20%')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     // A complete list is headed "Values", not "Top n of m".
@@ -76,7 +85,7 @@ describe('ColumnProfilePanel', () => {
     mockProfileColumn.mockResolvedValue(histogram);
     const { onAddConditions, onClose } = renderPanel(price, '"price" > 0');
     expect(await screen.findByText('viewer.profile.distribution')).toBeInTheDocument();
-    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'price', '"price" > 0');
+    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'price', '"price" > 0', expect.any(String));
     expect(screen.getByText('viewer.profile.notBinned')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '0.5 – 1: 37' }));
@@ -161,5 +170,26 @@ describe('ColumnProfilePanel', () => {
     expect(screen.queryByRole('button', { name: 'a: 2' })).not.toBeInTheDocument();
     expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
     expect(props.onAddConditions).not.toHaveBeenCalled();
+  });
+
+  // A profile is a scan holding memory the next one needs, so a panel that
+  // has moved on says so rather than only dropping the answer.
+  it('cancels the request it stops waiting for, by the id it asked with', async () => {
+    mockProfileColumn.mockResolvedValue(topValues);
+    const { show, unmount } = renderPanel(cat);
+    expect(await screen.findByText('5')).toBeInTheDocument();
+    const [, , , firstId] = mockProfileColumn.mock.calls[0];
+
+    mockProfileColumn.mockResolvedValue(histogram);
+    show(price);
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledTimes(2));
+    const [, , , secondId] = mockProfileColumn.mock.calls[1];
+    expect(secondId).not.toBe(firstId);
+    expect(mockCancelProfile).toHaveBeenCalledWith(firstId);
+    expect(mockCancelProfile).not.toHaveBeenCalledWith(secondId);
+
+    // Closing the panel is the other way to stop waiting.
+    unmount();
+    expect(mockCancelProfile).toHaveBeenCalledWith(secondId);
   });
 });

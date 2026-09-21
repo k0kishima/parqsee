@@ -38,6 +38,7 @@ use parqsee_lib::services::opened::PendingOpen;
 use parqsee_lib::services::export::export_data;
 use parqsee_lib::services::parquet::{count_data, read_data, ParquetCache};
 use parqsee_lib::services::profile::profile_column;
+use parqsee_lib::services::profile_requests::ProfileRequests;
 use parqsee_lib::services::sample::sample_path;
 use parqsee_lib::services::store::{AlwaysUnlocked, License};
 use serde_json::{json, Value};
@@ -83,6 +84,7 @@ async fn dispatch(
     license: &License,
     pending: &PendingOpen,
     results: &QueryResults,
+    requests: &ProfileRequests,
     cmd: &str,
     args: Value,
 ) -> Result<Value, String> {
@@ -137,8 +139,17 @@ async fn dispatch(
         ),
         "count_parquet_data" => json!(count_data(cache, &s(&args, "path")?, opt_s(&args, "filter")).await?),
         "profile_column" => json!(
-            profile_column(cache, &s(&args, "path")?, &s(&args, "column")?, opt_s(&args, "filter")).await?
+            requests
+                .run(
+                    opt_s(&args, "requestId"),
+                    profile_column(cache, &s(&args, "path")?, &s(&args, "column")?, opt_s(&args, "filter")),
+                )
+                .await?
         ),
+        "cancel_profile" => {
+            requests.cancel(&s(&args, "requestId")?);
+            Value::Null
+        }
         "evict_cache" => {
             cache.evict(&s(&args, "path")?).await?;
             Value::Null
@@ -162,13 +173,17 @@ async fn dispatch(
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
         "execute_sql" => json!(run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?).await?),
         "profile_query_column" => json!(
-            run_profile_query_column(
-                results,
-                &s(&args, "resultId")?,
-                opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
-                opt_s(&args, "filter"),
-            )
-            .await?
+            requests
+                .run(
+                    opt_s(&args, "requestId"),
+                    run_profile_query_column(
+                        results,
+                        &s(&args, "resultId")?,
+                        opt_u(&args, "columnIndex").ok_or("columnIndex is required")?,
+                        opt_s(&args, "filter"),
+                    ),
+                )
+                .await?
         ),
         "filter_query_result" => json!(
             run_filter_query_result(results, &s(&args, "resultId")?, opt_s(&args, "filter")).await?
@@ -194,6 +209,7 @@ async fn main() {
     let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
     let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
     let results = Arc::new(QueryResults::new());
+    let requests = Arc::new(ProfileRequests::new());
     license.init().await;
     let pending = Arc::new(PendingOpen::seeded(
         std::env::var("PARQSEE_PENDING_FILES")
@@ -222,6 +238,7 @@ async fn main() {
         let license = license.clone();
         let pending = pending.clone();
         let results = results.clone();
+        let requests = requests.clone();
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -231,7 +248,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &access, &license, &pending, &results, &cmd, args).await {
+            let resp = match dispatch(&cache, &access, &license, &pending, &results, &requests, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };

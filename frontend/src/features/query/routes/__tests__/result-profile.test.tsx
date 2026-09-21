@@ -66,7 +66,7 @@ describe('the profile of a query result', () => {
     await run();
     const buttons = await screen.findAllByRole('button', { name: 'viewer.profile.open' });
     await userEvent.click(buttons[1]);
-    await waitFor(() => expect(mockProfile).toHaveBeenCalledWith('r1', 1, undefined));
+    await waitFor(() => expect(mockProfile).toHaveBeenCalledWith('r1', 1, undefined, expect.any(String)));
     expect(await screen.findByRole('complementary', { name: 'viewer.profile.title' })).toBeInTheDocument();
   });
 
