@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { ColumnInfo, SortSpec } from '../api';
 import { isSortableColumn } from '../lib/sort';
 import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../../lib/settings-storage';
-import { useColumnVirtualizer } from '../../../hooks/useVirtualRange';
+import { centerOffset, useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
 import { SearchMatch, indexOfTerm } from '../lib/search';
@@ -191,7 +191,7 @@ export const DataTable = React.memo(function DataTable({
   );
 
   const virt = useColumnVirtualizer(widths, scrollerRef);
-  const { start, end, padStart: padLeft, totalSize: totalWidth, viewportSize: viewportWidth } = virt;
+  const { start, end, padStart: padLeft, totalSize: totalWidth, viewportSize: viewportWidth, offsetOf } = virt;
   // Let the right spacer absorb any slack so row backgrounds span the viewport
   // when the columns do not fill it.
   const padRight = virt.padEnd + Math.max(0, viewportWidth - totalWidth);
@@ -217,24 +217,23 @@ export const DataTable = React.memo(function DataTable({
   const activeMatch: SearchMatch | undefined = searchMatches[currentMatchIndex];
 
   // Bring the current match into view. Its cell may not be rendered yet, so
-  // scroll by computed column offset rather than by DOM lookup.
+  // take the column's leading edge from the virtualizer — which already
+  // keeps the prefix sums the grid is laid out from — rather than looking
+  // it up in the DOM or summing the widths a second time here.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || !activeMatch) return;
 
-    let colLeft = 0;
-    for (let i = 0; i < activeMatch.colIndex; i++) colLeft += widths[i];
-    const colWidth = widths[activeMatch.colIndex] ?? 0;
-    const left = Math.max(0, colLeft - (scroller.clientWidth - colWidth) / 2);
+    const left = centerOffset(offsetOf(activeMatch.colIndex), widths[activeMatch.colIndex] ?? 0, scroller.clientWidth);
 
     let top = scroller.scrollTop;
     if (activeMatch.rowIndex >= 0) {
       const tr = scroller.querySelector<HTMLTableRowElement>(`tbody tr:nth-child(${activeMatch.rowIndex + 1})`);
-      if (tr) top = Math.max(0, tr.offsetTop - (scroller.clientHeight - tr.offsetHeight) / 2);
+      if (tr) top = centerOffset(tr.offsetTop, tr.offsetHeight, scroller.clientHeight);
     }
 
     scroller.scrollTo({ left, top, behavior: 'smooth' });
-  }, [activeMatch, widths, scrollerRef]);
+  }, [activeMatch, widths, offsetOf, scrollerRef]);
 
   return (
     <div

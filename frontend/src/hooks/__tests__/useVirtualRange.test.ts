@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useColumnVirtualizer, useRowVirtualizer } from '../useVirtualRange';
+import { centerOffset, useColumnVirtualizer, useRowVirtualizer } from '../useVirtualRange';
 
 function fakeScroller(scrollLeft: number, clientWidth: number) {
   return { current: { scrollLeft, clientWidth, scrollTop: 0, clientHeight: 0 } as unknown as HTMLElement };
@@ -75,5 +75,35 @@ describe('useVirtualRange', () => {
     });
     expect(result.current.start).toBe(50);
     expect(result.current.end).toBe(55);
+  });
+
+  it('keeps offsetOf stable across scrolls so a scroll-into-view effect cannot re-fire itself', async () => {
+    const ref = fakeScroller(0, 500);
+    const { result } = renderHook(() => useColumnVirtualizer(widths, ref, 0));
+    const before = result.current.offsetOf;
+
+    (ref.current as unknown as { scrollLeft: number }).scrollLeft = 5000;
+    await act(async () => {
+      result.current.onScroll();
+      await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    });
+
+    expect(result.current.start).toBe(50); // the memo really was rebuilt
+    expect(result.current.offsetOf).toBe(before);
+  });
+});
+
+describe('centerOffset', () => {
+  it('puts the item in the middle of the viewport', () => {
+    expect(centerOffset(1000, 100, 500)).toBe(800);
+  });
+
+  it('never scrolls before the start of the content', () => {
+    expect(centerOffset(0, 100, 500)).toBe(0);
+    expect(centerOffset(50, 100, 500)).toBe(0);
+  });
+
+  it('centres an item longer than the viewport, both edges outside', () => {
+    expect(centerOffset(1000, 900, 500)).toBe(1200);
   });
 });
