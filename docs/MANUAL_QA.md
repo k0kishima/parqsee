@@ -225,6 +225,16 @@ around ten items or nobody will run it.
 | Expected | Switching the setting retitles the whole menu bar at once, with no relaunch: 開く… / フォルダを開く… / 最近使った項目を開く / メニューを消去 / タブを閉じる / 閉じたタブを開く, 検索… / 次を検索, サイドバーの表示 / 非表示, クエリを実行, しまう, キーボードショートカット, Parqsee を終了. The keys beside the items do not move. After a relaunch the menu bar is in the chosen language **in its first frame** — no flash of English. On the Japanese Mac with no settings saved, the UI *and* the menu come up in Japanese without opening Settings. What stays in the system's language whatever the setting is not a bug: the **サービス / Services** submenu's contents, the Help menu's search field, Emoji & Symbols, the About panel and the open / save dialogs — AppKit supplies those. |
 | Why manual | There is no menu bar without a running `NSApplication`, and the language the menu starts in comes from `NSLocale.preferredLanguages`, which no harness can set. |
 
+### MQ-14 · A file opened through a symlink
+
+| | |
+|---|---|
+| Fixture | `scripts/qa/fixtures/paths/good_link.parquet` (a symlink to `one_row.parquet`, so its path is not the file's own); `cp scripts/qa/fixtures/one_row.parquet /tmp/x.parquet` (`/tmp` is a symlink to `/private/tmp`); `ln -s "$PWD/scripts/qa/fixtures" ~/parqsee-fixtures-link` |
+| Steps | Open the fixtures folder (⇧⌘O) and `paths/good_link.parquet` from the tree. Close the tab (⌘W), open it again from File › Open Recent, and close and reopen it once more. Quit with ⌘Q and relaunch. Do the same with `/tmp/x.parquet` **dropped on the window** (not opened from Finder — see Pitfalls). Then open `~/parqsee-fixtures-link` with ⇧⌘O and open a file from the tree. |
+| Expected | Every reopen fills the grid; no *File not found* alert, and the entry stays in Recent Files (the failure this guards against alternates — the first open succeeds, the second fails and removes the entry, the third succeeds again). After the relaunch the tab is back rather than named in the *could not be reopened* notice. The symlinked folder opens, and the sidebar and the breadcrumb name the folder it points at (`.../scripts/qa/fixtures`) — a root is recorded by its real path because Foundation refuses to bookmark a symlink to a directory. |
+| Why manual | A bookmark resolves to the canonical path only in Foundation; the fake provider in `cargo test --lib` imitates that, and the unsandboxed bridge the e2e suite drives records no bookmarks at all. |
+| Pitfalls | Finder, the Dock and `open -a` do **not** reproduce this: Launch Services hands the app the resolved path, so `open -a Parqsee /tmp/x.parquet` arrives — and is recorded — as `/private/tmp/x.parquet`. The path has to reach the app as the user wrote it: dropped on the window, or built by the explorer from a root that holds a symlink. |
+
 ## Results template
 
 ```markdown
@@ -242,5 +252,6 @@ Manual QA — <version> — <date> — <macOS version, chip>
 - [ ] MQ-11 Sandbox entitlements and file access
 - [ ] MQ-12 StoreKit sandbox: the free tier and the purchase
 - [ ] MQ-13 The menu bar's language
+- [ ] MQ-14 A file opened through a symlink
 Notes: <anything that differed from Expected, with what happened>
 ```

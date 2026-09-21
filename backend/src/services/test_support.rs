@@ -9,10 +9,17 @@ use std::path::{Path, PathBuf};
 /// A path under a temp directory of this process's own, one per `scope`. The
 /// whole suite runs in a single process and two test modules write fixtures
 /// under the same file names, so the scope keeps them apart.
+///
+/// The directory is canonicalised: on macOS the temp directory is reached
+/// through `/var`, a symlink to `/private/var`, and a security-scoped
+/// bookmark resolves to the real path — so a test that compares a path it
+/// wrote with one a bookmark handed back would be comparing the two spellings
+/// rather than the two files. A test that is about that difference makes its
+/// own symlink.
 pub fn temp_path(scope: &str, name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("parqsee-{}-test-{}", scope, std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    dir.join(name)
+    dir.canonicalize().unwrap_or(dir).join(name)
 }
 
 /// A directory of this process's own under `temp_path`'s scope, created and

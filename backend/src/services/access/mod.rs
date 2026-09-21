@@ -126,6 +126,19 @@ fn display_name(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
+/// Whether `resolved` and `recorded` name the same file. A bookmark resolves
+/// to the canonical path — symlinks followed, the case the filesystem has,
+/// `/tmp` as `/private/tmp` — while the recorded path is the one the user
+/// opened, so the two are only equal once both are canonicalised. A path
+/// that cannot be canonicalised (gone, or unreadable) is compared as it is
+/// written, which is what it was compared as before it went.
+fn same_file(resolved: &Path, recorded: &str) -> bool {
+    fn real(path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+    real(resolved) == real(Path::new(recorded))
+}
+
 impl FileAccess {
     /// Load the store from `dir/bookmarks.json` (or start empty when `dir`
     /// is `None`) and re-acquire every workspace root. A root whose bookmark
@@ -235,7 +248,7 @@ impl FileAccess {
         let mut changed = false;
         for path in paths {
             match self.resolve_recorded(&mut state, &path) {
-                Ok(Some(resolved)) if resolved.path == Path::new(&path) => {
+                Ok(Some(resolved)) if same_file(&resolved.path, &path) => {
                     state.held.insert(path, resolved.token);
                 }
                 Ok(Some(resolved)) => {
@@ -276,7 +289,7 @@ impl FileAccess {
         }
         match self.resolve_recorded(&mut state, path) {
             Ok(Some(resolved)) => {
-                if resolved.path != Path::new(path) {
+                if !same_file(&resolved.path, path) {
                     eprintln!(
                         "bookmark for {path} now resolves to {}",
                         resolved.path.display()
@@ -341,8 +354,9 @@ impl FileAccess {
     }
 
     /// Whether the file at `path` can be reached: its bookmark, when one is
-    /// recorded and not held, must resolve to the same path, and the file
-    /// must exist. Under the sandbox `exists` alone says nothing — `stat`
+    /// recorded and not held, must resolve to the same file (see
+    /// [`same_file`] — it resolves to the canonical path, which is not
+    /// always the one recorded), and the file must exist. Under the sandbox `exists` alone says nothing — `stat`
     /// succeeds on paths the app cannot open — so the bookmark decides. A
     /// grant taken for the probe ends with it.
     ///
@@ -373,7 +387,7 @@ impl FileAccess {
                         self.refresh_stale(&mut state, path, &resolved.path);
                     }
                 }
-                resolved.path == Path::new(path) && resolved.path.exists()
+                same_file(&resolved.path, path) && resolved.path.exists()
             }
             Err(_) => false,
         }
@@ -431,10 +445,24 @@ impl FileAccess {
     /// Open `path` as a workspace root: bookmark it, hold its grant until
     /// `remove_root`, and persist it. `path` must be a directory the app can
     /// read now (the folder dialog grants that).
+    ///
+    /// The root is recorded by its real path, not the one it was picked
+    /// through. Foundation refuses to bookmark a symlink to a directory
+    /// (`NSCocoaErrorDomain 256, "Could not open() the item"`), so a folder
+    /// reached through one could not be opened at all; and the files under
+    /// it get their own bookmarks, which resolve to the real path, so
+    /// recording the root the same way keeps the explorer's tree and those
+    /// paths in one shape. A path that cannot be canonicalised is recorded
+    /// as it was given.
     pub fn add_root(&self, path: &str) -> Result<WorkspaceRoot, String> {
         if !Path::new(path).is_dir() {
             return Err(format!("{path} is not a directory"));
         }
+        let path = Path::new(path)
+            .canonicalize()
+            .map(|real| real.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.to_string());
+        let path = path.as_str();
         let bookmark = self.provider.create(Path::new(path))?;
         let root = WorkspaceRoot {
             path: path.to_string(),
@@ -644,14 +672,22 @@ pub mod fake {
     }
 
     impl BookmarkProvider for FakeBookmarks {
+        /// The bytes name the canonical path, the way Foundation's do: a
+        /// bookmark resolves with symlinks followed and the case the
+        /// filesystem has, never as the path was written. A path that
+        /// cannot be canonicalised is kept as it was given.
         fn create(&self, path: &Path) -> Result<Option<Vec<u8>>, String> {
-            let path = path.to_string_lossy().into_owned();
+            let requested = path.to_string_lossy().into_owned();
+            let resolves_to = path
+                .canonicalize()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| requested.clone());
             let mut state = self.0.lock().unwrap();
-            if state.uncreatable.contains(&path) {
-                return Err(format!("no access to {path}"));
+            if state.uncreatable.contains(&requested) {
+                return Err(format!("no access to {requested}"));
             }
-            state.created.push(path.clone());
-            Ok(Some(format!("bm:{path}").into_bytes()))
+            state.created.push(requested);
+            Ok(Some(format!("bm:{resolves_to}").into_bytes()))
         }
 
         fn resolve(&self, bookmark: &[u8]) -> Result<Resolved, String> {
@@ -827,6 +863,42 @@ mod tests {
         assert_eq!(fake.starts(), 0);
     }
 
+    /// A file opened through a symlinked folder — `/tmp/x.parquet`, `/tmp`
+    /// being a link to `/private/tmp`, is the everyday one — is recorded
+    /// under the path the user opened while its bookmark resolves to the
+    /// real one. Everything that asks whether the file is still there has
+    /// to say yes all the same.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_reached_through_a_symlink_stays_available() {
+        let (dir, _file, access, _fake) = access_over("symlink-file");
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(dir.join("data"), &link).unwrap();
+        let through_link = s(&link.join("a.parquet"));
+
+        access.remember_file(&through_link).unwrap();
+        access.acquire(&through_link).unwrap();
+        // The tab is closed: whatever needs the file next resolves the
+        // bookmark itself.
+        access.release(&through_link);
+
+        assert!(access.file_exists(&through_link), "the file is still there");
+        let listed = access.recent_files();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, through_link, "listed as it was opened");
+        assert!(listed[0].available);
+
+        access
+            .save_session(
+                vec![(through_link.clone(), tab_state(0))],
+                Some(through_link.clone()),
+            )
+            .unwrap();
+        let session = access.session_tabs();
+        assert_eq!(session.tabs.len(), 1);
+        assert!(session.tabs[0].available, "the tab comes back");
+    }
+
     #[test]
     fn a_stale_bookmark_is_recreated_and_saved() {
         let (dir, file, access, fake) = remembered_and_released("stale");
@@ -992,6 +1064,61 @@ mod tests {
         assert!(BookmarkStore::load_from(&dir.join("bookmarks.json"))
             .roots
             .is_empty());
+    }
+
+    /// Foundation refuses to bookmark a symlink to a directory, so a root
+    /// picked through one is recorded by the folder it points at.
+    #[cfg(unix)]
+    #[test]
+    fn a_root_added_through_a_symlink_is_recorded_by_its_real_path() {
+        let (dir, _file, access, _fake) = access_over("symlink-root");
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(dir.join("data"), &link).unwrap();
+        let data = s(&dir.join("data"));
+
+        let root = access.add_root(&s(&link)).unwrap();
+        assert_eq!(
+            root,
+            WorkspaceRoot {
+                path: data.clone(),
+                name: "data".into()
+            }
+        );
+        assert_eq!(access.roots(), [root]);
+    }
+
+    /// A store written before roots were recorded by their real path: the
+    /// root goes through a symlink, its bookmark resolves past it. The two
+    /// name the same folder, so the root is kept.
+    #[cfg(unix)]
+    #[test]
+    fn a_root_recorded_through_a_symlink_survives_a_relaunch() {
+        let (dir, _file) = fixture("symlink-root-restored");
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(dir.join("data"), &link).unwrap();
+        let fake = FakeBookmarks::default();
+        let mut store = BookmarkStore::default();
+        store.add_root(RootEntry {
+            path: s(&link),
+            name: "link".into(),
+            bookmark: fake.create(&link).unwrap(),
+            added_at: 0,
+        });
+        store.save_to(&dir.join("bookmarks.json")).unwrap();
+
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        assert_eq!(
+            access.roots(),
+            [WorkspaceRoot {
+                path: s(&link),
+                name: "link".into()
+            }]
+        );
+        assert_eq!(
+            fake.active(),
+            [s(&dir.join("data"))],
+            "held through the folder the bookmark resolves to"
+        );
     }
 
     #[test]
