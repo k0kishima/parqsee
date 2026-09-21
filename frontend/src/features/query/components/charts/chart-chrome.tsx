@@ -84,6 +84,39 @@ export function ChartDetailBox({ description, keysHint, onKeyDown }: ChartDetail
   );
 }
 
+/**
+ * Where the tooltip sits for a pointer at `at`, in the plot's own
+ * coordinates: just below and right of the mark, and never far enough right
+ * that its 240px of width would run off the plot. Returns null when there is
+ * nothing to place, so a caller can test it and the tooltip together.
+ */
+export function tooltipPosition(
+  plotRef: React.RefObject<HTMLElement>,
+  at: { x: number; y: number } | null,
+): React.CSSProperties | null {
+  if (!at || !plotRef.current) return null;
+  return {
+    left: Math.min(at.x + 12, Math.max(0, plotRef.current.clientWidth - 240)),
+    top: Math.max(0, at.y - 12),
+  };
+}
+
+/**
+ * The chart's spoken summary, the one sentence a screen reader gets in place
+ * of the SVG. Every kind counts its series and its points the same way, so
+ * the numbers are formatted here rather than at each renderer.
+ */
+export function useChartSummary(kind: string, x: string, series: number, points: number) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
+  return t('viewer.query.chart.svgLabel', {
+    kind,
+    x,
+    series: series.toLocaleString(locale),
+    points: points.toLocaleString(locale),
+  });
+}
+
 /** The hover tooltip, placed in the plot's own coordinates by its caller. */
 export function ChartTooltip({ text, style }: { text: string; style: React.CSSProperties }) {
   return (
