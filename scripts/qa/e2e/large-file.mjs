@@ -47,9 +47,18 @@ const profileButton = (column) => page.locator(`${active} thead th button[aria-l
 // The dev server runs React in development, where StrictMode mounts an
 // effect twice: every panel opened here asks the backend twice, and a
 // production build asks once. Counting per column is what makes that visible.
-const profileCalls = () => bridge.log.filter(l => l.cmd === 'profile_column').map(l => l.args.column);
+const profileCalls = () => bridge.log.filter(l => l.cmd === 'profile_column_counts').map(l => l.args.column);
 const countPerColumn = (calls) => [...calls.reduce((m, c) => m.set(c, (m.get(c) ?? 0) + 1), new Map())].map(([c, n]) => `${c}x${n}`).join(' ');
-// Settled means the panel has something to show: its bars, or the message a
+// The counts are the first of the panel's two scans: it shows them without
+// waiting for the chart, so they are timed separately.
+const counted = (timeout = 180000) => page.waitForFunction(
+  sel => {
+    const panel = document.querySelector(sel);
+    return !!panel && (!!panel.querySelector('dd') || !!panel.querySelector('p[role="alert"]'));
+  },
+  PANEL, { timeout, polling: 50 }
+);
+// Settled means the panel has everything to show: its bars, or the message a
 // refused profile leaves behind.
 const settle = (timeout = 180000) => page.waitForFunction(
   sel => {
@@ -79,16 +88,19 @@ for (const column of PROFILE_COLUMNS) {
   }
   const tProfile = Date.now();
   await button.click();
+  let countsMs = null;
   try {
+    await counted();
+    countsMs = Date.now() - tProfile;
     await settle();
   } catch {
-    console.log(`profile ${column}: nothing after ${Date.now() - tProfile} ms`);
+    console.log(`profile ${column}: nothing after ${Date.now() - tProfile} ms (counts at ${countsMs ?? 'never'})`);
     await button.click();
     continue;
   }
   const state = await panelState();
   const took = Date.now() - tProfile;
-  console.log(`profile ${column}: ${took} ms (${countPerColumn(profileCalls().slice(-4))}) — ${state.error ? `ERROR ${state.error.slice(0, 140)}` : `${state.stats.join(' / ')} — ${state.bars.join(' | ')}`}`);
+  console.log(`profile ${column}: counts ${countsMs} ms, chart ${took} ms (${countPerColumn(profileCalls().slice(-4))}) — ${state.error ? `ERROR ${state.error.slice(0, 140)}` : `${state.stats.join(' / ')} — ${state.bars.join(' | ')}`}`);
   await page.screenshot({ path: `${OUT}/shots/huge_profile_${column}.png` });
   await button.click();
 }

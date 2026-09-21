@@ -3,16 +3,19 @@ import { stubResizeObserver } from '../../../../test/resize-observer';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryView } from '../query-view';
-import type { ColumnProfile } from '../../../../bindings/ipc/ColumnProfile';
+import type { ColumnCounts } from '../../../../bindings/ipc/ColumnCounts';
+import type { ProfileChart } from '../../../../bindings/ipc/ProfileChart';
 import type { QueryChartType, QueryResult } from '../../types';
 
 const mockExecuteSql = vi.fn();
-const mockProfile = vi.fn();
+const mockCounts = vi.fn();
+const mockChart = vi.fn();
 const mockFilter = vi.fn();
 const mockRelease = vi.fn();
 vi.mock('../../api/execute-sql', () => ({ executeSql: (...args: unknown[]) => mockExecuteSql(...args) }));
 vi.mock('../../api/result-profile', () => ({
-  profileQueryColumn: (...args: unknown[]) => mockProfile(...args),
+  profileQueryColumnCounts: (...args: unknown[]) => mockCounts(...args),
+  profileQueryColumnChart: (...args: unknown[]) => mockChart(...args),
   filterQueryResult: (...args: unknown[]) => mockFilter(...args),
   releaseQueryResult: (...args: unknown[]) => mockRelease(...args),
 }));
@@ -36,14 +39,20 @@ const result = (extra: Partial<QueryResult> = {}): QueryResult => ({
   ...extra,
 });
 
-const profileOf = (extra: Partial<ColumnProfile> = {}): ColumnProfile => ({
+const countsOf = (extra: Partial<ColumnCounts> = {}): ColumnCounts => ({
   column: 'grp',
   kind: 'text',
   total_rows: 3,
   null_count: 0,
   distinct_count: 2,
   distinct_approximate: false,
-  chart: { shape: 'top_values', values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }], other: 0 },
+  ...extra,
+});
+
+const chartOf = (extra: Partial<Extract<ProfileChart, { shape: 'top_values' }>> = {}): ProfileChart => ({
+  shape: 'top_values',
+  values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }],
+  other: 0,
   ...extra,
 });
 
@@ -57,7 +66,8 @@ const run = async (sql = 'SELECT grp, n FROM t') => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockExecuteSql.mockResolvedValue(result());
-  mockProfile.mockResolvedValue(profileOf());
+  mockCounts.mockResolvedValue(countsOf());
+  mockChart.mockResolvedValue(chartOf());
   mockFilter.mockResolvedValue([{ grp: 'a', n: 1 }, { grp: 'a', n: 3 }]);
 });
 
@@ -67,7 +77,7 @@ describe('the profile of a query result', () => {
     await run();
     const buttons = await screen.findAllByRole('button', { name: 'viewer.profile.open' });
     await userEvent.click(buttons[1]);
-    await waitFor(() => expect(mockProfile).toHaveBeenCalledWith('r1', 1, undefined, expect.any(String)));
+    await waitFor(() => expect(mockCounts).toHaveBeenCalledWith('r1', 1, undefined, expect.any(String)));
     expect(await screen.findByRole('complementary', { name: 'viewer.profile.title' })).toBeInTheDocument();
   });
 
