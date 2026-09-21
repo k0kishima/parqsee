@@ -1,28 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { QueryChartType, QueryResult } from '../../types';
 import { buildChartModel, inferChartKind, MAX_CHART_POINTS, parseDecimal, parseFloat64, parseInteger } from '../chart-data';
+import { result, T } from './test-support';
 import type { ChartAvailability, ChartKind } from '../chart-types';
 
-const T = {
-  integer: { kind: 'integer' } as QueryChartType,
-  float: { kind: 'float' } as QueryChartType,
-  decimal: { kind: 'decimal' } as QueryChartType,
-  date: { kind: 'date' } as QueryChartType,
-  timestamp: { kind: 'timestamp', timezone: null } as QueryChartType,
-  category: { kind: 'category' } as QueryChartType,
-  unsupported: { kind: 'unsupported' } as QueryChartType,
-};
-
-function result(columns: [string, QueryChartType][], rows: Record<string, unknown>[], extra: Partial<QueryResult> = {}): QueryResult {
-  return {
-    columns: columns.map(([name, chart_type]) => ({ name, data_type: chart_type.kind, chart_type })),
-    rows,
-    execution_time_ms: 1,
-    truncated: false,
-    max_rows: 10_000,
-    ...extra,
-  };
-}
 
 describe('value parsing', () => {
   it('accepts integers inside the safe range, as numbers or as the strings big ones arrive as', () => {

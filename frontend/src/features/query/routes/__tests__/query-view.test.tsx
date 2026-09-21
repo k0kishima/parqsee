@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { stubResizeObserver } from '../../../../test/resize-observer';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryView } from '../query-view';
@@ -8,12 +9,10 @@ const mockExecuteSql = vi.fn();
 vi.mock('../../api/execute-sql', () => ({
   executeSql: (...args: unknown[]) => mockExecuteSql(...args),
 }));
-vi.mock('../../../../contexts/SettingsContext', () => ({
-  useSettings: () => ({
-    settings: { rowsPerPage: 50, typeDisplay: 'logical', rowDensity: 'comfortable' },
-    updateSettings: vi.fn(),
-  }),
-}));
+vi.mock('../../../../contexts/SettingsContext', async () => {
+  const { TEST_SETTINGS } = await import('../../../../test/settings');
+  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: vi.fn() }) };
+});
 // A second implemented kind, so a pick can become unavailable: with bar
 // alone nothing a result can do takes the picked kind away.
 vi.mock('../../components/query-chart', async importOriginal => {
@@ -21,14 +20,7 @@ vi.mock('../../components/query-chart', async importOriginal => {
   return { ...original, IMPLEMENTED_CHART_KINDS: ['bar', 'scatter'] };
 });
 
-class FakeResizeObserver {
-  constructor(private callback: ResizeObserverCallback) {}
-  observe() { this.callback([{ contentRect: { width: 600, height: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
-  unobserve() {}
-  disconnect() {}
-}
-beforeAll(() => { vi.stubGlobal('ResizeObserver', FakeResizeObserver); });
-afterAll(() => { vi.unstubAllGlobals(); });
+stubResizeObserver();
 
 const cat: QueryChartType = { kind: 'category' };
 const int: QueryChartType = { kind: 'integer' };

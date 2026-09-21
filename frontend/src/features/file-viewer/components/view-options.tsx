@@ -2,14 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
-import type { RowDensity, TypeDisplay } from '../../../lib/settings-storage';
-
-const DENSITIES: RowDensity[] = ['comfortable', 'compact'];
-const TYPE_DISPLAYS: TypeDisplay[] = ['logical', 'physical', 'both'];
+import { ROW_DENSITIES, TYPE_DISPLAYS } from '../../../lib/settings-storage';
 
 interface ChoiceProps<T extends string> {
   label: string;
-  options: T[];
+  options: readonly T[];
   value: T;
   optionLabel: (value: T) => string;
   onChange: (value: T) => void;
@@ -102,7 +99,7 @@ export function ViewOptions({ buttonClassName }: ViewOptionsProps) {
         >
           <Choice
             label={t('viewer.viewOptions.rowDensity')}
-            options={DENSITIES}
+            options={ROW_DENSITIES}
             value={settings.rowDensity}
             optionLabel={d => t(`viewer.viewOptions.rowDensityOptions.${d}`)}
             onChange={rowDensity => updateSettings({ rowDensity })}

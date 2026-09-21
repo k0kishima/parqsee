@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { stubResizeObserver } from '../../../../test/resize-observer';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryChart } from '../query-chart';
@@ -20,14 +21,7 @@ function result(rows: Record<string, unknown>[], series = ['y'], extra: Partial<
 }
 
 // jsdom lays nothing out: the observer reports a fixed plot size at once.
-class FakeResizeObserver {
-  constructor(private callback: ResizeObserverCallback) {}
-  observe() { this.callback([{ contentRect: { width: 600, height: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
-  unobserve() {}
-  disconnect() {}
-}
-beforeAll(() => { vi.stubGlobal('ResizeObserver', FakeResizeObserver); });
-afterAll(() => { vi.unstubAllGlobals(); });
+stubResizeObserver();
 
 const marks = () => Array.from(document.querySelectorAll('[data-mark]'));
 const detail = () => screen.getByRole('group', { name: 'viewer.query.chart.detailLabel' });

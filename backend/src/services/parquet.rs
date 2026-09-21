@@ -39,6 +39,19 @@ use crate::services::access::FileAccess;
 /// machine, since even a spilling sort needs memory for its merge batches.
 pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
+/// Whether a query failed because it wanted more than `SESSION_MEMORY_LIMIT`.
+/// DataFusion reports the memory pool's refusal as a `ResourcesExhausted`
+/// error, and by the time a query's error reaches a caller here it is a
+/// `String`, so the wording is all there is to go on. It decides both what
+/// the user is told (the grid and an export each name their own way out)
+/// and whether a top-k retries as the spillable full sort, which is why
+/// the three callers must agree on it: a wording that stopped matching
+/// would turn the retry into a plain failure without any test noticing
+/// the message changed.
+pub fn is_memory_exhausted(error: &str) -> bool {
+    error.contains("Resources exhausted")
+}
+
 // Shared across files, not an additional allowance for every open tab.
 const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const RESULT_CACHE_ENTRIES: usize = 64;
@@ -99,6 +112,22 @@ impl Default for ParquetCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// A cached value for `path`, cloned out from under the lock. Both fills
+/// look twice — once before taking the path's gate and once after, because
+/// a concurrent miss may have finished while this call waited for it — so
+/// the lookup is written here rather than four times over.
+fn cached<T: Clone>(cache: &Mutex<HashMap<String, T>>, path: &str) -> Result<Option<T>, String> {
+    let cache = cache.lock().map_err(|e| e.to_string())?;
+    Ok(cache.get(path).cloned())
+}
+
+/// Put a filled value in, under the same lock discipline.
+fn store<T>(cache: &Mutex<HashMap<String, T>>, path: &str, value: T) -> Result<(), String> {
+    let mut cache = cache.lock().map_err(|e| e.to_string())?;
+    cache.insert(path.to_string(), value);
+    Ok(())
 }
 
 impl ParquetCache {
@@ -180,22 +209,16 @@ impl ParquetCache {
         // Check cache first. A hit may proceed while an already-started query
         // still uses that context; eviction only guarantees later creations
         // cannot repopulate the cache with an older context.
-        {
-            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            if let Some(ctx) = sessions.get(path) {
-                return Ok(ctx.clone());
-            }
+        if let Some(ctx) = cached(&self.sessions, path)? {
+            return Ok(ctx);
         }
 
         let gate = self.session_gate(path)?;
         let _gate = gate.lock().await;
 
         // A concurrent miss may have completed while this call waited.
-        {
-            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            if let Some(ctx) = sessions.get(path) {
-                return Ok(ctx.clone());
-            }
+        if let Some(ctx) = cached(&self.sessions, path)? {
+            return Ok(ctx);
         }
 
         // Create the session and register the parquet file. Single partition,
@@ -234,11 +257,7 @@ impl ParquetCache {
             return Err(e);
         }
 
-        // Store in cache
-        {
-            let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            sessions.insert(path.to_string(), ctx.clone());
-        }
+        store(&self.sessions, path, ctx.clone())?;
 
         Ok(ctx)
     }
@@ -258,22 +277,16 @@ impl ParquetCache {
         F: FnOnce() -> Result<ParquetMetadata, String>,
     {
         // Check cache first
-        {
-            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            if let Some(meta) = metadata_cache.get(path) {
-                return Ok(meta.clone());
-            }
+        if let Some(meta) = cached(&self.metadata, path)? {
+            return Ok(meta);
         }
 
         let gate = self.metadata_gate(path)?;
         let _gate = gate.lock().await;
 
         // A concurrent miss may have completed while this call waited.
-        {
-            let metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            if let Some(meta) = metadata_cache.get(path) {
-                return Ok(meta.clone());
-            }
+        if let Some(meta) = cached(&self.metadata, path)? {
+            return Ok(meta);
         }
 
         self.access.acquire(path)?;
@@ -285,11 +298,7 @@ impl ParquetCache {
             }
         };
 
-        // Store in cache
-        {
-            let mut metadata_cache = self.metadata.lock().map_err(|e| e.to_string())?;
-            metadata_cache.insert(path.to_string(), meta.clone());
-        }
+        store(&self.metadata, path, meta.clone())?;
 
         Ok(meta)
     }
@@ -1139,7 +1148,11 @@ pub fn where_clause(filter: Option<&str>) -> Option<&str> {
 }
 
 /// DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
-/// nothing; the filter bar quotes the same way.
+/// nothing. The filter bar's `quoteIdentifier` escapes the same way, and it
+/// has to: the webview sends its `WHERE` fragment here to be planned, so a
+/// column name the two spell differently resolves on one side and not the
+/// other. `contracts/identifier-quoting-cases.json` is the shared list both
+/// are tested against.
 pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
@@ -1318,7 +1331,7 @@ pub async fn read_data(
     if let Some(sort) = sort {
         let batches = sorted_page_batches(cache, path, offset, limit, filter, sort, ResultCachePolicy::Populate)
             .await.map_err(|e| {
-                if e.contains("Resources exhausted") {
+                if is_memory_exhausted(&e) {
                     "This page is too deep into the sort for a file this large: sorting it \
                      needs more memory than the app allows itself. Narrow the rows with a \
                      filter, page from the other end, or sort in the SQL view.".to_string()
@@ -1433,7 +1446,7 @@ async fn sorted_rows(
         return Ok(batches);
     }
     let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
-        Err(e) if !full_sort && e.contains("Resources exhausted") => {
+        Err(e) if !full_sort && is_memory_exhausted(&e) => {
             run_browse_query(&ctx, query, true).await?
         }
         other => other?,
@@ -1906,6 +1919,65 @@ mod tests {
         test_support::temp_path("parquet", name)
     }
 
+    #[derive(serde::Deserialize)]
+    struct SortableKindCase {
+        kind: ColumnKind,
+        sortable: bool,
+    }
+
+    /// Every `ColumnKind`, listed in a `match` so that adding a variant
+    /// stops this test compiling. `is_sortable` uses `matches!` and would
+    /// silently call a new kind sortable, and the header's
+    /// `isSortableColumn` would silently agree — the contract is only worth
+    /// anything if a new kind cannot reach either side without being named
+    /// in it.
+    fn every_kind() -> Vec<ColumnKind> {
+        let all = vec![
+            ColumnKind::Boolean, ColumnKind::Integer, ColumnKind::Float, ColumnKind::Decimal,
+            ColumnKind::Text, ColumnKind::Temporal, ColumnKind::Binary, ColumnKind::Nested,
+            ColumnKind::Other,
+        ];
+        for kind in &all {
+            match kind {
+                ColumnKind::Boolean | ColumnKind::Integer | ColumnKind::Float
+                | ColumnKind::Decimal | ColumnKind::Text | ColumnKind::Temporal
+                | ColumnKind::Binary | ColumnKind::Nested | ColumnKind::Other => {}
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn sortable_kinds_follow_the_contract_the_header_is_held_to() {
+        let cases: Vec<SortableKindCase> = serde_json::from_str(include_str!(
+            "../../../contracts/sortable-kinds-cases.json"
+        ))
+        .expect("the shared sortable-kinds contract must be valid JSON");
+        for case in &cases {
+            assert_eq!(super::is_sortable(case.kind), case.sortable, "{:?}", case.kind);
+        }
+        for kind in every_kind() {
+            assert!(cases.iter().any(|c| c.kind == kind), "the contract does not name {kind:?}");
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct IdentifierQuotingCase {
+        name: String,
+        quoted: String,
+    }
+
+    #[test]
+    fn quoting_follows_the_contract_the_filter_bar_is_held_to() {
+        let cases: Vec<IdentifierQuotingCase> = serde_json::from_str(include_str!(
+            "../../../contracts/identifier-quoting-cases.json"
+        ))
+        .expect("the shared identifier-quoting contract must be valid JSON");
+        for case in cases {
+            assert_eq!(super::quote_identifier(&case.name), case.quoted, "{}", case.name);
+        }
+    }
+
     /// A list column and a struct column next to a plain one, the shape Spark
     /// and pandas produce all the time.
     fn write_nested_fixture() -> PathBuf {
@@ -2170,6 +2242,26 @@ mod tests {
         assert_eq!(rows[1]["amount"], "-0.0001");
         assert_eq!(rows[0]["prices"][0], "1.50");
         assert_eq!(rows[0]["line"]["net"], "0.5000");
+    }
+
+    /// A file whose sort key is far too wide to keep `offset + limit` rows
+    /// of in a small pool: `n` rows of a 1 KB string, written in descending
+    /// id order so the sorted order is the reverse of the file's and a
+    /// position can be checked against the id it belongs to.
+    fn wide_text_file(n: i64, name: &str) -> PathBuf {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("text", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
+            ],
+        ).unwrap();
+        let path = temp_path(name);
+        write_parquet(&path, &batch, None);
+        path
     }
 
     fn write_small(path: &Path) {
@@ -3068,18 +3160,7 @@ mod tests {
         use datafusion::physical_plan::{collect, limit::GlobalLimitExec};
 
         let n = 30_000i64;
-        let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("text", DataType::Utf8, false),
-            ])),
-            vec![
-                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
-                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
-            ],
-        ).unwrap();
-        let path = temp_path("full_sort_spill.parquet");
-        write_parquet(&path, &batch, None);
+        let path = wide_text_file(n, "full_sort_spill.parquet");
         // This deliberately tiny pool needs smaller merge batches than the
         // production 2 GiB pool. Spill still processes more data than fits.
         let cache = ParquetCache::new().with_memory_limit(32 * 1024 * 1024);
@@ -3104,18 +3185,7 @@ mod tests {
     #[tokio::test]
     async fn a_top_k_past_the_memory_limit_falls_back_to_the_full_sort() {
         let n = 30_000i64;
-        let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("text", DataType::Utf8, false),
-            ])),
-            vec![
-                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
-                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
-            ],
-        ).unwrap();
-        let path = temp_path("topk_fallback.parquet");
-        write_parquet(&path, &batch, None);
+        let path = wide_text_file(n, "topk_fallback.parquet");
         let file = path.to_string_lossy().to_string();
         let cache = ParquetCache::new().with_memory_limit(16 * 1024 * 1024);
         let ctx = cache.get_or_create_session(&file).await.unwrap();
@@ -3127,7 +3197,7 @@ mod tests {
         let order = super::sort_order(&sort, &cache.get_or_create_metadata(&file).await.unwrap().columns).unwrap();
         let query = super::build_position_query(None, &order, Some(offset), Some(50));
         let err = super::run_browse_query(&ctx, &query, false).await.unwrap_err();
-        assert!(err.contains("Resources exhausted"), "{err}");
+        assert!(super::is_memory_exhausted(&err), "{err}");
 
         let rows = super::read_data(&cache, &file, offset, 50, None, Some(sort)).await.unwrap();
         assert_eq!(rows.len(), 50);

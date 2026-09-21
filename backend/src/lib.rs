@@ -10,6 +10,22 @@ use services::store::{License, StoreProvider};
 use std::sync::Arc;
 use tauri::{DragDropEvent, Emitter, Manager};
 
+/// Hand an event to the webview, reporting a refusal instead of acting on
+/// it. Every one of these runs somewhere nothing can be done about a
+/// failure — a Launch Services callback, a store notification, a menu or
+/// window event — and several run outside `commands::guarded`, where an
+/// unwind would go through the event loop. `what` completes "failed to …".
+pub(crate) fn emit_or_log<R: tauri::Runtime, P: serde::Serialize + Clone>(
+    emitter: &impl Emitter<R>,
+    event: &str,
+    payload: P,
+    what: &str,
+) {
+    if let Err(e) = emitter.emit(event, payload) {
+        eprintln!("failed to {what}: {e}");
+    }
+}
+
 /// The application menu.
 ///
 /// Tauri's default menu carries "Close Window" on ⌘W, and a native key
@@ -181,9 +197,7 @@ fn deliver_opened(app: &tauri::AppHandle, urls: &[tauri::Url]) {
         return;
     };
     let Some(paths) = pending.deliver(paths) else { return };
-    if let Err(e) = app.emit("file-drop", &paths) {
-        eprintln!("failed to forward the files to open: {}", e);
-    }
+    emit_or_log(app, "file-drop", &paths, "forward the files to open");
     // The app is activated by Launch Services, but its window may have been
     // minimized or hidden; the file is of no use behind that.
     if let Some(window) = app.get_webview_window("main") {
@@ -246,9 +260,7 @@ pub fn run() {
             let license = Arc::new(License::new(store_provider()));
             let handle = app.handle().clone();
             license.set_on_change(Box::new(move |status| {
-                if let Err(e) = handle.emit("iap-status", status) {
-                    eprintln!("failed to forward the purchase state: {}", e);
-                }
+                emit_or_log(&handle, "iap-status", status, "forward the purchase state");
             }));
             app.manage(Arc::clone(&license));
             tauri::async_runtime::spawn(async move { license.init().await });
@@ -262,9 +274,7 @@ pub fn run() {
                     if menu::handle_recent_menu_event(app, id) {
                         return;
                     }
-                    if let Err(e) = app.emit("menu", id.to_string()) {
-                        eprintln!("failed to forward menu event {id}: {e}");
-                    }
+                    emit_or_log(app, "menu", id.to_string(), &format!("forward menu event {id}"));
                 });
             }
             Ok(())
@@ -303,9 +313,7 @@ pub fn run() {
             // `commands::guarded`, so a panic here would unwind through the
             // event loop; report a failed emit instead.
             if let tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
-                if let Err(e) = window.emit("file-drop", paths) {
-                    eprintln!("failed to forward dropped files: {}", e);
-                }
+                emit_or_log(window, "file-drop", paths, "forward dropped files");
             }
         })
         // Built rather than run so the event loop is ours: `RunEvent::Opened`

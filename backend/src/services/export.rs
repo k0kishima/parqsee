@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use crate::models::SortSpec;
 use crate::services::parquet::{
-    build_page_query, build_sorted_query, json_unsafe_to_strings, nested_to_json_strings, sort_order, SortOrder,
+    build_page_query, build_sorted_query, is_memory_exhausted, json_unsafe_to_strings,
+    nested_to_json_strings, sort_order, SortOrder,
     plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache, ResultCachePolicy,
 };
 
@@ -169,7 +170,7 @@ async fn export_data_with(
                 filter, sort.expect("ORDER BY requires a sort"),
                 ResultCachePolicy::ReuseOnly,
             ).await.map_err(|e| {
-                if e.contains("Resources exhausted") {
+                if is_memory_exhausted(&e) {
                     "This sorted export needs more memory than the app allows. Export a smaller \
                      range or narrow the rows with a filter.".to_string()
                 } else {

@@ -6,7 +6,7 @@ import { EXCLUSION_REASONS, type ChartKind, type ChartModel, type ChartPoint, ty
 import { pieData } from '../lib/pie-data';
 import { BarChart, type MarkRef } from './charts/bar-chart';
 import { PieChart } from './charts/pie-chart';
-import { ChartDetailBox, ChartTooltip, useElementSize, useLabelOf, usePointerMark } from './charts/chart-chrome';
+import { ChartDetailBox, ChartTooltip, tooltipPosition, useChartSummary, useElementSize, useLabelOf, usePointerMark } from './charts/chart-chrome';
 import { seriesColor } from './chart-style';
 
 /**
@@ -201,16 +201,8 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
     });
   }
 
-  const summary = t('viewer.query.chart.svgLabel', {
-    kind: t(`viewer.query.chart.${kind}`),
-    x: model.x?.name ?? '',
-    series: model.series.length.toLocaleString(locale),
-    points: model.points.length.toLocaleString(locale),
-  });
-
-  const tooltipStyle = tooltipAt && plotRef.current
-    ? { left: Math.min(tooltipAt.x + 12, Math.max(0, plotRef.current.clientWidth - 240)), top: Math.max(0, tooltipAt.y - 12) }
-    : null;
+  const summary = useChartSummary(t(`viewer.query.chart.${kind}`), model.x?.name ?? '', model.series.length, model.points.length);
+  const tooltipStyle = tooltipPosition(plotRef, tooltipAt);
 
   return (
     <>

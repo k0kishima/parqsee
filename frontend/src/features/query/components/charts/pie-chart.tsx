@@ -4,7 +4,7 @@ import { formatCellValue } from '../../../../lib/format';
 import { pieGeometry } from '../../lib/chart-geometry';
 import type { PieData, PieEntry, PieSlice } from '../../lib/pie-data';
 import { seriesColor } from '../chart-style';
-import { ChartDetailBox, ChartTooltip, useElementSize, useLabelOf, usePointerMark } from './chart-chrome';
+import { ChartDetailBox, ChartTooltip, tooltipPosition, useChartSummary, useElementSize, useLabelOf, usePointerMark } from './chart-chrome';
 
 interface PieChartProps {
   data: PieData;
@@ -103,15 +103,8 @@ export function PieChart({ data, xName }: PieChartProps) {
     setTooltipAt(at);
   }, []));
 
-  const summary = t('viewer.query.chart.svgLabel', {
-    kind: t('viewer.query.chart.pie'),
-    x: xName,
-    series: (1).toLocaleString(locale),
-    points: data.slices.length.toLocaleString(locale),
-  });
-  const tooltipStyle = tooltipAt && plotRef.current
-    ? { left: Math.min(tooltipAt.x + 12, Math.max(0, plotRef.current.clientWidth - 240)), top: Math.max(0, tooltipAt.y - 12) }
-    : null;
+  const summary = useChartSummary(t('viewer.query.chart.pie'), xName, 1, data.slices.length);
+  const tooltipStyle = tooltipPosition(plotRef, tooltipAt);
 
   return (
     <>

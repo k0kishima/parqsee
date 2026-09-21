@@ -4,12 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { ViewOptions } from '../view-options';
 
 const mockUpdateSettings = vi.fn();
-vi.mock('../../../../contexts/SettingsContext', () => ({
-  useSettings: () => ({
-    settings: { rowsPerPage: 50, typeDisplay: 'logical', rowDensity: 'comfortable' },
-    updateSettings: mockUpdateSettings,
-  }),
-}));
+vi.mock('../../../../contexts/SettingsContext', async () => {
+  const { TEST_SETTINGS } = await import('../../../../test/settings');
+  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: mockUpdateSettings }) };
+});
 
 describe('ViewOptions', () => {
   beforeEach(() => mockUpdateSettings.mockClear());

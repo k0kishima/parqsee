@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { dropFile, finderOpen, release, openFolder, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, ACTIVE_PANEL, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, release, openFolder, applyFilter, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, ACTIVE_PANEL, FIX, OUT, ROOT } from './lib.mjs';
 import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
@@ -148,16 +148,13 @@ await scenario('S2-pagination', async ({ page }) => {
 
   // Race: slow filtered load, then immediate clear.
   await page.evaluate(() => { window.__delays['count_parquet_data'] = 1200; });
-  const form = act(page).locator('form').first();
-  await form.locator('select').nth(0).selectOption('grp');
-  await form.locator('input[type=text]').fill('3');
-  await form.locator('button[type=submit]').click();
+  await applyFilter(page, 'grp', '3');
   await page.waitForTimeout(100);
   await page.evaluate(() => { window.__delays['count_parquet_data'] = 0; });
   await act(page).locator('button[title="Clear"]').click();
   await page.waitForTimeout(2500); await waitGrid(page);
   const raceIds = await ids();
-  const filterInputVal = await form.locator('input[type=text]').inputValue();
+  const filterInputVal = await act(page).locator('form input[type=text]').first().inputValue();
   check('S2.race.filterThenClear', raceIds[0] === '0' && raceIds[1] === '1' && (await footer(page)).includes('100,000'), `after clear: ids=${raceIds.slice(0, 3)} footer=${await footer(page)} filterInput="${filterInputVal}" clearBtnVisible=${await act(page).locator('button[title="Clear"]').isVisible()}`);
 
   // Race: two rapid Next clicks with slow reads
@@ -446,8 +443,7 @@ await scenario('S6-export', async ({ page, bridge }) => {
   check('S6.defaultPath.failedExportNotRecorded', (await bridge.call('export_default_dir', { sourcePath: mr })) === outDir, `after a failed export: ${await bridge.call('export_default_dir', { sourcePath: mr })}`);
   await modal().locator('button:has-text("Cancel")').click();
   // filtered export + json
-  const form = act(page).locator('form').first();
-  await form.locator('select').nth(0).selectOption('grp'); await form.locator('input[type=text]').fill('6'); await form.locator('button[type=submit]').click(); await waitGrid(page);
+  await applyFilter(page, 'grp', '6'); await waitGrid(page);
   await openModal();
   await modal().locator('input[value=json]').check();
   report('S6.filteredLabel', 'OBSERVE', `${await modal().locator('label:has-text("All rows")').textContent()} notice=${await modal().locator('text=active filter').isVisible()}`);
@@ -577,8 +573,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   report('S7.settingsInWorkspace', 'OBSERVE', `settings button in workspace: ${await page.locator('[title^="Settings"]').count()}`);
   // per-tab state isolation: filter in one tab doesn't leak
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
-  const form = act(page).locator('form').first();
-  await form.locator('select').nth(0).selectOption('grp'); await form.locator('input[type=text]').fill('1'); await form.locator('button[type=submit]').click(); await waitGrid(page);
+  await applyFilter(page, 'grp', '1'); await waitGrid(page);
   await page.click(`span[title="${C}"]`); await page.waitForTimeout(300);
   const otherFooter = await act(page).locator('text=/Showing .* entries/').first().textContent();
   check('S7.tabIsolation', otherFooter.includes('of 5 '), `dict tab footer=${otherFooter}`);
@@ -1592,10 +1587,7 @@ await scenario('S21-sort', async ({ page, bridge }) => {
   check('S21.otherColumn', (await ariaSort('val')) === 'ascending' && (await ariaSort('grp')) === null && ascending(v) && v[0] < 0.001, `val aria=${await ariaSort('val')} grp aria=${await ariaSort('grp')} first=${v.slice(0, 3)}`);
 
   // Under a filter the sort walks the filtered rows.
-  const form = act(page).locator('form').first();
-  await form.locator('select').nth(0).selectOption('grp');
-  await form.locator('input[type=text]').fill('3');
-  await form.locator('button[type=submit]').click(); await waitGrid(page);
+  await applyFilter(page, 'grp', '3'); await waitGrid(page);
   const f = await visibleGrid(page);
   check('S21.filtered', f.every(r => r[1] === '3') && (await footer(page)) === 'Showing 1 to 50 of 14,286 entries' && ascending(f.map(r => Number(r[3]))) && (await ariaSort('val')) === 'ascending', `grp=${[...new Set(f.map(r => r[1]))]} footer=${await footer(page)}`);
   await act(page).locator('button[title="Clear"]').click(); await waitGrid(page);

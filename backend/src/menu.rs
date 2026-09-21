@@ -31,7 +31,7 @@ use crate::services::menu_labels::{self, Labels};
 use crate::services::recent_menu::{recent_menu_items, recent_path, RecentMenuItem, CLEAR_RECENT_ID};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{IsMenuItem, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::{AppHandle, Manager, Wry};
 
 /// The submenu, kept as managed state so it can be rebuilt in place.
 pub struct RecentMenu(Submenu<Wry>);
@@ -223,15 +223,14 @@ pub fn handle_recent_menu_event(app: &AppHandle, id: &str) -> bool {
             access.clear_recent();
         }
         refresh_recent_menu(app);
-        if let Err(e) = app.emit("recent-files-cleared", ()) {
-            eprintln!("failed to tell the webview Recent Files were cleared: {e}");
-        }
+        crate::emit_or_log(app, "recent-files-cleared", (), "tell the webview Recent Files were cleared");
         return true;
     }
     if let Some(path) = recent_path(id) {
-        if let Err(e) = app.emit("file-drop", vec![path.to_string()]) {
-            eprintln!("failed to open {path} from the Open Recent menu: {e}");
-        }
+        crate::emit_or_log(
+            app, "file-drop", vec![path.to_string()],
+            &format!("open {path} from the Open Recent menu"),
+        );
         return true;
     }
     false

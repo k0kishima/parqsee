@@ -333,6 +333,19 @@ export async function openFolder(page, dir) {
 export const ACTIVE_PANEL = 'div[style*="position: absolute"][style*="display: flex"]';
 export const activePanel = (page) => page.locator(ACTIVE_PANEL);
 
+/**
+ * Apply one condition through the filter bar: pick the column, type the
+ * value, submit. The bar opens with no column picked, so a value alone
+ * applies nothing — the order is the point. Does not wait for the grid:
+ * most callers follow with waitGrid, and S2 deliberately does not.
+ */
+export async function applyFilter(page, column, value) {
+  const form = activePanel(page).locator('form').first();
+  await form.locator('select').nth(0).selectOption(column);
+  await form.locator('input[type=text]').fill(value);
+  await form.locator('button[type=submit]').click();
+}
+
 export async function waitGrid(page, timeout = 15000) {
   await page.waitForFunction(() => !document.querySelector('.animate-spin'), null, { timeout });
   await page.waitForTimeout(50);
