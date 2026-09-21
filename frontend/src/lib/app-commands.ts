@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { ShortcutId } from './shortcuts';
 
 /**
  * Commands that belong to a view rather than to the workspace: what ⌘F
@@ -6,8 +7,13 @@ import { useEffect } from 'react';
  * the SQL editor. The workspace context receives them — from the native
  * menu as a `menu` event, or from its keydown fallback — and hands them on
  * here; the view that is active answers, the rest ignore them.
+ *
+ * Every one of them is a `ShortcutId`, and `satisfies` is what says so:
+ * the list is the subset of the shortcuts that a view answers rather than
+ * a second spelling of them, and a name misspelt here would otherwise be
+ * a command that simply never arrives.
  */
-export const APP_COMMANDS = ['find', 'find-next', 'find-previous', 'run-query', 'switch-view'] as const;
+export const APP_COMMANDS = ['find', 'find-next', 'find-previous', 'run-query', 'switch-view'] as const satisfies readonly ShortcutId[];
 
 export type AppCommand = typeof APP_COMMANDS[number];
 
