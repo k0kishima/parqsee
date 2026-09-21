@@ -2248,6 +2248,26 @@ mod tests {
         assert_eq!(rows[0]["line"]["net"], "0.5000");
     }
 
+    /// A file whose sort key is far too wide to keep `offset + limit` rows
+    /// of in a small pool: `n` rows of a 1 KB string, written in descending
+    /// id order so the sorted order is the reverse of the file's and a
+    /// position can be checked against the id it belongs to.
+    fn wide_text_file(n: i64, name: &str) -> PathBuf {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("text", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
+            ],
+        ).unwrap();
+        let path = temp_path(name);
+        write_parquet(&path, &batch, None);
+        path
+    }
+
     fn write_small(path: &Path) {
         let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
         let batch = RecordBatch::try_new(
@@ -3144,18 +3164,7 @@ mod tests {
         use datafusion::physical_plan::{collect, limit::GlobalLimitExec};
 
         let n = 30_000i64;
-        let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("text", DataType::Utf8, false),
-            ])),
-            vec![
-                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
-                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
-            ],
-        ).unwrap();
-        let path = temp_path("full_sort_spill.parquet");
-        write_parquet(&path, &batch, None);
+        let path = wide_text_file(n, "full_sort_spill.parquet");
         // This deliberately tiny pool needs smaller merge batches than the
         // production 2 GiB pool. Spill still processes more data than fits.
         let cache = ParquetCache::new().with_memory_limit(32 * 1024 * 1024);
@@ -3180,18 +3189,7 @@ mod tests {
     #[tokio::test]
     async fn a_top_k_past_the_memory_limit_falls_back_to_the_full_sort() {
         let n = 30_000i64;
-        let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("text", DataType::Utf8, false),
-            ])),
-            vec![
-                Arc::new(Int64Array::from((0..n).rev().collect::<Vec<_>>())) as ArrayRef,
-                Arc::new(StringArray::from((0..n).rev().map(|i| format!("{i:08}{}", "x".repeat(1024))).collect::<Vec<_>>())),
-            ],
-        ).unwrap();
-        let path = temp_path("topk_fallback.parquet");
-        write_parquet(&path, &batch, None);
+        let path = wide_text_file(n, "topk_fallback.parquet");
         let file = path.to_string_lossy().to_string();
         let cache = ParquetCache::new().with_memory_limit(16 * 1024 * 1024);
         let ctx = cache.get_or_create_session(&file).await.unwrap();
