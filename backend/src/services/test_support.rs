@@ -40,3 +40,23 @@ pub fn write_parquet(path: &Path, batch: &RecordBatch, props: Option<WriterPrope
     writer.write(batch).unwrap();
     writer.close().unwrap();
 }
+
+/// Overwrite the fixture at `path` with `batch`, the way another program
+/// replacing the file under an open tab would. The modification time is set
+/// two seconds past the old one: a rewrite that lands inside the
+/// filesystem's timestamp granularity is indistinguishable from the
+/// original, and half of what makes a file a different version is that
+/// timestamp.
+pub fn rewrite_parquet(path: &Path, batch: &RecordBatch) {
+    let before = std::fs::metadata(path).unwrap().modified().unwrap();
+    write_parquet(path, batch, None);
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(
+            std::fs::FileTimes::new()
+                .set_modified(before + std::time::Duration::from_secs(2)),
+        )
+        .unwrap();
+}

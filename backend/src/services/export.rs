@@ -148,6 +148,10 @@ async fn export_data_with(
     sort: Option<SortSpec>,
 ) -> Result<usize, String> {
     let format = ExportFormat::parse(&format)?;
+    // Before anything is created: a file replaced under the tab would be
+    // written out through the schema the session registered, giving the old
+    // header over the new file's rows.
+    cache.check_unchanged(&source_path)?;
     let staging_path = staging_path_for(&export_path).to_string_lossy().into_owned();
 
     // Resolving the sort needs the file's columns; a sort by a column the
@@ -669,6 +673,35 @@ mod tests {
         let path = temp_path(&format!("{name}.parquet"));
         write_parquet(&path, &batch, None);
         path
+    }
+
+    /// An export of a file replaced under the tab wrote the old schema's
+    /// header over the new file's rows — `id,name` with every `name` empty,
+    /// and no error anywhere. The destination is left untouched instead.
+    #[tokio::test]
+    async fn an_export_after_the_file_was_rewritten_is_refused() {
+        let src = write_fixture("rewritten_export");
+        let out = temp_path("rewritten_export.csv");
+        let _ = std::fs::remove_file(&out);
+        let cache = ParquetCache::new();
+        cache
+            .get_or_create_metadata(&src.to_string_lossy())
+            .await
+            .unwrap();
+
+        let replacement = RecordBatch::try_from_iter(vec![(
+            "other",
+            Arc::new(Int64Array::from(vec![7, 8])) as ArrayRef,
+        )])
+        .unwrap();
+        test_support::rewrite_parquet(&src, &replacement);
+
+        let err = export(&cache, &src, &out, "csv", None, None, None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("Refresh"), "{err}");
+        assert!(!out.exists(), "a refused export must create no file");
+        assert!(staging_leftovers("rewritten_export").is_empty());
     }
 
     #[tokio::test]
