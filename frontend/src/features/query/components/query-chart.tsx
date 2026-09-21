@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatCellValue } from '../../../lib/format';
-import { barGeometry, PLOT_MARGIN, Y_AXIS_WIDTH, type AxisTick } from '../lib/chart-geometry';
+import { barGeometry, lineGeometry, nearestVertex, PLOT_MARGIN, Y_AXIS_WIDTH, type AxisTick } from '../lib/chart-geometry';
 import { EXCLUSION_REASONS, type ChartKind, type ChartModel, type ChartPoint, type ChartProblem } from '../lib/chart-types';
 import { pieData } from '../lib/pie-data';
-import { BarChart, type MarkRef } from './charts/bar-chart';
+import { BarChart } from './charts/bar-chart';
+import { LineChart } from './charts/line-chart';
 import { PieChart } from './charts/pie-chart';
-import { ChartDetailBox, ChartTooltip, tooltipPosition, useChartSummary, useElementSize, useLabelOf, usePointerMark } from './charts/chart-chrome';
+import { ChartDetailBox, ChartTooltip, tooltipPosition, useChartSummary, useElementSize, useLabelOf, usePointerAt, usePointerMark, type MarkRef } from './charts/chart-chrome';
 import { seriesColor } from './chart-style';
 
 /**
@@ -14,7 +15,14 @@ import { seriesColor } from './chart-style';
  * four; the UI offers and infers only these, so a stage that adds a
  * renderer adds it here and nowhere else.
  */
-export const IMPLEMENTED_CHART_KINDS: readonly ChartKind[] = ['bar', 'pie'];
+export const IMPLEMENTED_CHART_KINDS: readonly ChartKind[] = ['bar', 'line', 'pie'];
+
+/**
+ * The kinds that place X on an axis of its own. Only there does the order
+ * the rows came in show as a shape, and only there is a time drawn at the
+ * millisecond it was truncated to — so only there are the two said.
+ */
+const CONTINUOUS_X_KINDS: readonly ChartKind[] = ['line', 'scatter'];
 
 interface QueryChartProps {
   model: ChartModel;
@@ -55,22 +63,28 @@ export function QueryChart({ model, kind, notice }: QueryChartProps) {
     : null;
   // A zero has no area, so it is counted rather than drawn; a float or
   // decimal total is a sum of approximations and its percentages say so.
-  const pieNotes = pie?.ok
+  const kindNotes = (pie?.ok
     ? [
       pie.data.zeroRows > 0 ? t('viewer.query.chart.zeroSlices', { n: pie.data.zeroRows.toLocaleString(locale) }) : null,
       pie.data.approximate ? t('viewer.query.chart.approximateTotal') : null,
-    ].filter((note): note is string => note !== null)
-    : [];
+    ]
+    : !problem && CONTINUOUS_X_KINDS.includes(kind)
+      ? [
+        model.xOutOfOrder ? t('viewer.query.chart.orderHint') : null,
+        diagnostics.subMillisecondRows > 0 ? t('viewer.query.chart.timePrecision', { n: diagnostics.subMillisecondRows.toLocaleString(locale) }) : null,
+      ]
+      : []
+  ).filter((note): note is string => note !== null);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col text-xs text-secondary">
-      {(notice || model.truncated || diagnostics.ignoredColumns.length > 0 || excludedNote || pieNotes.length > 0) && (
+      {(notice || model.truncated || diagnostics.ignoredColumns.length > 0 || excludedNote || kindNotes.length > 0) && (
         <div className="px-3 py-1.5 border-b border-primary flex flex-wrap gap-x-4 gap-y-1">
           {notice && <span className="text-amber-700 dark:text-amber-400">{notice}</span>}
           {model.truncated && <span className="text-amber-700 dark:text-amber-400">{t('viewer.query.chart.partial', { n: model.rows.length.toLocaleString(locale) })}</span>}
           {diagnostics.ignoredColumns.length > 0 && <span>{t('viewer.query.chart.ignoredColumns', { columns: diagnostics.ignoredColumns.join(', ') })}</span>}
           {excludedNote && <span>{excludedNote}</span>}
-          {pieNotes.map(note => <span key={note}>{note}</span>)}
+          {kindNotes.map(note => <span key={note}>{note}</span>)}
         </div>
       )}
       {problem
@@ -111,11 +125,16 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
   const size = useElementSize(plotRef);
   const descriptionId = useId();
 
-  const geometry = useMemo(() => {
-    if (kind !== 'bar') return null;
-    if (size.width <= 0 || size.height <= 0) return null;
-    return barGeometry(model, { width: size.width, height: size.height }, locale);
-  }, [model, kind, size.width, size.height, locale]);
+  const measured = size.width > 0 && size.height > 0;
+  const bars = useMemo(
+    () => (kind === 'bar' && measured ? barGeometry(model, { width: size.width, height: size.height }, locale) : null),
+    [model, kind, measured, size.width, size.height, locale],
+  );
+  const line = useMemo(
+    () => (kind === 'line' && measured ? lineGeometry(model, { width: size.width, height: size.height }, locale) : null),
+    [model, kind, measured, size.width, size.height, locale],
+  );
+  const yTicks = bars?.yTicks ?? line?.yTicks ?? [];
 
   // The detail and the tooltip describe one point. `selected` is what the
   // keyboard and the legend chose (and the pointer, while it hovers).
@@ -178,13 +197,25 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
     event.preventDefault();
   };
 
-  const onPointerMove = usePointerMark(plotRef, useCallback((mark, at) => {
+  const onMarkPointerMove = usePointerMark(plotRef, useCallback((mark, at) => {
     setSelected({
       rowIndex: Number(mark.getAttribute('data-row-index')),
       seriesOrdinal: Number(mark.getAttribute('data-series-index')),
     });
     setTooltipAt(at);
   }, []));
+  // A line draws no mark per point, so the pointer is answered by measuring.
+  const onVertexPointerMove = usePointerAt(plotRef, useCallback((at) => {
+    if (!line) return;
+    const vertex = nearestVertex(line, at);
+    if (!vertex) {
+      setTooltipAt(null);
+      return;
+    }
+    setSelected({ rowIndex: vertex.rowIndex, seriesOrdinal: vertex.seriesOrdinal });
+    setTooltipAt(at);
+  }, [line]));
+  const onPointerMove = line ? onVertexPointerMove : onMarkPointerMove;
 
   const point = pointAt(selected);
   const description = point ? describePoint(point) : null;
@@ -207,16 +238,17 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
   return (
     <>
       <div className="flex-1 min-h-0 flex overflow-hidden" style={{ minHeight: 240 }}>
-        <YAxis ticks={geometry?.yTicks ?? []} height={size.height} title={model.series.length === 1 ? model.series[0].name : t('viewer.query.chart.values')} />
+        <YAxis ticks={yTicks} height={size.height} title={model.series.length === 1 ? model.series[0].name : t('viewer.query.chart.values')} />
         <div
           ref={plotRef}
           className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden"
           onPointerMove={onPointerMove}
           onPointerLeave={() => setTooltipAt(null)}
         >
-          {geometry && (
+          {(bars || line) && (
             <div role="img" aria-label={summary} aria-describedby={descriptionId} className="h-full">
-              <BarChart model={model} geometry={geometry} height={size.height} selected={selected} labelOf={labelOf} />
+              {bars && <BarChart model={model} geometry={bars} height={size.height} selected={selected} labelOf={labelOf} />}
+              {line && <LineChart model={model} geometry={line} height={size.height} selected={selected} />}
             </div>
           )}
           {description && tooltipStyle && <ChartTooltip text={description} style={tooltipStyle} />}

@@ -90,6 +90,15 @@ describe('buildChartModel', () => {
     expect(twoSeries.availability.pie).toMatchObject({ available: false, reason: { code: 'pieOneSeries' } });
   });
 
+  it('refuses the kinds that place X when two X coordinates cannot share an axis', () => {
+    const model = buildChartModel(result([['x', T.float], ['y', T.integer]], [{ x: -1e308, y: 1 }, { x: 1e308, y: 2 }]));
+    // The Y values are fine, so the result is chartable — as bars, which put X in row order.
+    expect(model.problem).toBeNull();
+    expect(model.availability.bar).toEqual({ available: true });
+    expect(model.availability.line).toEqual({ available: false, reason: { code: 'unsafeRange', params: undefined } });
+    expect(model.availability.scatter).toEqual({ available: false, reason: { code: 'unsafeRange', params: undefined } });
+  });
+
   it('never infers pie', () => {
     const availability: Record<ChartKind, ChartAvailability> = { bar: { available: true }, line: { available: true }, scatter: { available: true }, pie: { available: true } };
     expect(inferChartKind('category', availability, ['pie'])).toBeNull();

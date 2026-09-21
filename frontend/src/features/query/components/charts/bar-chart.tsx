@@ -2,12 +2,7 @@ import type { BarGeometry } from '../../lib/chart-geometry';
 import { labelStride, PLOT_MARGIN } from '../../lib/chart-geometry';
 import type { ChartModel } from '../../lib/chart-types';
 import { seriesColor } from '../chart-style';
-
-/** The (row, series) a mark belongs to; what the tooltip and the detail describe. */
-export interface MarkRef {
-  rowIndex: number;
-  seriesOrdinal: number;
-}
+import type { MarkRef } from './chart-chrome';
 
 interface BarChartProps {
   model: ChartModel;

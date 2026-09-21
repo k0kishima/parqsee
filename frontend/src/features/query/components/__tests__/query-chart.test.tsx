@@ -209,3 +209,119 @@ describe('QueryChart (pie)', () => {
     expect(document.querySelector('svg[data-chart-kind]')).not.toBeInTheDocument();
   });
 });
+
+const date: QueryChartType = { kind: 'date' };
+const naive: QueryChartType = { kind: 'timestamp', timezone: null };
+const zoned: QueryChartType = { kind: 'timestamp', timezone: 'UTC' };
+
+function timeResult(xType: QueryChartType, rows: Record<string, unknown>[], series = ['y']): QueryResult {
+  return {
+    columns: [{ name: 't', data_type: 'Date32', chart_type: xType }, ...series.map(name => ({ name, data_type: 'Int64', chart_type: int }))],
+    rows,
+    execution_time_ms: 1,
+    truncated: false,
+    max_rows: 10_000,
+  };
+}
+
+const lineModel = (xType: QueryChartType, rows: Record<string, unknown>[], series = ['y']) =>
+  buildChartModel(timeResult(xType, rows, series), ['bar', 'line']);
+const paths = () => Array.from(document.querySelectorAll('path[data-series-index]'));
+const selectedMark = () => document.querySelector('circle[data-selected]');
+
+describe('QueryChart (line)', () => {
+  it('draws a path per series, in its own colour and dash, over a calendar axis', () => {
+    const model = lineModel(date, [
+      { t: '2024-01-01', y1: 1, y2: 3 },
+      { t: '2024-01-02', y1: 2, y2: 2 },
+      { t: '2024-01-03', y1: 3, y2: 1 },
+    ], ['y1', 'y2']);
+    render(<QueryChart model={model} kind="line" />);
+    expect(document.querySelector('svg[data-chart-kind="line"]')).toBeInTheDocument();
+    expect(paths().map(p => p.getAttribute('stroke'))).toEqual(['var(--chart-series-1)', 'var(--chart-series-2)']);
+    expect(paths()[0].getAttribute('stroke-dasharray')).toBeNull();
+    expect(paths()[1].getAttribute('stroke-dasharray')).toBe('8 3');
+    expect(screen.getAllByText(/^2024-01-0\d$/).length).toBeGreaterThan(0);
+    // A date has no clock and no zone, so the axis says neither.
+    expect(screen.queryByText('viewer.query.chart.naiveTime')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.chart.dateRange')).not.toBeInTheDocument();
+  });
+
+  it('names the zone of a timestamp axis and the days its clock labels belong to', () => {
+    render(<QueryChart model={lineModel(naive, [{ t: '2024-01-02T03:04:05', y: 1 }, { t: '2024-01-02T03:04:35', y: 2 }])} kind="line" />);
+    expect(screen.getByText('viewer.query.chart.naiveTime')).toBeInTheDocument();
+    expect(screen.getByText('viewer.query.chart.dateRange')).toBeInTheDocument();
+
+    render(<QueryChart model={lineModel(zoned, [{ t: '2024-01-02T03:04:05Z', y: 1 }, { t: '2024-01-02T03:04:35Z', y: 2 }])} kind="line" />);
+    expect(screen.getAllByText('viewer.query.chart.utc').length).toBe(1);
+  });
+
+  it('marks a point the line cannot reach and leaves the gap open', () => {
+    const model = lineModel(date, [
+      { t: '2024-01-01', y: 1 },
+      { t: '2024-01-02', y: null },
+      { t: '2024-01-03', y: 3 },
+      { t: '2024-01-04', y: 4 },
+    ]);
+    render(<QueryChart model={model} kind="line" />);
+    const isolated = Array.from(document.querySelectorAll('circle[data-isolated]'));
+    expect(isolated.map(mark => mark.getAttribute('data-row-index'))).toEqual(['0']);
+    // One run of two rows is left, so the path starts once.
+    expect(paths()[0].getAttribute('d')?.match(/M/g)).toHaveLength(1);
+  });
+
+  it('says that the rows were drawn in the order they came, and what the times lost', () => {
+    const backwards = lineModel(naive, [
+      { t: '2024-01-02T03:04:05.000001', y: 1 },
+      { t: '2024-01-02T03:04:04', y: 2 },
+    ]);
+    render(<QueryChart model={backwards} kind="line" />);
+    expect(screen.getByText('viewer.query.chart.orderHint')).toBeInTheDocument();
+    expect(screen.getByText('viewer.query.chart.timePrecision')).toBeInTheDocument();
+  });
+
+  it('keeps those two notes off a chart that does not place X', () => {
+    const backwards = lineModel(naive, [
+      { t: '2024-01-02T03:04:05.000001', y: 1 },
+      { t: '2024-01-02T03:04:04', y: 2 },
+    ]);
+    render(<QueryChart model={backwards} kind="bar" />);
+    expect(screen.queryByText('viewer.query.chart.orderHint')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.chart.timePrecision')).not.toBeInTheDocument();
+  });
+
+  it('walks the vertices from the detail box, drawing only the selected one', async () => {
+    const model = lineModel(date, [{ t: '2024-01-01', y: 1 }, { t: '2024-01-02', y: 2 }, { t: '2024-01-03', y: 3 }]);
+    render(<QueryChart model={model} kind="line" />);
+    expect(document.querySelectorAll('circle')).toHaveLength(0);
+    detail().focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(selectedMark()).toHaveAttribute('data-row-index', '0');
+    expect(document.querySelectorAll('circle')).toHaveLength(1);
+    await userEvent.keyboard('{End}');
+    expect(selectedMark()).toHaveAttribute('data-row-index', '2');
+    expect(detailText()).toBe('viewer.query.chart.pointDescription');
+  });
+
+  it('answers the pointer with the nearest vertex, and drops the tooltip away from them all', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      // A flat series: every vertex sits at the middle of the plot.
+      const model = lineModel(date, [{ t: '2024-01-01', y: 1 }, { t: '2024-01-02', y: 1 }, { t: '2024-01-03', y: 1 }]);
+      render(<QueryChart model={model} kind="line" />);
+      const plot = document.querySelector('svg[data-chart-kind="line"]')!.parentElement!;
+      fireEvent.pointerMove(plot, { clientX: 300, clientY: 180 });
+      act(() => { vi.runAllTimers(); });
+      expect(selectedMark()).toHaveAttribute('data-row-index', '1');
+      expect(screen.getByRole('tooltip')).toHaveTextContent('viewer.query.chart.pointDescription');
+
+      fireEvent.pointerMove(plot, { clientX: 300, clientY: 20 });
+      act(() => { vi.runAllTimers(); });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      // The detail keeps the point the pointer last found.
+      expect(detailText()).toBe('viewer.query.chart.pointDescription');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
