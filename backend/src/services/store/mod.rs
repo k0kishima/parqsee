@@ -65,15 +65,6 @@ pub struct Entitlement {
     pub purchase_date: i64,
 }
 
-/// A product as the store describes it.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct StoreProduct {
-    pub id: String,
-    pub display_name: String,
-    pub description: String,
-    pub display_price: String,
-}
-
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Receives the full current entitlements after each transaction update.
 pub type UpdateSink = Box<dyn Fn(Vec<Entitlement>) + Send + Sync>;
@@ -81,7 +72,16 @@ pub type UpdateSink = Box<dyn Fn(Vec<Entitlement>) + Send + Sync>;
 /// The App Store primitives the license needs.
 pub trait StoreProvider: Send + Sync {
     /// The products the store knows among `ids`, in the user's storefront.
-    fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<StoreProduct>, String>>;
+    ///
+    /// Answered in the type the webview is handed ([`IapProduct`]) rather
+    /// than in one of the port's own: the four fields a product has here
+    /// are exactly the four it has there — name, description and price are
+    /// App Store Connect's, and nothing about a product is store-specific
+    /// — so a second struct would only be copied across field by field,
+    /// and a field added to one of them would go nowhere until someone
+    /// remembered the copy. The port already answers `purchase` in
+    /// [`IapPurchaseOutcome`] for the same reason.
+    fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<IapProduct>, String>>;
     /// Buy `id`; a purchase that went through is finished before this resolves.
     fn purchase<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<IapPurchaseOutcome, String>>;
     /// Restore Purchases: fetch the account's transactions again.
@@ -104,7 +104,7 @@ pub trait StoreProvider: Send + Sync {
 pub struct AlwaysUnlocked;
 
 impl StoreProvider for AlwaysUnlocked {
-    fn load_products<'a>(&'a self, _ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<StoreProduct>, String>> {
+    fn load_products<'a>(&'a self, _ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<IapProduct>, String>> {
         Box::pin(async { Ok(Vec::new()) })
     }
     fn purchase<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<IapPurchaseOutcome, String>> {
@@ -245,12 +245,6 @@ impl License {
         Ok(products
             .into_iter()
             .filter(|p| PRODUCT_IDS.contains(&p.id.as_str()))
-            .map(|p| IapProduct {
-                id: p.id,
-                display_name: p.display_name,
-                description: p.description,
-                display_price: p.display_price,
-            })
             .collect())
     }
 
@@ -312,17 +306,17 @@ mod tests {
     }
 
     impl StoreProvider for FakeStore {
-        fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<StoreProduct>, String>> {
+        fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<IapProduct>, String>> {
             Box::pin(async move {
                 Ok(ids
                     .iter()
-                    .map(|id| StoreProduct {
+                    .map(|id| IapProduct {
                         id: id.to_string(),
                         display_name: format!("name of {id}"),
                         description: String::new(),
                         display_price: "¥1,500".into(),
                     })
-                    .chain(std::iter::once(StoreProduct {
+                    .chain(std::iter::once(IapProduct {
                         id: "parqsee.unknown".into(),
                         display_name: "stray".into(),
                         description: String::new(),
@@ -370,7 +364,7 @@ mod tests {
     /// after the license took ownership of a provider.
     struct Shared(Arc<FakeStore>);
     impl StoreProvider for Shared {
-        fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<StoreProduct>, String>> {
+        fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<IapProduct>, String>> {
             self.0.load_products(ids)
         }
         fn purchase<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<IapPurchaseOutcome, String>> {

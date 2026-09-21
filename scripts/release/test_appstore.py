@@ -84,7 +84,7 @@ EOF
 def make_checkout(root: Path) -> None:
     """A fake repository with only what the scripts touch."""
     (root / "scripts" / "release").mkdir(parents=True)
-    for name in ("appstore.sh", "sign_app.sh", "upload_pkg.sh"):
+    for name in ("_lib.sh", "appstore.sh", "sign_app.sh", "upload_pkg.sh"):
         shutil.copy(HERE / name, root / "scripts" / "release" / name)
     (root / "frontend").mkdir()
     (root / "backend").mkdir()

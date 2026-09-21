@@ -10,8 +10,8 @@
 //! the process. A panic must not unwind into Swift (it would abort), so
 //! each callback body runs under `catch_unwind`.
 
-use super::{BoxFuture, Entitlement, StoreProduct, StoreProvider, UpdateSink};
-use crate::models::IapPurchaseOutcome;
+use super::{BoxFuture, Entitlement, StoreProvider, UpdateSink};
+use crate::models::{IapProduct, IapPurchaseOutcome};
 use serde::Deserialize;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -97,7 +97,7 @@ struct PurchaseReply {
 pub struct SwiftStore;
 
 impl StoreProvider for SwiftStore {
-    fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<StoreProduct>, String>> {
+    fn load_products<'a>(&'a self, ids: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<IapProduct>, String>> {
         Box::pin(async move {
             let ids_json = c_string(&serde_json::to_string(ids).map_err(|e| e.to_string())?)?;
             // SAFETY: the C string outlives the call; Swift copies it before returning.

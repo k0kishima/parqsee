@@ -1323,7 +1323,20 @@ const chartSql = (page) => {
   const table = () => act(page).locator('.z-0 table');
   const pressed = async (locator) => (await locator.getAttribute('aria-pressed')) === 'true';
   const fillOf = (locator) => locator.evaluate(el => getComputedStyle(el).fill);
-  return { ta, run, modeGroup, kindGroup, svg, marks, detail, detailText, pressed, fillOf, table };
+  // Run `q` and leave the result panel in Chart mode, where every chart
+  // scenario starts. The plot itself is not waited for: a result past the
+  // point cap draws none, and S20-scatter checks exactly that.
+  const chart = async (q) => {
+    await run(q);
+    const toChart = modeGroup().getByRole('button', { name: 'Chart', exact: true });
+    if (!await pressed(toChart)) await toChart.click();
+  };
+  // The same for a query that does draw, which is most of them.
+  const chartSvg = async (q) => {
+    await chart(q);
+    await svg().waitFor();
+  };
+  return { ta, run, chart, chartSvg, modeGroup, kindGroup, svg, marks, detail, detailText, pressed, fillOf, table };
 };
 
 await scenario('S20-chart', async ({ page }) => {
@@ -1436,12 +1449,6 @@ await scenario('S20-line', async ({ page }) => {
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
   await act(page).locator('button:has-text("Query")').click();
   const c = chartSql(page);
-  const chart = async (sql) => {
-    await c.run(sql);
-    const toChart = c.modeGroup().getByRole('button', { name: 'Chart', exact: true });
-    if (!await c.pressed(toChart)) await toChart.click();
-    await c.svg().waitFor();
-  };
   const linePath = (ordinal = 0) => act(page).locator(`path[data-series-index="${ordinal}"]`);
   /** The vertices of a path, as [x, y] pairs. */
   const vertices = async (ordinal = 0) => {
@@ -1451,7 +1458,7 @@ await scenario('S20-line', async ({ page }) => {
   const note = (pattern) => act(page).locator(`text=${pattern}`).first().textContent().catch(() => 'none');
 
   // A date X picks the line by itself, and the axis ticks by the calendar.
-  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3), (DATE '2024-01-03', 2)) AS v(t, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3), (DATE '2024-01-03', 2)) AS v(t, y)`);
   check('S20line.inferred', (await c.svg().getAttribute('data-chart-kind')) === 'line' && await c.pressed(c.kindGroup().getByRole('button', { name: 'Line', exact: true })),
     `kind=${await c.svg().getAttribute('data-chart-kind')}`);
   const days = await vertices();
@@ -1465,19 +1472,19 @@ await scenario('S20-line', async ({ page }) => {
 
   // A zoneless timestamp keeps its wall clock, and the axis says so; the
   // microsecond that cannot be drawn is counted, not silently dropped.
-  await chart(`SELECT * FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05.000001', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05.000001', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
   check('S20line.naive', (await note('/No time zone/')) === 'No time zone' && (await note('/^Dates:/')) === 'Dates: 2024-01-02',
     `zone=${await note('/No time zone/')} dates=${await note('/^Dates:/')}`);
   check('S20line.timePrecision', (await note('/Finer than a millisecond/')) === 'Finer than a millisecond, drawn at the millisecond: 1',
     await note('/Finer than a millisecond/'));
 
   // A column that names a zone is drawn on a UTC axis instead.
-  await chart(`SELECT arrow_cast(t, 'Timestamp(Microsecond, Some("+09:00"))') AS t, y FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
+  await c.chartSvg(`SELECT arrow_cast(t, 'Timestamp(Microsecond, Some("+09:00"))') AS t, y FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
   check('S20line.utc', (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).includes('UTC'),
     (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).join('|'));
 
   // A missing value cuts the line; the point left alone is drawn as a mark.
-  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', CAST(NULL AS INT)), (DATE '2024-01-03', 3), (DATE '2024-01-04', 4)) AS v(t, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', CAST(NULL AS INT)), (DATE '2024-01-03', 3), (DATE '2024-01-04', 4)) AS v(t, y)`);
   const gap = await vertices();
   const isolated = act(page).locator('circle[data-isolated]');
   check('S20line.gap', gap.length === 2 && (await isolated.count()) === 1 && (await isolated.getAttribute('data-row-index')) === '0',
@@ -1487,13 +1494,13 @@ await scenario('S20-line', async ({ page }) => {
   // The rows are joined as the query returned them. Sorting behind the
   // SQL would draw a shape the table does not have, so the chart says
   // ORDER BY instead.
-  await chart(`SELECT * FROM (VALUES (DATE '2024-01-03', 1), (DATE '2024-01-01', 2), (DATE '2024-01-05', 3)) AS v(t, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES (DATE '2024-01-03', 1), (DATE '2024-01-01', 2), (DATE '2024-01-05', 3)) AS v(t, y)`);
   const backwards = await vertices();
   check('S20line.keepsOrder', backwards[1][0] < backwards[0][0] && backwards[2][0] > backwards[0][0], JSON.stringify(backwards));
   check('S20line.orderHint', (await note('/Connected in the order/')).includes('ORDER BY'), await note('/Connected in the order/'));
 
   // The pointer is answered by measuring: the line draws no mark to hit.
-  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3)) AS v(t, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3)) AS v(t, y)`);
   const box = await c.svg().boundingBox();
   const [first] = await vertices();
   await page.mouse.move(box.x + first[0], box.y + first[1]);
@@ -1504,7 +1511,7 @@ await scenario('S20-line', async ({ page }) => {
     await act(page).locator('circle[data-selected]').getAttribute('data-row-index').catch(() => 'none'));
 
   // A column of labels has no axis to place them on.
-  await chart(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
+  await c.chartSvg(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
   const lineButton = c.kindGroup().getByRole('button', { name: 'Line', exact: true });
   check('S20line.refused', (await lineButton.getAttribute('aria-disabled')) === 'true' && (await lineButton.getAttribute('title')) === 'Requires a numeric or date/time first column.',
     `disabled=${await lineButton.getAttribute('aria-disabled')} title=${await lineButton.getAttribute('title')}`);
@@ -1518,14 +1525,9 @@ await scenario('S20-scatter', async ({ page }) => {
   await openFile(page, `${FIX}/multi_rowgroup.parquet`);
   await act(page).locator('button:has-text("Query")').click();
   const c = chartSql(page);
-  const chart = async (sql) => {
-    await c.run(sql);
-    const toChart = c.modeGroup().getByRole('button', { name: 'Chart', exact: true });
-    if (!await c.pressed(toChart)) await toChart.click();
-  };
 
   // A numeric X picks the scatter by itself.
-  await chart('SELECT id, id * 2 AS y FROM t LIMIT 10');
+  await c.chart('SELECT id, id * 2 AS y FROM t LIMIT 10');
   await c.svg().waitFor();
   check('S20scatter.inferred', (await c.svg().getAttribute('data-chart-kind')) === 'scatter' && await c.pressed(c.kindGroup().getByRole('button', { name: 'Scatter', exact: true })),
     `kind=${await c.svg().getAttribute('data-chart-kind')}`);
@@ -1535,7 +1537,7 @@ await scenario('S20-scatter', async ({ page }) => {
 
   // Every one of the ten thousand the cap allows is drawn: no thinning.
   const drawn = Date.now();
-  await chart('SELECT id, id * 2 AS y FROM t LIMIT 10000');
+  await c.chart('SELECT id, id * 2 AS y FROM t LIMIT 10000');
   await act(page).locator('[data-mark]').first().waitFor();
   await page.waitForFunction(() => document.querySelectorAll('[data-mark]').length === 10_000, null, { timeout: 30_000 });
   report('S20scatter.drawMs', 'OBSERVE', `10,000 marks drawn in ${Date.now() - drawn}ms (debug bridge, not a budget)`);
@@ -1554,15 +1556,15 @@ await scenario('S20-scatter', async ({ page }) => {
   check('S20scatter.end', (await c.detailText()).startsWith('#1 y, row 10,000; id: 9999;'), await c.detailText());
 
   // The cap is over every series together, so two of them halve the rows.
-  await chart('SELECT id, id AS a, id AS b FROM t LIMIT 5000');
+  await c.chart('SELECT id, id AS a, id AS b FROM t LIMIT 5000');
   await c.svg().waitFor();
   check('S20scatter.twoSeries', (await c.marks().count()) === 10_000, `marks=${await c.marks().count()}`);
-  await chart('SELECT id, id AS a, id AS b FROM t LIMIT 5001');
+  await c.chart('SELECT id, id AS a, id AS b FROM t LIMIT 5001');
   check('S20scatter.overCap', ((await act(page).getByRole('status').textContent()) ?? '').startsWith('Plot limit: 10,000 points') && (await c.svg().count()) === 0,
     await act(page).getByRole('status').textContent().catch(() => 'none'));
 
   // A column of labels has no axis to place them on.
-  await chart(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
+  await c.chart(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
   const scatterButton = c.kindGroup().getByRole('button', { name: 'Scatter', exact: true });
   check('S20scatter.refused', (await scatterButton.getAttribute('aria-disabled')) === 'true' && (await scatterButton.getAttribute('title')) === 'Requires a numeric first column.',
     `disabled=${await scatterButton.getAttribute('aria-disabled')} title=${await scatterButton.getAttribute('title')}`);
@@ -1580,16 +1582,12 @@ await scenario('S20-pie', async ({ page }) => {
   await act(page).locator('button:has-text("Query")').click();
   const c = chartSql(page);
   const pieButton = () => c.kindGroup().getByRole('button', { name: 'Pie', exact: true });
-  const chart = async (sql) => {
-    await c.run(sql);
-    await c.modeGroup().getByRole('button', { name: 'Chart', exact: true }).click();
-  };
   const pickPie = async () => { await pieButton().click(); await act(page).locator('svg[data-chart-kind="pie"]').waitFor(); };
   const ids = () => c.marks().evaluateAll(els => els.map(el => el.getAttribute('data-slice-id')));
   const legend = () => act(page).locator('[data-slice-legend]').allTextContents();
   const note = (pattern) => act(page).locator(`text=${pattern}`).first().textContent().catch(() => 'none');
 
-  await chart(`SELECT * FROM (VALUES ('A', 3), ('B', 1)) AS v(x, y)`);
+  await c.chart(`SELECT * FROM (VALUES ('A', 3), ('B', 1)) AS v(x, y)`);
   check('S20pie.notInferred', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await pieButton().getAttribute('aria-disabled')) === 'false',
     `kind=${await c.svg().getAttribute('data-chart-kind')} pieDisabled=${await pieButton().getAttribute('aria-disabled')}`);
 
@@ -1615,13 +1613,13 @@ await scenario('S20-pie', async ({ page }) => {
   await screenshot(page, { path: `${OUT}/shots/S20-pie.png` });
 
   // Eight categories each keep their own slice.
-  await chart(pieRows(8));
+  await c.chart(pieRows(8));
   await pickPie();
   check('S20pie.eight', (await ids()).join('|') === '7|6|5|4|3|2|1|0', (await ids()).join('|'));
 
   // The ninth pushes the tail into Other: a grey slice, last, that still
   // names the rows it swallowed and sums them exactly (1 + 2 of 45).
-  await chart(pieRows(9));
+  await c.chart(pieRows(9));
   await pickPie();
   const nine = await ids();
   check('S20pie.other', nine.length === 8 && nine[7] === 'other' && (await c.fillOf(c.marks().nth(7))) === 'rgb(138, 148, 166)',
@@ -1633,7 +1631,7 @@ await scenario('S20-pie', async ({ page }) => {
   check('S20pie.otherDetail', (await c.detailText()) === 'Other (combined): 3 (6.7%) · Combines 2 rows · c1: 2 (4.4%) · c0: 1 (2.2%)', await c.detailText());
 
   // Fifty rows still draw eight slices, the last standing for forty-three.
-  await chart(pieRows(50));
+  await c.chart(pieRows(50));
   await pickPie();
   const fifty = await ids();
   check('S20pie.fifty', fifty.length === 8 && fifty[7] === 'other', fifty.join('|'));
@@ -1643,12 +1641,12 @@ await scenario('S20-pie', async ({ page }) => {
 
   // A zero has no area: counted above the plot, not drawn. One positive
   // value left is the whole circle, drawn as a circle.
-  await chart(`SELECT * FROM (VALUES ('a', 3), ('b', 0)) AS v(x, y)`);
+  await c.chart(`SELECT * FROM (VALUES ('a', 3), ('b', 0)) AS v(x, y)`);
   await pickPie();
   check('S20pie.zero', (await c.marks().count()) === 1 && (await c.marks().first().evaluate(el => el.tagName)) === 'circle' && (await note('/Zero, so not drawn/')) === 'Zero, so not drawn: 1',
     `marks=${await c.marks().count()} note=${await note('/Zero, so not drawn/')}`);
   check('S20pie.approximate', (await act(page).locator('text=/The total and the percentages/').count()) === 0, 'an integer total is exact');
-  await chart(`SELECT * FROM (VALUES ('a', 1.5), ('b', 2.5)) AS v(x, y)`);
+  await c.chart(`SELECT * FROM (VALUES ('a', 1.5), ('b', 2.5)) AS v(x, y)`);
   await pickPie();
   check('S20pie.approximateFloat', (await note('/The total and the percentages/')) === 'The total and the percentages are approximate.', await note('/The total and the percentages/'));
 
@@ -1666,7 +1664,7 @@ await scenario('S20-pie', async ({ page }) => {
     ['numericX', `SELECT id AS x, id AS y FROM t LIMIT 3`, 'Requires a text or boolean first column.'],
   ];
   for (const [name, sql, reason] of refusals) {
-    await chart(sql);
+    await c.chart(sql);
     const title = await pieButton().getAttribute('title');
     check(`S20pie.refuse.${name}`, (await pieButton().getAttribute('aria-disabled')) === 'true' && title === reason, `disabled=${await pieButton().getAttribute('aria-disabled')} title=${title}`);
   }

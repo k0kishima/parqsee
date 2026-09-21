@@ -42,6 +42,7 @@ import {
     sessionSnapshot,
     restoredTabState,
     hasRoomForTab,
+    TabLimit,
     WorkspaceTabsAction,
 } from './workspace-tabs';
 
@@ -159,6 +160,40 @@ async function openRestoredTab(tab: SessionTab): Promise<RestoredTab | null> {
     };
 }
 
+/**
+ * Replay a list of saved tabs: open each one that is still there and there
+ * is room for, and say what became of the rest.
+ *
+ * Both restores go through this — the one at launch and the one that
+ * follows the free tier's limit lifting — and the free tier is why the
+ * room is checked between the opens rather than before them: a file that
+ * will not open any more must not spend a slot the next tab could have
+ * had. The second restore passes no limit because by then there is none,
+ * and its tabs were already found available by the first.
+ */
+async function replayTabs(
+    tabs: readonly SessionTab[],
+    limit: TabLimit,
+): Promise<{ restored: RestoredTab[]; skipped: string[]; capped: SessionTab[] }> {
+    const restored: RestoredTab[] = [];
+    const skipped: string[] = [];
+    const capped: SessionTab[] = [];
+    for (const tab of tabs) {
+        if (!tab.available) {
+            skipped.push(tab.path);
+            continue;
+        }
+        if (!hasRoomForTab(restored.length, limit)) {
+            capped.push(tab);
+            continue;
+        }
+        const opened = await openRestoredTab(tab);
+        if (opened) restored.push(opened);
+        else skipped.push(tab.path);
+    }
+    return { restored, skipped, capped };
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -241,31 +276,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // that survives may touch the workspace.
         let cancelled = false;
         (async () => {
-            const skipped: string[] = [];
-            const capped: SessionTab[] = [];
+            let skipped: string[] = [];
+            let capped: SessionTab[] = [];
             if (restoreOnLaunch.current) {
                 try {
                     const session = await listSessionTabs();
                     const limit = tabLimitRef.current;
-                    const restored: RestoredTab[] = [];
-                    for (const tab of session.tabs) {
-                        if (!tab.available) {
-                            skipped.push(tab.path);
-                            continue;
-                        }
-                        if (!hasRoomForTab(restored.length, limit)) {
-                            capped.push(tab);
-                            continue;
-                        }
-                        const opened = await openRestoredTab(tab);
-                        if (!opened) {
-                            skipped.push(tab.path);
-                            continue;
-                        }
-                        restored.push(opened);
-                    }
+                    const replayed = await replayTabs(session.tabs, limit);
+                    ({ skipped, capped } = replayed);
                     if (cancelled) return;
-                    dispatch({ type: 'restore', tabs: restored, activePath: session.active, limit });
+                    dispatch({ type: 'restore', tabs: replayed.restored, activePath: session.active, limit });
                 } catch (error) {
                     console.error('Failed to restore the last session:', error);
                 }
@@ -289,16 +309,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         cappedTabs.current = [];
         let cancelled = false;
         (async () => {
-            const restored: RestoredTab[] = [];
-            const skipped: string[] = [];
-            for (const tab of leftOut) {
-                const opened = await openRestoredTab(tab);
-                if (!opened) {
-                    skipped.push(tab.path);
-                    continue;
-                }
-                restored.push(opened);
-            }
+            // No limit left to check: this effect only runs once it lifted.
+            const { restored, skipped } = await replayTabs(leftOut, null);
             if (cancelled) return;
             dispatch({ type: 'restore', tabs: restored, activePath: null });
             setRestoreNotice(notice => {

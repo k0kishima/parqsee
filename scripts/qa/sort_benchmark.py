@@ -10,21 +10,17 @@ same rows as its preceding miss.
 import argparse
 import hashlib
 import json
-import os
-import platform
 import selectors
 import statistics
-import subprocess
 import tempfile
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bench_common import DEFAULT_BRIDGE, ROOT, output_path, report_header, resolve_inputs, spawn_bridge, stop_bridge, write_report
 
-ROOT = Path(__file__).resolve().parents[2]
+
 DEFAULT_DATASET = ROOT / "scripts" / "qa" / "fixtures" / "sort-perf" / "standard.parquet"
-DEFAULT_BRIDGE = ROOT / "backend" / "target" / "release" / "examples" / "bridge"
 
 
 def positive_int(value: str) -> int:
@@ -56,14 +52,7 @@ class Bridge:
     def __init__(self, binary: Path, state_dir: Path, timeout: int) -> None:
         self.timeout = timeout
         self.sequence = 0
-        self.process = subprocess.Popen(
-            [str(binary)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            env={**os.environ, "PARQSEE_DATA_DIR": str(state_dir)},
-        )
-        assert self.process.stdin is not None and self.process.stdout is not None
+        self.process = spawn_bridge(binary, state_dir)
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
 
@@ -84,19 +73,7 @@ class Bridge:
         return elapsed_ms, response["ok"]
 
     def close(self) -> None:
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
-
-
-def git_revision() -> str | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True, check=False
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
+        stop_bridge(self.process)
 
 
 def digest_rows(rows: Any) -> str:
@@ -126,15 +103,8 @@ def page_cases(total: int, limit: int) -> list[tuple[str, int]]:
 
 def main() -> None:
     args = parse_args()
-    dataset = args.dataset.resolve()
-    bridge_path = args.bridge.resolve()
-    if not dataset.is_file():
-        raise SystemExit(f"dataset does not exist: {dataset}")
-    if not bridge_path.is_file():
-        raise SystemExit(f"bridge does not exist: {bridge_path}; build it with cargo build --release --example bridge")
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output = (args.output or Path(tempfile.gettempdir()) / f"parqsee-sort-benchmark-{timestamp}.json").resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
+    dataset, bridge_path = resolve_inputs(args.dataset, args.bridge)
+    output = output_path(args.output, "sort")
 
     with tempfile.TemporaryDirectory(prefix="parqsee-sort-benchmark-") as state:
         bridge = Bridge(bridge_path, Path(state), args.timeout)
@@ -203,20 +173,8 @@ def main() -> None:
         finally:
             bridge.close()
 
-    stat = dataset.stat()
     report = {
-        "measured_at_utc": datetime.now(timezone.utc).isoformat(),
-        "git_revision": git_revision(),
-        "platform": platform.platform(),
-        "python": platform.python_version(),
-        "bridge": str(bridge_path),
-        "dataset": {
-            "path": str(dataset),
-            "size_bytes": stat.st_size,
-            "modified_ns": stat.st_mtime_ns,
-            "rows": metadata["num_rows"],
-            "columns": metadata["num_columns"],
-        },
+        **report_header(bridge_path, dataset, metadata),
         "conditions": {
             "column": args.column,
             "direction": args.direction,
@@ -231,8 +189,7 @@ def main() -> None:
         },
         "results": results,
     }
-    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"results: {output}")
+    write_report(output, report)
 
 
 if __name__ == "__main__":
