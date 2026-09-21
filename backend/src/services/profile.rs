@@ -21,6 +21,23 @@
 //! The session runs single-partition (see `ParquetCache::get_or_create_session`),
 //! so every query here is a single-threaded scan; the webview only asks
 //! when the panel is open, never on opening a file.
+//!
+//! What a profile costs is the counts query, and inside it the
+//! `COUNT(DISTINCT)`: on 58M rows a low-cardinality column answers in about a
+//! second and holds 40 MB, while one distinct value per row takes two to three
+//! seconds and 1.2 GB — and a text column of 58M distinct values is refused
+//! outright, because the distinct aggregate cannot spill and exhausts the
+//! session's 2 GiB pool after about 1.9 GB (the process had 4.3 GB resident by
+//! then: the pool tracks less than arrow actually holds). The webview is left
+//! with DataFusion's own sentence about `AggregateStream` reservations.
+//! Nothing here is cancelled either, so a superseded profile keeps scanning
+//! and keeps its reservation: clicking along four columns of that file ends
+//! with the profile the user is waiting for refused, while the one they
+//! abandoned finishes. A profile that is merely slow does not disturb the
+//! grid — a page read beside one stays within a few milliseconds of its own
+//! time, a deep sorted page within 2% — so the cost of not cancelling is paid
+//! by the next profile, not by the rows. `scripts/qa/PERFORMANCE.md` has the
+//! measurement and what was decided from it (#30).
 
 use arrow::array::{Array, Int64Array};
 use arrow::datatypes::{DataType, TimeUnit};
