@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { stubResizeObserver } from '../../../../test/resize-observer';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryView } from '../query-view';
@@ -19,14 +20,7 @@ vi.mock('../../components/query-chart', async importOriginal => {
   return { ...original, IMPLEMENTED_CHART_KINDS: ['bar', 'scatter'] };
 });
 
-class FakeResizeObserver {
-  constructor(private callback: ResizeObserverCallback) {}
-  observe() { this.callback([{ contentRect: { width: 600, height: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
-  unobserve() {}
-  disconnect() {}
-}
-beforeAll(() => { vi.stubGlobal('ResizeObserver', FakeResizeObserver); });
-afterAll(() => { vi.unstubAllGlobals(); });
+stubResizeObserver();
 
 const cat: QueryChartType = { kind: 'category' };
 const int: QueryChartType = { kind: 'integer' };
