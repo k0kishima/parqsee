@@ -1,6 +1,7 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, FieldRef, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use tauri::command;
 
@@ -139,26 +140,14 @@ pub async fn run_filter_query_result(
         .sql(&format!("SELECT * FROM t{where_sql}"))
         .await
         .map_err(|e| format!("Failed to narrow the result: {e}"))?;
+    let schema = df.schema().inner().clone();
     let batches = df
         .collect()
         .await
         .map_err(|e| format!("Failed to narrow the result: {e}"))?;
     // Back to the names the grid renders by: the rows are addressed by
     // position inside the store and by name once they leave it.
-    let named: Vec<RecordBatch> = batches
-        .iter()
-        .map(|b| {
-            let schema = Arc::new(Schema::new(
-                b.schema()
-                    .fields()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, f)| Field::new(&names[i], f.data_type().clone(), f.is_nullable()))
-                    .collect::<Vec<_>>(),
-            ));
-            RecordBatch::try_new(schema, b.columns().to_vec()).map_err(|e| e.to_string())
-        })
-        .collect::<Result<_, _>>()?;
+    let (named, _) = rename_columns(&batches, &schema, &names)?;
     batches_to_rows(&named)
 }
 
@@ -178,6 +167,75 @@ pub async fn release_query_result(
     .await
 }
 
+/// The names the grid shows for a result's columns, made unique: DataFusion
+/// lets two columns share a name when their qualifiers differ (`a.id` and
+/// `b.id` in a self-join, `a.*, b.*` in one more), but the rows travel to
+/// the webview as JSON objects keyed by name, where the second key
+/// silently replaces the first — one column's values would be shown in
+/// both of its columns, and the other's would be gone. A repeated name
+/// takes its qualifier when it has one, and a number otherwise; the first
+/// of a repeat keeps the bare name, and a number that some column already
+/// carries is passed over, so the answer has no duplicates whatever the
+/// schema holds.
+fn unique_column_names(fields: &[FieldRef], qualifiers: &[Option<String>]) -> Vec<String> {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for field in fields {
+        *seen.entry(field.name().as_str()).or_insert(0) += 1;
+    }
+    let qualified: Vec<String> = fields
+        .iter()
+        .zip(qualifiers)
+        .map(|(field, qualifier)| {
+            let name = field.name();
+            match qualifier {
+                Some(table) if seen.get(name.as_str()).copied().unwrap_or(0) > 1 => {
+                    format!("{table}.{name}")
+                }
+                _ => name.clone(),
+            }
+        })
+        .collect();
+
+    let mut taken: HashSet<String> = HashSet::new();
+    qualified
+        .into_iter()
+        .map(|base| {
+            let mut name = base.clone();
+            let mut nth = 1;
+            while !taken.insert(name.clone()) {
+                nth += 1;
+                name = format!("{base} ({nth})");
+            }
+            name
+        })
+        .collect()
+}
+
+/// The same batches under `names`: the arrays are shared, only the schema
+/// is new. `schema` says what each column is; the batches may be empty,
+/// and the result's own schema is wanted either way.
+fn rename_columns(
+    batches: &[RecordBatch],
+    schema: &SchemaRef,
+    names: &[String],
+) -> Result<(Vec<RecordBatch>, SchemaRef), String> {
+    let renamed = Arc::new(Schema::new(
+        schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(i, f)| Field::new(&names[i], f.data_type().clone(), f.is_nullable()))
+            .collect::<Vec<_>>(),
+    ));
+    let batches = batches
+        .iter()
+        .map(|b| {
+            RecordBatch::try_new(renamed.clone(), b.columns().to_vec()).map_err(|e| e.to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    Ok((batches, renamed))
+}
+
 /// The SQL view's query, minus the Tauri plumbing, so the E2E bridge
 /// (`examples/bridge.rs`) runs exactly what the command runs.
 pub async fn run_query(
@@ -188,8 +246,14 @@ pub async fn run_query(
 ) -> Result<QueryResult, String> {
     let start = std::time::Instant::now();
 
-    let (batches, schema, truncated) =
+    let (batches, planned, qualifiers, truncated) =
         execute_sql_limited(cache, file_path, query, Some(MAX_QUERY_ROWS)).await?;
+
+    // Under the names the grid will key its rows by, before anything reads
+    // a column's name: the JSON below and the rows kept for the profile
+    // both have to agree with what the header shows.
+    let names = unique_column_names(planned.fields(), &qualifiers);
+    let (batches, schema) = rename_columns(&batches, &planned, &names)?;
 
     let columns: Vec<QueryColumn> = schema
         .fields()
@@ -545,6 +609,131 @@ mod tests {
         results.release(&id);
         let gone = run_filter_query_result(&results, &id, None).await.unwrap_err();
         assert!(gone.contains("Run the query again"), "{gone}");
+    }
+
+    /// Two columns of a self-join carry the same name under different
+    /// qualifiers. The rows reach the webview as JSON objects keyed by
+    /// name, so both columns have to be told apart before they are
+    /// rendered — the second key would otherwise replace the first and
+    /// the grid would show one column's values twice.
+    #[tokio::test]
+    async fn a_self_join_keeps_both_columns_apart() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("grp", DataType::Int64, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1, 2])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![10, 11, 12])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("query_duplicate_names", "self_join.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+
+        let result = run_query(
+            &cache,
+            &QueryResults::new(),
+            &path.to_string_lossy(),
+            "SELECT a.id, b.id FROM t a JOIN t b ON a.id = b.id - 1 WHERE a.id = 0",
+        )
+        .await
+        .unwrap();
+
+        let names: Vec<_> = result.columns.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(names, vec!["a.id", "b.id"]);
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0]["a.id"], 0);
+        assert_eq!(result.rows[0]["b.id"], 1);
+    }
+
+    /// A qualifier is what usually tells two same-named columns apart, but
+    /// nothing promises there is one, and a qualified name can land on a
+    /// name some other column already has. Whatever arrives, the names
+    /// come back unique and in column order, the first keeping the bare
+    /// name.
+    #[test]
+    fn names_a_qualifier_cannot_separate_are_numbered() {
+        let fields = |names: &[&str]| -> Vec<FieldRef> {
+            names
+                .iter()
+                .map(|n| Arc::new(Field::new(*n, DataType::Int64, true)) as FieldRef)
+                .collect()
+        };
+        let none = |n: usize| vec![None; n];
+
+        assert_eq!(
+            unique_column_names(&fields(&["id", "grp"]), &none(2)),
+            vec!["id", "grp"]
+        );
+        assert_eq!(
+            unique_column_names(&fields(&["id", "id", "id", "grp"]), &none(4)),
+            vec!["id", "id (2)", "id (3)", "grp"]
+        );
+        // A qualifier separates the column that has one; the rest are numbered.
+        assert_eq!(
+            unique_column_names(
+                &fields(&["id", "id", "id"]),
+                &[Some("a".to_string()), None, None]
+            ),
+            vec!["a.id", "id", "id (2)"]
+        );
+        // A qualified name is a duplicate like any other when a column of
+        // the result is already called that.
+        assert_eq!(
+            unique_column_names(
+                &fields(&["id", "id", "a.id"]),
+                &[Some("a".to_string()), Some("b".to_string()), None]
+            ),
+            vec!["a.id", "b.id", "a.id (2)"]
+        );
+        // The number skips a name the result brought itself.
+        assert_eq!(
+            unique_column_names(&fields(&["id", "id", "id (2)"]), &none(3)),
+            vec!["id", "id (2)", "id (2) (2)"]
+        );
+    }
+
+    /// The store keeps the names the grid was given, so narrowing a
+    /// self-join's result hands back rows with both columns on them too.
+    #[tokio::test]
+    async fn a_narrowed_result_keeps_the_unique_names() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("grp", DataType::Int64, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1, 2])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![10, 11, 12])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("query_duplicate_names", "narrowed.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+        let results = QueryResults::new();
+
+        let result = run_query(
+            &cache,
+            &results,
+            &path.to_string_lossy(),
+            "SELECT a.id, b.id FROM t a JOIN t b ON a.id = b.id - 1 ORDER BY a.id",
+        )
+        .await
+        .unwrap();
+        let id = result.result_id.clone().expect("a small result is kept");
+
+        let narrowed = run_filter_query_result(&results, &id, Some("c0 = 0".into()))
+            .await
+            .unwrap();
+        assert_eq!(narrowed.len(), 1);
+        assert_eq!(narrowed[0]["a.id"], 0);
+        assert_eq!(narrowed[0]["b.id"], 1);
     }
 
     #[tokio::test]

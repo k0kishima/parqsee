@@ -1808,7 +1808,7 @@ pub async fn execute_sql_with_cache(
     file_path: &str,
     query: &str,
 ) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef), String> {
-    let (batches, schema, _) = execute_sql_limited(cache, file_path, query, None).await?;
+    let (batches, schema, _, _) = execute_sql_limited(cache, file_path, query, None).await?;
     Ok((batches, schema))
 }
 
@@ -1816,12 +1816,18 @@ pub async fn execute_sql_with_cache(
 /// pushed into the plan, so a `SELECT *` over a large file does not
 /// materialize every row before being cut down. The returned flag tells
 /// whether rows were dropped.
+///
+/// The qualifier of each column comes back beside the Arrow schema, which
+/// has none: DataFusion tracks a column's table alongside its name, and
+/// lets `a.id` and `b.id` both reach the Arrow schema as `id`. The
+/// qualifier is the only thing that tells the two apart, so a caller that
+/// has to name the columns needs it (`commands::query::unique_column_names`).
 pub async fn execute_sql_limited(
     cache: &ParquetCache,
     file_path: &str,
     query: &str,
     max_rows: Option<usize>,
-) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, bool), String> {
+) -> Result<(Vec<RecordBatch>, arrow::datatypes::SchemaRef, Vec<Option<String>>, bool), String> {
     let ctx = cache.get_or_create_session(file_path).await?;
 
     let plan = plan_query_checked(&ctx, query).await?;
@@ -1837,6 +1843,11 @@ pub async fn execute_sql_limited(
         .map_err(|e| format!("SQL execution failed: {}", e))?;
 
     let schema = df.schema().inner().clone();
+    let qualifiers: Vec<Option<String>> = df
+        .schema()
+        .iter()
+        .map(|(qualifier, _)| qualifier.map(|q| q.table().to_string()))
+        .collect();
 
     // EXPLAIN must stay the root of its plan; a LIMIT on top of it is an
     // internal error, and its output is a handful of rows anyway.
@@ -1857,7 +1868,7 @@ pub async fn execute_sql_limited(
         None => (batches, false),
     };
 
-    Ok((batches, schema, truncated))
+    Ok((batches, schema, qualifiers, truncated))
 }
 
 /// Plan a query against the shared session and refuse anything that is not a
@@ -2557,7 +2568,7 @@ mod tests {
             async move {
                 super::execute_sql_limited(cache, &file, q, Some(10))
                     .await
-                    .map(|(b, _, _)| b)
+                    .map(|(b, _, _, _)| b)
             }
         };
 
