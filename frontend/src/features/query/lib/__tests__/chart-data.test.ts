@@ -98,7 +98,15 @@ describe('buildChartModel', () => {
     expect(model.inferred).toBe('bar');
     expect(model.availability.line).toEqual({ available: true });
     expect(model.availability.scatter).toEqual({ available: false, reason: { code: 'numericXRequired', params: undefined } });
-    expect(model.availability.pie.available).toBe(false);
+    expect(model.availability.pie).toEqual({ available: false, reason: { code: 'pieCategory', params: undefined } });
+  });
+
+  it('answers for the pie with the conditions of a whole, and still never picks it', () => {
+    const whole = buildChartModel(result([['x', T.category], ['y', T.integer]], [{ x: 'a', y: 1 }, { x: 'b', y: 3 }]));
+    expect(whole.availability.pie).toEqual({ available: true });
+    expect(whole.inferred).toBe('bar');
+    const twoSeries = buildChartModel(result([['x', T.category], ['y', T.integer], ['z', T.integer]], [{ x: 'a', y: 1, z: 2 }]));
+    expect(twoSeries.availability.pie).toMatchObject({ available: false, reason: { code: 'pieOneSeries' } });
   });
 
   it('never infers pie', () => {

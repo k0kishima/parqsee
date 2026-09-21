@@ -142,7 +142,6 @@
           "partial": "返却された先頭 {{n}} 行に基づくグラフです。",
           "numericXRequired": "先頭列が数値型の場合に選択できます。",
           "continuousXRequired": "先頭列が数値型または日付・日時型の場合に選択できます。",
-          "notImplemented": "まだ利用できません。",
           "values": "値",
           "emptyString": "(空文字)",
           "seriesEmpty": "{{name}}: 有効な値なし",
@@ -153,7 +152,19 @@
           "detailLabel": "データ点の詳細",
           "detailKeys": "左右: 点、上下: 系列、Home/End: 先頭/末尾、Escape: ツールチップを閉じる。",
           "detailEmpty": "点が選ばれていません。ここにフォーカスして矢印キーで選んでください。",
-          "pointDescription": "{{series}}、{{row}} 行目。{{xName}}: {{x}}、{{yName}}: {{y}}"
+          "pointDescription": "{{series}}、{{row}} 行目。{{xName}}: {{x}}、{{yName}}: {{y}}",
+          "pieCategory": "先頭列が文字列型または真偽型の場合に選択できます。",
+          "pieOneSeries": "先頭列の後の数値列がちょうど1列の場合に選択できます。",
+          "pieRows": "1〜{{max}} 行の場合に選択できます。SQL で集約してください。",
+          "pieUnique": "先頭列に NULL と重複がない場合に選択できます。GROUP BY を使ってください。",
+          "pieValues": "全行に有効かつ 0 以上の値があり、少なくとも1つが 0 より大きい場合に選択できます。",
+          "piePartial": "打ち切られた結果の割合は全体の割合になりません。SQL で行数を減らしてください。",
+          "other": "その他（集約）",
+          "otherSummary": "{{n}} 行の合計",
+          "zeroSlices": "0 のため非表示: {{n}}",
+          "approximateTotal": "合計と割合は近似値です。",
+          "sliceDescription": "{{category}}: {{value}}（{{percent}}%）",
+          "sliceKeys": "左右: 区分、Home/End: 先頭/末尾、Escape: ツールチップを閉じる。"
       }
     },
     "filterNeedsNumber": "列「{{column}}」は数値型です。「{{value}}」は数値として解釈できません。",

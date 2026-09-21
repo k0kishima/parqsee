@@ -14,6 +14,7 @@ import {
   type NumericKind,
   type XKind,
 } from './chart-types';
+import { pieData } from './pie-data';
 
 /**
  * The most data points a chart draws, summed over every series — the SQL
@@ -273,12 +274,12 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   if (problem) return base;
 
   const continuous = xKind === 'numeric' || xKind === 'date' || xKind === 'timestamp';
+  const pie = pieData(base);
   const availability: Record<ChartKind, ChartAvailability> = {
     bar: AVAILABLE,
     line: continuous ? AVAILABLE : unavailable('continuousXRequired'),
     scatter: xKind === 'numeric' ? AVAILABLE : unavailable('numericXRequired'),
-    // The pie's own conditions come with its stage.
-    pie: unavailable('notImplemented'),
+    pie: pie.ok ? AVAILABLE : { available: false, reason: pie.reason },
   };
   return { ...base, availability, inferred: inferChartKind(xKind, availability, implemented) };
 }

@@ -30,6 +30,12 @@
     --chart-series-6: #008300;
     --chart-series-7: #4a3aa7;
     --chart-series-8: #e34948;
+    /*
+     * The pie's aggregated Other slice. Grey, outside the categorical
+     * ramp on purpose: it is not one more category but the rest of them,
+     * and a ninth hue would read as one.
+     */
+    --chart-other: #8a94a6;
     --chart-axis: var(--color-slate-400);
     --chart-grid: var(--color-slate-200);
     --chart-focus: var(--color-slate-900);
@@ -62,6 +68,7 @@
     --chart-series-6: #008300;
     --chart-series-7: #9085e9;
     --chart-series-8: #e66767;
+    --chart-other: #8d97a9;
     --chart-axis: var(--color-slate-500);
     --chart-grid: var(--color-slate-700);
     --chart-focus: var(--color-slate-100);
