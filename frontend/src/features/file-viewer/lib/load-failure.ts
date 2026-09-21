@@ -17,11 +17,12 @@ export interface RequestedState {
 
 export type LoadFailure =
   /**
-   * Nothing has ever loaded for this file — the first page after opening
-   * it or after a Refresh. The file itself is unreadable (a corrupt data
-   * page behind a valid footer, or a file deleted since it was opened),
-   * so the tab shows a file-level error rather than a banner over an
-   * empty grid.
+   * Nothing has ever loaded for this file and the request asked for the
+   * plain first page — the first page after opening it or after a
+   * Refresh. Nothing about the request can be blamed, so the file itself
+   * is unreadable (a corrupt data page behind a valid footer, or a file
+   * deleted since it was opened) and the tab shows a file-level error
+   * rather than a banner over an empty grid.
    */
   | { kind: 'file' }
   /**
@@ -37,7 +38,16 @@ export type LoadFailure =
    * suppress the reload the rollback would otherwise trigger, which would
    * fetch what the grid already holds and clear the banner with it.
    */
-  | { kind: 'banner'; restore: LoadedState; rewinds: boolean };
+  | { kind: 'banner'; restore: LoadedState; rewinds: boolean }
+  /**
+   * Nothing has loaded yet, but the request carried a filter or a sort:
+   * the file may be perfectly readable and only the condition refused — a
+   * column the file no longer has after a Refresh, a filter restored from
+   * a session onto a rewritten file. The viewer drops both, loads the
+   * plain first page and keeps the reason as a banner; only if that plain
+   * load fails too is the file itself the problem.
+   */
+  | { kind: 'retryPlain' };
 
 /**
  * What a failed page load leaves the viewer showing. The sort is compared
@@ -45,7 +55,7 @@ export type LoadFailure =
  * object, and an unchanged one is the very same object.
  */
 export function loadFailure(lastGood: LoadedState | null, requested: RequestedState): LoadFailure {
-  if (!lastGood) return { kind: 'file' };
+  if (!lastGood) return requested.filter || requested.sort ? { kind: 'retryPlain' } : { kind: 'file' };
   const rewinds =
     lastGood.filter !== requested.filter ||
     lastGood.page !== requested.page ||

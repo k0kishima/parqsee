@@ -12,6 +12,14 @@ describe('loadFailure', () => {
     expect(loadFailure(null, { page: 1, filter: '', sort: null })).toEqual({ kind: 'file' });
   });
 
+  it('retries the plain page when the first load carried a filter', () => {
+    expect(loadFailure(null, { page: 1, filter: '"gone" = 1', sort: null })).toEqual({ kind: 'retryPlain' });
+  });
+
+  it('retries the plain page when the first load carried a sort', () => {
+    expect(loadFailure(null, { page: 1, filter: '', sort: ascending })).toEqual({ kind: 'retryPlain' });
+  });
+
   it('keeps the rows and rewinds the filter that was rejected', () => {
     const result = loadFailure(onScreen(), { page: 2, filter: 'bad(', sort: null });
     expect(result).toEqual({ kind: 'banner', restore: onScreen(), rewinds: true });
