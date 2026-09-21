@@ -229,10 +229,11 @@ around ten items or nobody will run it.
 
 | | |
 |---|---|
-| Fixture | `cp scripts/qa/fixtures/one_row.parquet /tmp/x.parquet` (`/tmp` is a symlink to `/private/tmp`); `ln -s "$PWD/scripts/qa/fixtures" ~/parqsee-fixtures-link` |
-| Steps | Drop `/tmp/x.parquet` on the window (or `open -a Parqsee /tmp/x.parquet`). Close the tab (⌘W), then open the file again from Recent Files. Close it once more and reopen it a third time. Quit with ⌘Q and relaunch. Then open `~/parqsee-fixtures-link` with ⇧⌘O and open a file from the tree. |
+| Fixture | `scripts/qa/fixtures/paths/good_link.parquet` (a symlink to `one_row.parquet`, so its path is not the file's own); `cp scripts/qa/fixtures/one_row.parquet /tmp/x.parquet` (`/tmp` is a symlink to `/private/tmp`); `ln -s "$PWD/scripts/qa/fixtures" ~/parqsee-fixtures-link` |
+| Steps | Open the fixtures folder (⇧⌘O) and `paths/good_link.parquet` from the tree. Close the tab (⌘W), open it again from File › Open Recent, and close and reopen it once more. Quit with ⌘Q and relaunch. Do the same with `/tmp/x.parquet` **dropped on the window** (not opened from Finder — see Pitfalls). Then open `~/parqsee-fixtures-link` with ⇧⌘O and open a file from the tree. |
 | Expected | Every reopen fills the grid; no *File not found* alert, and the entry stays in Recent Files (the failure this guards against alternates — the first open succeeds, the second fails and removes the entry, the third succeeds again). After the relaunch the tab is back rather than named in the *could not be reopened* notice. The symlinked folder opens, and the sidebar and the breadcrumb name the folder it points at (`.../scripts/qa/fixtures`) — a root is recorded by its real path because Foundation refuses to bookmark a symlink to a directory. |
 | Why manual | A bookmark resolves to the canonical path only in Foundation; the fake provider in `cargo test --lib` imitates that, and the unsandboxed bridge the e2e suite drives records no bookmarks at all. |
+| Pitfalls | Finder, the Dock and `open -a` do **not** reproduce this: Launch Services hands the app the resolved path, so `open -a Parqsee /tmp/x.parquet` arrives — and is recorded — as `/private/tmp/x.parquet`. The path has to reach the app as the user wrote it: dropped on the window, or built by the explorer from a root that holds a symlink. |
 
 ## Results template
 
