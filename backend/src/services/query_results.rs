@@ -154,6 +154,16 @@ impl QueryResults {
         Ok((kept.names[index].clone(), field.data_type().clone()))
     }
 
+    /// What the grid calls every column, in order — what the rows of a
+    /// narrowed result have to be keyed by, since the grid renders them
+    /// by the names the query gave.
+    pub fn names(&self, id: &str) -> Result<Vec<String>, String> {
+        let held = self.kept.lock().unwrap();
+        held.get(id)
+            .map(|kept| kept.names.clone())
+            .ok_or_else(|| "This result is no longer available. Run the query again.".to_string())
+    }
+
     /// Let go of a result the webview will not ask about again: a query
     /// re-run, a superseded run's answer, a closed tab.
     pub fn release(&self, id: &str) {

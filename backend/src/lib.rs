@@ -305,6 +305,7 @@ pub fn run() {
             commands::query::execute_sql,
             commands::query::release_query_result,
             commands::query::profile_query_column,
+            commands::query::filter_query_result,
             commands::iap::iap_status,
             commands::iap::iap_products,
             commands::iap::iap_purchase,

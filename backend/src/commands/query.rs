@@ -1,9 +1,12 @@
-use arrow::datatypes::DataType;
+use std::sync::Arc;
+
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::record_batch::RecordBatch;
 use tauri::command;
 
 use crate::commands::guarded;
 use crate::models::{ColumnProfile, QueryChartType, QueryColumn, QueryResult};
-use crate::services::parquet::{batches_to_rows, execute_sql_limited, ParquetCache};
+use crate::services::parquet::{batches_to_rows, execute_sql_limited, where_clause, ParquetCache};
 use crate::services::profile::{column_kind_of, profile, ProfileSource};
 use crate::services::query_results::{column_alias, QueryResults};
 
@@ -54,6 +57,63 @@ pub async fn run_profile_query_column(
     let ctx = results.session(result_id)?;
     let source = ProfileSource::Result(&ctx);
     profile(&source, &name, &column_alias(column_index), column_kind_of(&data_type), filter).await
+}
+
+/// The rows of a kept result that `filter` keeps, keyed by the names the
+/// grid shows. A bar in the profile narrows the result the user already
+/// has; it never rewrites their SQL, and it never runs the query again —
+/// so the rows, the counts in the panel and the footer all describe the
+/// same set, whatever the query would answer now.
+#[command]
+pub async fn filter_query_result(
+    results: tauri::State<'_, QueryResults>,
+    result_id: String,
+    filter: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    guarded("Narrowing the result", async {
+        run_filter_query_result(&results, &result_id, filter).await
+    })
+    .await
+}
+
+/// The narrowed rows, minus the Tauri plumbing, so the E2E bridge runs
+/// exactly what the command runs.
+pub async fn run_filter_query_result(
+    results: &QueryResults,
+    result_id: &str,
+    filter: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let names = results.names(result_id)?;
+    let ctx = results.session(result_id)?;
+    let where_sql = match where_clause(filter.as_deref()) {
+        Some(clause) => format!(" WHERE {clause}"),
+        None => String::new(),
+    };
+    let df = ctx
+        .sql(&format!("SELECT * FROM t{where_sql}"))
+        .await
+        .map_err(|e| format!("Failed to narrow the result: {e}"))?;
+    let batches = df
+        .collect()
+        .await
+        .map_err(|e| format!("Failed to narrow the result: {e}"))?;
+    // Back to the names the grid renders by: the rows are addressed by
+    // position inside the store and by name once they leave it.
+    let named: Vec<RecordBatch> = batches
+        .iter()
+        .map(|b| {
+            let schema = Arc::new(Schema::new(
+                b.schema()
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| Field::new(&names[i], f.data_type().clone(), f.is_nullable()))
+                    .collect::<Vec<_>>(),
+            ));
+            RecordBatch::try_new(schema, b.columns().to_vec()).map_err(|e| e.to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    batches_to_rows(&named)
 }
 
 /// Let go of a result the webview will not ask about again. It calls this
@@ -383,6 +443,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(narrowed.total_rows, 1);
+    }
+
+    /// Narrowing is over the rows the grid has, and the rows come back
+    /// keyed the way the grid renders them — including the exact digits a
+    /// big integer only has in Arrow.
+    #[tokio::test]
+    async fn a_narrowed_result_keeps_the_grid_s_own_rows() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("grp", DataType::Utf8, true),
+            Field::new("big", DataType::Int64, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec![Some("a"), Some("b"), None])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![9_007_199_254_740_993, 2, 3])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("query_profile", "narrow.parquet");
+        write_parquet(&path, &batch, None);
+        let cache = ParquetCache::new();
+        let results = QueryResults::new();
+        let result = run_query(&cache, &results, &path.to_string_lossy(), "SELECT grp, big FROM t")
+            .await
+            .unwrap();
+        let id = result.result_id.clone().unwrap();
+
+        let all = run_filter_query_result(&results, &id, None).await.unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0]["grp"], "a");
+        assert_eq!(all[0]["big"], "9007199254740993");
+
+        let narrowed = run_filter_query_result(&results, &id, Some("c0 = 'a'".into())).await.unwrap();
+        assert_eq!(narrowed.len(), 1);
+        assert_eq!(narrowed[0]["big"], "9007199254740993");
+
+        let none = run_filter_query_result(&results, &id, Some("c0 IS NULL".into())).await.unwrap();
+        assert_eq!(none.len(), 1);
+        assert_eq!(none[0]["grp"], serde_json::Value::Null);
+
+        results.release(&id);
+        let gone = run_filter_query_result(&results, &id, None).await.unwrap_err();
+        assert!(gone.contains("Run the query again"), "{gone}");
     }
 
     #[tokio::test]

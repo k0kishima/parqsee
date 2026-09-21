@@ -30,7 +30,7 @@
 //! front of the `iap_*` commands when a scenario wants the free tier
 //! (`launch({ iap })` in lib.mjs), so nothing of it reaches this binary.
 use parqsee_lib::commands::file::{get_file_info, list_directory};
-use parqsee_lib::commands::query::{run_profile_query_column, run_query};
+use parqsee_lib::commands::query::{run_filter_query_result, run_profile_query_column, run_query};
 use parqsee_lib::services::query_results::QueryResults;
 use parqsee_lib::models::{SessionTabInput, SortSpec};
 use parqsee_lib::services::access::{FileAccess, NoopBookmarks};
@@ -169,6 +169,9 @@ async fn dispatch(
                 opt_s(&args, "filter"),
             )
             .await?
+        ),
+        "filter_query_result" => json!(
+            run_filter_query_result(results, &s(&args, "resultId")?, opt_s(&args, "filter")).await?
         ),
         "release_query_result" => {
             results.release(&s(&args, "resultId")?);
