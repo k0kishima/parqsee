@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { useTranslation } from 'react-i18next';
 import { formatCellValue } from '../../../lib/format';
 import { barGeometry, lineGeometry, nearestVertex, scatterGeometry, PLOT_MARGIN, Y_AXIS_WIDTH, type AxisTick } from '../lib/chart-geometry';
+import { assertNever } from '../../../lib/exhaustive';
 import { EXCLUSION_REASONS, type ChartKind, type ChartModel, type ChartPoint, type ChartProblem } from '../lib/chart-types';
 import { pieData } from '../lib/pie-data';
 import { BarChart } from './charts/bar-chart';
@@ -147,7 +148,12 @@ function CartesianChart({ model, kind }: { model: ChartModel; kind: ChartKind })
         const geometry = scatterGeometry(model, viewport, locale);
         return geometry && { kind, geometry };
       }
-      default: return null;
+      // The pie has no X and Y to plot against, so the caller draws it
+      // instead of reaching here; the case is listed so that a kind added
+      // to `ChartKind` without a renderer fails to compile rather than
+      // leaving an empty pane behind an enabled button.
+      case 'pie': return null;
+      default: return assertNever(kind, 'chart kind');
     }
   }, [model, kind, size.width, size.height, locale]);
 
