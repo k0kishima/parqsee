@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilterExpression, findInvalidFilterValue, FilterOperator, FilterRow } from '../filter-bar';
+import identifierQuotingCases from '../../../../../../contracts/identifier-quoting-cases.json';
+import { buildFilterExpression, findInvalidFilterValue, FilterOperator, FilterRow, quoteIdentifier } from '../filter-bar';
 import type { ColumnInfo, ColumnKind } from '../../api';
 
 const column = (name: string, column_type: string, kind: ColumnKind): ColumnInfo => ({
@@ -126,5 +127,13 @@ describe('findInvalidFilterValue', () => {
     expect(findInvalidFilterValue([row('id', 'LIKE', 'abc')], columns)).toBeNull();
     expect(findInvalidFilterValue([row('id', 'IS NULL', 'abc')], columns)).toBeNull();
     expect(findInvalidFilterValue([row('id', '=', '')], columns)).toBeNull();
+  });
+});
+
+describe('quoteIdentifier', () => {
+  it('follows the shared identifier-quoting contract the backend is held to', () => {
+    for (const testCase of identifierQuotingCases) {
+      expect(quoteIdentifier(testCase.name), testCase.name).toBe(testCase.quoted);
+    }
   });
 });

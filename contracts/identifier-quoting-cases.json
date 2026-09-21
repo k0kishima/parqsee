@@ -1,0 +1,12 @@
+[
+  { "name": "id", "quoted": "\"id\"" },
+  { "name": "MixedCase", "quoted": "\"MixedCase\"" },
+  { "name": "with space", "quoted": "\"with space\"" },
+  { "name": "has\"quote", "quoted": "\"has\"\"quote\"" },
+  { "name": "\"wrapped\"", "quoted": "\"\"\"wrapped\"\"\"" },
+  { "name": "a\"\"b", "quoted": "\"a\"\"\"\"b\"" },
+  { "name": "it's", "quoted": "\"it's\"" },
+  { "name": "back`tick", "quoted": "\"back`tick\"" },
+  { "name": "列名", "quoted": "\"列名\"" },
+  { "name": "", "quoted": "\"\"" }
+]

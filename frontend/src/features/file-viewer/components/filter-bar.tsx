@@ -120,8 +120,15 @@ const KIND_LITERAL = {
     other: 'quoted',
 } satisfies Record<ColumnKind, LiteralKind>;
 
-/** DataFusion lower-cases bare identifiers, so `MixedCase` resolves to nothing. */
-const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
+/**
+ * DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
+ * nothing. The backend's `quote_identifier` escapes the same way, and it
+ * has to: what this builds is sent as a `WHERE` fragment for that side to
+ * plan, so a column name the two spell differently resolves in one and not
+ * the other. `contracts/identifier-quoting-cases.json` is the shared list
+ * both are tested against.
+ */
+export const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 const isBooleanLiteral = (value: string) => /^(true|false)$/i.test(value);

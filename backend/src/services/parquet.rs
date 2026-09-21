@@ -1152,7 +1152,11 @@ pub fn where_clause(filter: Option<&str>) -> Option<&str> {
 }
 
 /// DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
-/// nothing; the filter bar quotes the same way.
+/// nothing. The filter bar's `quoteIdentifier` escapes the same way, and it
+/// has to: the webview sends its `WHERE` fragment here to be planned, so a
+/// column name the two spell differently resolves on one side and not the
+/// other. `contracts/identifier-quoting-cases.json` is the shared list both
+/// are tested against.
 pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
@@ -1917,6 +1921,23 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         test_support::temp_path("parquet", name)
+    }
+
+    #[derive(serde::Deserialize)]
+    struct IdentifierQuotingCase {
+        name: String,
+        quoted: String,
+    }
+
+    #[test]
+    fn quoting_follows_the_contract_the_filter_bar_is_held_to() {
+        let cases: Vec<IdentifierQuotingCase> = serde_json::from_str(include_str!(
+            "../../../contracts/identifier-quoting-cases.json"
+        ))
+        .expect("the shared identifier-quoting contract must be valid JSON");
+        for case in cases {
+            assert_eq!(super::quote_identifier(&case.name), case.quoted, "{}", case.name);
+        }
     }
 
     /// A list column and a struct column next to a plain one, the shape Spark
