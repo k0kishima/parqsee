@@ -61,8 +61,11 @@ export function QueryChart({ model, kind, notice }: QueryChartProps) {
     ? [t('viewer.query.chart.excluded', { excluded: diagnostics.excludedPoints.toLocaleString(locale), total: diagnostics.candidatePoints.toLocaleString(locale) }),
       ...EXCLUSION_REASONS.filter(r => diagnostics.byReason[r] > 0).map(r => t(`viewer.query.chart.${r}`, { n: diagnostics.byReason[r].toLocaleString(locale) }))].join(' · ')
     : null;
-  // A zero has no area, so it is counted rather than drawn; a float or
-  // decimal total is a sum of approximations and its percentages say so.
+  // What one kind has to say and the others do not. For a pie: a zero has
+  // no area, so it is counted rather than drawn, and a float or decimal
+  // total is a sum of approximations whose percentages say so. For the
+  // kinds that place X: the rows that came back out of order, and the
+  // times drawn at a coarser millisecond than they were written in.
   const kindNotes = (pie?.ok
     ? [
       pie.data.zeroRows > 0 ? t('viewer.query.chart.zeroSlices', { n: pie.data.zeroRows.toLocaleString(locale) }) : null,
