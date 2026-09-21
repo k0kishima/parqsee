@@ -161,8 +161,8 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   is inferred from X's `chart_type` (labels → bar, time → line, numbers →
   scatter; pie is never inferred — nothing in a type says the values are
   shares of a whole, so the user picks it) among the kinds in
-  `IMPLEMENTED_CHART_KINDS` — bar, line and pie so far; a scatter stage
-  adds a renderer under `components/charts/` and its name there.
+  `IMPLEMENTED_CHART_KINDS` — all four have a renderer under
+  `components/charts/`; a new kind adds one and its name there.
   `QueryChart` is the frame (the notes, the problem, the footer rule);
   each kind owns its plot, legend and selection, and
   `components/charts/chart-chrome.tsx` holds what they share.
@@ -196,6 +196,23 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   a point with no neighbour to join becomes a mark. It draws no mark per
   point — ten thousand circles would be a DOM the size of the grid — so
   the pointer is answered by measuring to the nearest vertex.
+  The scatter draws exactly that: one translucent mark per plotted pair,
+  so that where many land together the colour deepens — the only density
+  it shows, since it never bins, jitters or thins — with an opaque
+  outline so a lone point is as solid as a crowd, and a shape per series
+  beside the colour for the same reason a line takes a dash. Marks are
+  laid down in column order and then row order, so the overlap follows
+  the SELECT; two on the same pixel stay two points that the detail box
+  walks one at a time. One mark is a function call rather than a
+  component, and the pointer reads its `data-mark` attributes from the
+  plot's own handler, as the bars' does. Line and scatter share their
+  scales, ticks and the grid and labels they draw (`CartesianGrid` and
+  `CartesianAxisLabels` in `chart-chrome.tsx`), differing only in
+  whether a time axis or a numeric one is ticked and in whether X is
+  padded: a line runs from its first row to its last, because an axis
+  ending anywhere else would suggest rows were returned there, while a
+  cloud of marks gets the same 5% as Y so its extremes are not on the
+  frame.
   One focusable "data point details" box walks the points with the arrow
   keys instead of a tab stop per mark, and the pointer, the legend and the
   keyboard all drive it.
@@ -785,9 +802,11 @@ free-form strings it refuses, years 0 to 99, the leap-year rules,
 truncation towards the earlier instant on both sides of the epoch, an
 instant a date cannot hold), the calendar ticks (the step chosen per
 span, a month that is not thirty days, Mondays, a day across a
-daylight-saving change) and the line's geometry (the path cut at a gap
+daylight-saving change), the line's geometry (the path cut at a gap
 and at an unplaceable X, an isolated point, a backwards X drawn
-backwards, the nearest vertex); the pie's conditions
+backwards, a repeated X kept as two points, the nearest vertex) and the
+scatter's (a mark per pair in column then row order, both axes padded,
+ten thousand marks drawn without thinning, a shape per series); the pie's conditions
 and its slices (the row counts at 1 / 8 / 9 / 50 / 51, a repeated,
 empty or NULL category, negative and invalid values, zeros, one
 positive value, a truncated result, a total past the safe range, the
@@ -867,11 +886,14 @@ bins of a hundred thousand ids and a drill-down into one, non-finite
 floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; S20-line: a date X inferring the
 line, the calendar axis, a zoneless timestamp's caption and a zoned
 one's UTC, the microsecond counted, the path cut at a NULL, rows left in
-the order they came, the nearest-vertex tooltip; S20-pie: the kind picked by hand
+the order they came, the nearest-vertex tooltip; S20-scatter: a numeric X inferring it, ten
+thousand marks with the draw and key-response times recorded as
+OBSERVE, the cap counted over both series, Home and End through the
+crowd; S20-pie: the kind picked by hand
 because it is never inferred, eight slices and the ninth folded into
 Other with its breakdown and its own colour, forty-three rows behind
 one slice, a zero counted and a single value as a circle, and every
-condition that refuses the kind named on its button; run all three under
+condition that refuses the kind named on its button; run all four under
 `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
