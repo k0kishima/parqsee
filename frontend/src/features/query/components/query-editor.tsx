@@ -24,12 +24,15 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ onExecute, isLoading, 
         onExecute(query);
     }, [isActiveRef, isLoading, onExecute, query]));
 
-    const containerBg = 'bg-white border-gray-200 dark:bg-gray-900 dark:border-gray-700';
+    // No bottom border here: the seam with the results is the pane's, in
+    // `QueryView`, and a second one on top of it drew a 2px line where
+    // every other divider in the app is 1px.
+    const containerBg = 'bg-white dark:bg-gray-900';
     const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800';
     const textareaColor = 'text-gray-900 dark:text-gray-100';
 
     return (
-        <div className={`flex flex-col h-full border-b ${containerBg}`}>
+        <div className={`flex flex-col h-full ${containerBg}`}>
             <div className={`p-2 border-b flex justify-between items-center ${toolbarBg}`}>
                 <span className="text-xs text-gray-500 font-mono">{t('viewer.query.tableName')}</span>
                 <button
