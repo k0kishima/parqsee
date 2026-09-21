@@ -1,5 +1,6 @@
 import type { ScatterGeometry } from '../../lib/chart-geometry';
 import type { PlottedPoint } from '../../lib/chart-geometry';
+import { assertNever } from '../../../../lib/exhaustive';
 import { seriesColor, seriesSymbol, type SeriesSymbol } from '../chart-style';
 import { CartesianAxisLabels, CartesianGrid, type MarkRef } from './chart-chrome';
 
@@ -75,5 +76,7 @@ function symbolOf(mark: PlottedPoint, symbol: SeriesSymbol, selected: boolean) {
       return <polygon key={key} {...shared} points={`${x},${y - HALF} ${x + HALF},${y + HALF} ${x - HALF},${y + HALF}`} />;
     case 'diamond':
       return <polygon key={key} {...shared} points={`${x},${y - HALF} ${x + HALF},${y} ${x},${y + HALF} ${x - HALF},${y}`} />;
+    default:
+      return assertNever(symbol, 'series symbol');
   }
 }

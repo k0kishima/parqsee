@@ -55,6 +55,10 @@ pub fn is_memory_exhausted(error: &str) -> bool {
 // Shared across files, not an additional allowance for every open tab.
 const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const RESULT_CACHE_ENTRIES: usize = 64;
+/// A result this long or shorter is a page the grid could ask for again.
+/// A larger range is a one-off — an export, a custom range — and holding
+/// it would push out the pages the grid is actually paging through.
+const RESULT_CACHE_MAX_ROWS: usize = 8192;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResultCachePolicy {
@@ -1511,6 +1515,32 @@ async fn run_browse_query(
     Ok((batches, reusable))
 }
 
+/// Whether a result earns a place in the shared cache. It has to be one
+/// the grid can ask for again (`reusable`: no clock, no randomness), a
+/// page rather than a bulk range, and small enough that a single entry
+/// cannot evict the whole cache to make room for itself — which is also
+/// what lets `evict_for` terminate.
+fn worth_caching(policy: ResultCachePolicy, reusable: bool, rows: usize, bytes: usize) -> bool {
+    policy == ResultCachePolicy::Populate
+        && reusable
+        && rows <= RESULT_CACHE_MAX_ROWS
+        && bytes <= RESULT_CACHE_BYTES
+}
+
+/// Drop the oldest results until one of `bytes` fits within both caps.
+/// Insertion order is age, so the front is the oldest. The loop ends
+/// because `bytes <= RESULT_CACHE_BYTES` is checked before it is reached
+/// (`worth_caching`): emptying the queue is therefore always enough.
+fn evict_for(results: &mut VecDeque<CachedResult>, bytes: usize) {
+    let mut used: usize = results.iter().map(|r| r.bytes).sum();
+    while results.len() >= RESULT_CACHE_ENTRIES || used + bytes > RESULT_CACHE_BYTES {
+        match results.pop_front() {
+            Some(old) => used -= old.bytes,
+            None => return,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn store_result(
     cache: &ParquetCache,
@@ -1523,26 +1553,21 @@ fn store_result(
     policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
     let session_id = ctx.session_id();
+    let rows = batches.iter().map(RecordBatch::num_rows).sum::<usize>();
     // LIMIT can return a slice backed by the entire top-k output. Copy only
     // page-sized results; very large ranges remain uncached.
-    let page_sized = batches.iter().map(RecordBatch::num_rows).sum::<usize>() <= 8192;
-    if reusable && page_sized {
+    if reusable && rows <= RESULT_CACHE_MAX_ROWS {
         batches = batches.iter().map(compact_batch).collect::<Result<_, _>>()?;
     }
     // Include keys as well as arrays; do not retain an unbounded filter string.
     let bytes = batches.iter().map(RecordBatch::get_array_memory_size).sum::<usize>()
         + path.len() + session_id.len() + query.len();
-    if policy == ResultCachePolicy::Populate && reusable && page_sized && bytes <= RESULT_CACHE_BYTES {
+    if worth_caching(policy, reusable, rows, bytes) {
         let sessions = cache.sessions.lock().map_err(|e| e.to_string())?;
         if sessions.get(path).is_some_and(|ctx| ctx.session_id() == session_id) {
             let mut results = cache.results.lock().map_err(|e| e.to_string())?;
             results.retain(|r| !(r.path == path && r.session_id == session_id && r.query == query));
-            let mut used = results.iter().map(|r| r.bytes).sum::<usize>();
-            while results.len() >= RESULT_CACHE_ENTRIES || used + bytes > RESULT_CACHE_BYTES {
-                if let Some(old) = results.pop_front() {
-                    used -= old.bytes;
-                }
-            }
+            evict_for(&mut results, bytes);
             results.push_back(CachedResult {
                 path: path.into(), session_id, version, query: query.into(), batches: batches.clone(), bytes,
             });
@@ -2359,6 +2384,59 @@ mod tests {
             super::execute_browse_query(&cache, &file, query, super::ResultCachePolicy::Populate).await.unwrap();
             assert!(!cache.results.lock().unwrap().iter().any(|r| r.query == query));
         }
+    }
+
+    fn cached_of(bytes: usize) -> super::CachedResult {
+        super::CachedResult {
+            path: "p".into(),
+            session_id: "s".into(),
+            version: super::FileVersion { size: 0, modified: std::time::UNIX_EPOCH },
+            query: "q".into(),
+            batches: Vec::new(),
+            bytes,
+        }
+    }
+
+    #[test]
+    fn only_a_reusable_page_small_enough_to_share_the_cache_is_kept() {
+        use super::ResultCachePolicy::{Populate, ReuseOnly};
+        assert!(super::worth_caching(Populate, true, 100, 1024));
+        // A query whose answer can change on its own is never reused.
+        assert!(!super::worth_caching(Populate, false, 100, 1024));
+        // A read that is only allowed to reuse what is there adds nothing.
+        assert!(!super::worth_caching(ReuseOnly, true, 100, 1024));
+        // A bulk range would push out the pages the grid is paging through.
+        assert!(!super::worth_caching(Populate, true, super::RESULT_CACHE_MAX_ROWS + 1, 1024));
+        // An entry that cannot fit even in an empty cache is refused here,
+        // which is what stops `evict_for` emptying the queue for nothing.
+        assert!(super::worth_caching(Populate, true, 1, super::RESULT_CACHE_BYTES));
+        assert!(!super::worth_caching(Populate, true, 1, super::RESULT_CACHE_BYTES + 1));
+    }
+
+    #[test]
+    fn making_room_drops_the_oldest_and_stops_as_soon_as_the_entry_fits() {
+        let mut results: std::collections::VecDeque<super::CachedResult> =
+            (0..super::RESULT_CACHE_ENTRIES).map(|_| cached_of(1)).collect();
+        super::evict_for(&mut results, 1);
+        // One short of the cap, so the entry about to be pushed fits it.
+        assert_eq!(results.len(), super::RESULT_CACHE_ENTRIES - 1);
+
+        // The byte cap can bite long before the entry cap does.
+        let half = super::RESULT_CACHE_BYTES / 2;
+        let mut results: std::collections::VecDeque<super::CachedResult> =
+            [half, half].into_iter().map(cached_of).collect();
+        super::evict_for(&mut results, half);
+        assert_eq!(results.len(), 1);
+
+        // Nothing is dropped when there is already room.
+        let mut results: std::collections::VecDeque<super::CachedResult> = [1, 2].into_iter().map(cached_of).collect();
+        super::evict_for(&mut results, 1);
+        assert_eq!(results.len(), 2);
+
+        // An entry the size of the whole cache empties it and stops there.
+        let mut results: std::collections::VecDeque<super::CachedResult> = [1, 2].into_iter().map(cached_of).collect();
+        super::evict_for(&mut results, super::RESULT_CACHE_BYTES);
+        assert!(results.is_empty());
     }
 
     #[test]

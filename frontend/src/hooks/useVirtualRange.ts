@@ -15,7 +15,11 @@ export interface VirtualRange {
   totalSize: number;
   /** Last measured client size of the scroller along the axis (0 until measured). */
   viewportSize: number;
-  /** Leading edge of item `index`, in px from the start of the content. */
+  /**
+   * Leading edge of item `index`, in px from the start of the content.
+   * Its identity only changes with the sizes, so an effect that scrolls to
+   * an item can depend on it without re-firing on every scroll.
+   */
   offsetOf: (index: number) => number;
   /** Attach to the scrolling element's onScroll. */
   onScroll: () => void;
@@ -54,6 +58,14 @@ export function useVirtualRange(
     return out;
   }, [sizes]);
 
+  // Out of the memo below, which is rebuilt on every scroll: an effect that
+  // brings an item into view depends on this, and a new identity per scroll
+  // would make it fight the scrolling it just started.
+  const offsetOf = useCallback(
+    (index: number) => offsets[Math.max(0, Math.min(index, offsets.length - 1))],
+    [offsets]
+  );
+
   const readViewport = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -91,7 +103,6 @@ export function useVirtualRange(
   return useMemo(() => {
     const count = sizes.length;
     const totalSize = offsets[count];
-    const offsetOf = (index: number) => offsets[Math.max(0, Math.min(index, count))];
 
     if (count === 0) {
       return { start: 0, end: 0, padStart: 0, padEnd: 0, totalSize, viewportSize: viewport.size, offsetOf, onScroll };
@@ -122,7 +133,17 @@ export function useVirtualRange(
       offsetOf,
       onScroll,
     };
-  }, [sizes.length, offsets, viewport, axis, overscan, onScroll]);
+  }, [sizes.length, offsets, viewport, axis, overscan, onScroll, offsetOf]);
+}
+
+/**
+ * Where to scroll so that an item of `size` whose leading edge is at `lead`
+ * sits in the middle of a `viewport`-long window, never before the start of
+ * the content. An item longer than the viewport is centred all the same, so
+ * both its edges fall outside: the middle is what the caller asked to see.
+ */
+export function centerOffset(lead: number, size: number, viewport: number): number {
+  return Math.max(0, lead - (viewport - size) / 2);
 }
 
 export function useColumnVirtualizer(widths: number[], scrollerRef: RefObject<HTMLElement>, overscan = 4) {

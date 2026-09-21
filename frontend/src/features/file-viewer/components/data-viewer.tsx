@@ -15,6 +15,7 @@ import { TabState } from "../routes/tab-content";
 import { getFileName } from "../../../lib/path";
 import { findSearchMatches } from "../lib/search";
 import { pageWindow } from "../lib/page-window";
+import { loadFailure, type LoadedState } from "../lib/load-failure";
 import { isSortableColumn, nextSort } from "../lib/sort";
 import type { RowData } from "../../../lib/row";
 import { useAppCommand, type AppCommand } from "../../../lib/app-commands";
@@ -103,7 +104,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   /** The state the rows on screen were successfully loaded for. */
-  const lastGood = useRef<{ page: number; filter: string; sort: SortSpec | null; totalRows: number } | null>(null);
+  const lastGood = useRef<LoadedState | null>(null);
   /** Skip the reload triggered by rolling state back after a failed load. */
   const skipReload = useRef(false);
   /**
@@ -185,32 +186,20 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setLoading(false);
     } catch (err) {
       if (seq !== loadSeq.current) return;
-      // Nothing has ever loaded for this file (first page after opening or
-      // after Refresh): the file itself is unreadable — a corrupted data page
-      // behind a valid footer, or a file deleted since it was opened. Show
-      // the file-level error instead of a banner over an empty grid.
-      if (!lastGood.current) {
+      const outcome = loadFailure(lastGood.current, { page: currentPage, filter: activeFilter, sort });
+      if (outcome.kind === 'file') {
         setError(toErrorMessage(err));
         setLoading(false);
         return;
       }
-      // A rejected filter must not strand the tab on an error screen: keep the
-      // previous result on screen and let the user correct the condition.
       setDataError(toErrorMessage(err));
-      // Roll the request state back to what the grid is still showing, so
-      // pagination and export never describe the failed filter or page. The
-      // rows on screen are already that state — skip the echo reload the
-      // rollback would trigger, which would also clear the error banner.
-      const good = lastGood.current;
-      if (good) {
-        if (good.filter !== activeFilter || good.page !== currentPage || good.sort !== sort) {
-          skipReload.current = true;
-          setActiveFilter(good.filter);
-          setCurrentPage(good.page);
-          setSort(good.sort);
-        }
-        setTotalRows(good.totalRows);
+      if (outcome.rewinds) {
+        skipReload.current = true;
+        setActiveFilter(outcome.restore.filter);
+        setCurrentPage(outcome.restore.page);
+        setSort(outcome.restore.sort);
       }
+      setTotalRows(outcome.restore.totalRows);
       setLoading(false);
     }
   }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort]);
