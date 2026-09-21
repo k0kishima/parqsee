@@ -90,6 +90,15 @@ describe('buildChartModel', () => {
     expect(twoSeries.availability.pie).toMatchObject({ available: false, reason: { code: 'pieOneSeries' } });
   });
 
+  it('refuses the kinds that place X when two X coordinates cannot share an axis', () => {
+    const model = buildChartModel(result([['x', T.float], ['y', T.integer]], [{ x: -1e308, y: 1 }, { x: 1e308, y: 2 }]));
+    // The Y values are fine, so the result is chartable — as bars, which put X in row order.
+    expect(model.problem).toBeNull();
+    expect(model.availability.bar).toEqual({ available: true });
+    expect(model.availability.line).toEqual({ available: false, reason: { code: 'unsafeRange', params: undefined } });
+    expect(model.availability.scatter).toEqual({ available: false, reason: { code: 'unsafeRange', params: undefined } });
+  });
+
   it('never infers pie', () => {
     const availability: Record<ChartKind, ChartAvailability> = { bar: { available: true }, line: { available: true }, scatter: { available: true }, pie: { available: true } };
     expect(inferChartKind('category', availability, ['pie'])).toBeNull();
@@ -142,10 +151,37 @@ describe('buildChartModel', () => {
       excludedPoints: 7,
       byReason: { missing: 3, nonFinite: 2, precision: 1, invalid: 1 },
       ignoredColumns: [],
+      subMillisecondRows: 0,
     });
     expect(model.rows.map(r => r.valid)).toEqual([true, false, true, true, true]);
     expect(model.points.map(p => [p.rowIndex, p.seriesOrdinal])).toEqual([[0, 0], [0, 1], [3, 1]]);
     expect(model.series.map(s => s.validCount)).toEqual([1, 2]);
+  });
+
+  it('places a date and a timestamp X on the time axis, and drops a row whose instant cannot be read', () => {
+    const model = buildChartModel(result(
+      [['d', T.date], ['y', T.integer]],
+      [{ d: '2024-01-01', y: 1 }, { d: '2024-02-30', y: 2 }, { d: '2024-01-03', y: 3 }],
+    ));
+    expect(model.rows.map(r => [r.value, r.valid])).toEqual([[1704067200000, true], [null, false], [1704240000000, true]]);
+    // The label stays the string the table shows, whatever the axis does with the instant.
+    expect(model.rows[0].label).toBe('2024-01-01');
+    expect(model.diagnostics.byReason.invalid).toBe(1);
+    expect(model.points.map(p => p.rowIndex)).toEqual([0, 2]);
+  });
+
+  it('counts the rows whose time was finer than the millisecond it is plotted at', () => {
+    const model = buildChartModel(result(
+      [['t', T.timestamp], ['y', T.integer]],
+      [
+        { t: '2024-01-01T00:00:00.123456', y: 1 },
+        { t: '2024-01-01T00:00:00.123', y: 2 },
+        { t: '2024-01-01T00:00:00.124000', y: 3 },
+        { t: '2024-01-01T00:00:00.999999999', y: 4 },
+      ],
+    ));
+    expect(model.diagnostics.subMillisecondRows).toBe(2);
+    expect(model.rows.map(r => r.value)).toEqual([1704067200123, 1704067200123, 1704067200124, 1704067200999]);
   });
 
   it('treats a numeric X like a Y: a big integer is not rescued as a label', () => {

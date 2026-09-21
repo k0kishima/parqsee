@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { QueryChartType, QueryResult } from '../../types';
 import { buildChartModel } from '../chart-data';
-import { arcPath, barGeometry, labelStride, pieGeometry, PLOT_MARGIN } from '../chart-geometry';
+import { arcPath, barGeometry, labelStride, lineGeometry, nearestVertex, pieGeometry, PLOT_MARGIN } from '../chart-geometry';
 
 const cat: QueryChartType = { kind: 'category' };
 const int: QueryChartType = { kind: 'integer' };
@@ -117,5 +117,127 @@ describe('pieGeometry', () => {
   it('measures its angles from 12 o\'clock clockwise', () => {
     expect(arcPath(0, 0, 10, 0, Math.PI / 2)).toBe('M 0 0 L 0 -10 A 10 10 0 0 1 10 0 Z');
     expect(arcPath(0, 0, 10, Math.PI, Math.PI * 1.5)).toBe('M 0 0 L 0 10 A 10 10 0 0 1 -10 0 Z');
+  });
+});
+
+const date: QueryChartType = { kind: 'date' };
+const ts: QueryChartType = { kind: 'timestamp', timezone: null };
+
+function timeResult(xType: QueryChartType, rows: Record<string, unknown>[], series = ['y']): QueryResult {
+  return {
+    columns: [{ name: 't', data_type: 'Date32', chart_type: xType }, ...series.map(name => ({ name, data_type: 'Int64', chart_type: int }))],
+    rows,
+    execution_time_ms: 1,
+    truncated: false,
+    max_rows: 10_000,
+  };
+}
+
+describe('lineGeometry', () => {
+  it('draws one path per series, the first and last points inside the plot', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y1: 1, y2: 5 },
+      { t: '2024-01-02', y1: 2, y2: 4 },
+      { t: '2024-01-03', y1: 3, y2: 3 },
+    ], ['y1', 'y2']));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    expect(geometry.series).toHaveLength(2);
+    expect(geometry.series[0].vertices).toHaveLength(3);
+    expect(geometry.series[0].isolated).toEqual([]);
+    expect(geometry.series[0].path.startsWith('M ')).toBe(true);
+    expect(geometry.series[0].path.match(/L/g)).toHaveLength(2);
+    const [first, , last] = geometry.series[0].vertices;
+    expect(first.x).toBeGreaterThan(0);
+    expect(last.x).toBeLessThan(geometry.contentWidth);
+    expect(last.x).toBeGreaterThan(first.x);
+  });
+
+  it('cuts the path at a gap instead of drawing over it, per series', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y1: 1, y2: 1 },
+      { t: '2024-01-02', y1: null, y2: 2 },
+      { t: '2024-01-03', y1: 3, y2: 3 },
+      { t: '2024-01-04', y1: 4, y2: 4 },
+    ], ['y1', 'y2']));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    // y1 loses the second row: a lone point, then a pair. y2 is unbroken.
+    expect(geometry.series[0].path.match(/M/g)).toHaveLength(1);
+    expect(geometry.series[0].isolated.map(v => v.rowIndex)).toEqual([0]);
+    expect(geometry.series[1].path.match(/M/g)).toHaveLength(1);
+    expect(geometry.series[1].isolated).toEqual([]);
+  });
+
+  it('breaks every series where the X itself cannot be placed', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y: 1 },
+      { t: '2024-02-30', y: 2 },
+      { t: '2024-01-03', y: 3 },
+    ]));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    expect(geometry.series[0].vertices.map(v => v.rowIndex)).toEqual([0, 2]);
+    expect(geometry.series[0].path).toBe('');
+    expect(geometry.series[0].isolated.map(v => v.rowIndex)).toEqual([0, 2]);
+  });
+
+  it('connects the rows in the order they came, even when X goes backwards', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-03', y: 1 },
+      { t: '2024-01-01', y: 2 },
+      { t: '2024-01-05', y: 3 },
+    ]));
+    expect(model.xOutOfOrder).toBe(true);
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    const [a, b, c] = geometry.series[0].vertices;
+    expect(b.x).toBeLessThan(a.x);
+    expect(c.x).toBeGreaterThan(a.x);
+    expect(geometry.series[0].path.match(/L/g)).toHaveLength(2);
+  });
+
+  it('keeps two rows with the same X as two vertices rather than combining them', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y: 1 }, { t: '2024-01-02', y: 2 }, { t: '2024-01-02', y: 4 },
+    ]));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    const [, second, third] = geometry.series[0].vertices;
+    expect(geometry.series[0].vertices).toHaveLength(3);
+    expect(third.x).toBeCloseTo(second.x);
+    expect(third.y).not.toBeCloseTo(second.y);
+    // One run: the query returned them in a row, so the line goes straight up.
+    expect(geometry.series[0].path.match(/M/g)).toHaveLength(1);
+  });
+
+  it('ticks the X axis by the calendar and names the days when the labels are clock times', () => {
+    const daily = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y: 1 }, { t: '2024-02-01', y: 2 }, { t: '2024-03-01', y: 3 },
+    ]));
+    const overMonths = lineGeometry(daily, viewport, 'en')!;
+    expect(overMonths.xTicks.every(tick => /^\d{4}-\d{2}(-\d{2})?$/.test(tick.label))).toBe(true);
+    expect(overMonths.xDates).toBeNull();
+
+    const seconds = buildChartModel(timeResult(ts, [
+      { t: '2024-01-02T03:04:05', y: 1 }, { t: '2024-01-02T03:04:35', y: 2 },
+    ]));
+    const overSeconds = lineGeometry(seconds, viewport, 'en')!;
+    expect(overSeconds.xTicks.every(tick => /^\d{2}:\d{2}:\d{2}$/.test(tick.label))).toBe(true);
+    expect(overSeconds.xDates).toEqual(['2024-01-02']);
+  });
+
+  it('gives a single instant a plot to sit in the middle of', () => {
+    const model = buildChartModel(timeResult(date, [{ t: '2024-01-01', y: 1 }, { t: '2024-01-01', y: 3 }]));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    const [first, second] = geometry.series[0].vertices;
+    expect(first.x).toBeCloseTo(geometry.contentWidth / 2);
+    expect(second.x).toBeCloseTo(first.x);
+  });
+
+  it('answers the pointer with the nearest vertex, and with nothing when it is far', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y: 1 }, { t: '2024-01-02', y: 2 }, { t: '2024-01-03', y: 3 },
+    ]));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    const target = geometry.series[0].vertices[1];
+    expect(nearestVertex(geometry, { x: target.x + 3, y: target.y - 4 })).toBe(target);
+    expect(nearestVertex(geometry, { x: target.x, y: target.y }, 40)).toBe(target);
+    expect(nearestVertex(geometry, { x: target.x + 300, y: target.y + 300 })).toBeNull();
   });
 });

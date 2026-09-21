@@ -1,0 +1,158 @@
+[
+  {
+    "value": "2024-01-01",
+    "kind": "date",
+    "epochMs": 1704067200000,
+    "subMs": false
+  },
+  {
+    "value": "2024-02-29",
+    "kind": "date",
+    "epochMs": 1709164800000,
+    "subMs": false
+  },
+  {
+    "value": "1969-12-31",
+    "kind": "date",
+    "epochMs": -86400000,
+    "subMs": false
+  },
+  {
+    "value": "1970-01-01",
+    "kind": "date",
+    "epochMs": 0,
+    "subMs": false
+  },
+  {
+    "value": "+12921-08-18",
+    "kind": "date",
+    "epochMs": 345600000000000,
+    "subMs": false
+  },
+  {
+    "value": "-8982-05-17",
+    "kind": "date",
+    "epochMs": -345600000000000,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-02T03:04:05",
+    "kind": "timestamp",
+    "epochMs": 1704164645000,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-02T03:04:05.678",
+    "kind": "timestamp",
+    "epochMs": 1704164645678,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-02T03:04:05.678901",
+    "kind": "timestamp",
+    "epochMs": 1704164645678,
+    "subMs": true
+  },
+  {
+    "value": "2024-01-02T03:04:05.678901234",
+    "kind": "timestamp",
+    "epochMs": 1704164645678,
+    "subMs": true
+  },
+  {
+    "value": "1969-12-31T23:59:59",
+    "kind": "timestamp",
+    "epochMs": -1000,
+    "subMs": false
+  },
+  {
+    "value": "1969-12-31T23:59:59.999",
+    "kind": "timestamp",
+    "epochMs": -1,
+    "subMs": false
+  },
+  {
+    "value": "1969-12-31T23:59:59.999999",
+    "kind": "timestamp",
+    "epochMs": -1,
+    "subMs": true
+  },
+  {
+    "value": "1969-12-31T23:59:59.999999999",
+    "kind": "timestamp",
+    "epochMs": -1,
+    "subMs": true
+  },
+  {
+    "value": "1970-01-01T00:00:00",
+    "kind": "timestamp",
+    "epochMs": 0,
+    "subMs": false
+  },
+  {
+    "value": "0001-01-01T00:00:00",
+    "kind": "timestamp",
+    "epochMs": -62135596800000,
+    "subMs": false
+  },
+  {
+    "value": "9999-12-31T23:59:59",
+    "kind": "timestamp",
+    "epochMs": 253402300799000,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-02T03:04:05.678901Z",
+    "kind": "timestamp",
+    "epochMs": 1704164645678,
+    "subMs": true
+  },
+  {
+    "value": "1969-12-31T23:59:59.999999Z",
+    "kind": "timestamp",
+    "epochMs": -1,
+    "subMs": true
+  },
+  {
+    "value": "1970-01-01T00:00:00Z",
+    "kind": "timestamp",
+    "epochMs": 0,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-02T12:04:05.678901+09:00",
+    "kind": "timestamp",
+    "epochMs": 1704164645678,
+    "subMs": true
+  },
+  {
+    "value": "1970-01-01T08:59:59.999999+09:00",
+    "kind": "timestamp",
+    "epochMs": -1,
+    "subMs": true
+  },
+  {
+    "value": "1970-01-01T09:00:00+09:00",
+    "kind": "timestamp",
+    "epochMs": 0,
+    "subMs": false
+  },
+  {
+    "value": "2024-01-01T22:04:05-05:00",
+    "kind": "timestamp",
+    "epochMs": 1704164645000,
+    "subMs": false
+  },
+  {
+    "value": "2024-07-03T05:46:40-04:00",
+    "kind": "timestamp",
+    "epochMs": 1720000000000,
+    "subMs": false
+  },
+  {
+    "value": "1969-12-31T19:00:00-05:00",
+    "kind": "timestamp",
+    "epochMs": 0,
+    "subMs": false
+  }
+]

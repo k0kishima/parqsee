@@ -3022,6 +3022,157 @@ mod tests {
         assert_eq!(rows[0]["d"], "2024-02-29");
     }
 
+    #[derive(serde::Deserialize)]
+    struct TemporalWireCase {
+        value: String,
+    }
+
+    /// Every shape a date or timestamp column reaches the webview in. The
+    /// SQL chart plots those columns on a time axis, which means parsing
+    /// these strings back into instants, and the parser is only as right as
+    /// its idea of what arrow's JSON writer emits: a bare `YYYY-MM-DD`, a
+    /// date-time with one to nine fraction digits and none at all when they
+    /// would be zero, `Z` for UTC, and a *numeric* offset for a named zone,
+    /// resolved for that instant (so a New York summer reads `-04:00` and a
+    /// winter one `-05:00`). Out-of-epoch years carry a sign and more than
+    /// four digits. The cases are shared with the webview's parser
+    /// (`chart-time.ts`), which reads the same file: this test proves the
+    /// backend renders exactly these, so that a parser change cannot quietly
+    /// start describing a wire format nothing writes.
+    #[tokio::test]
+    async fn temporal_columns_render_in_the_shapes_the_chart_parses() {
+        use arrow::array::{
+            Date32Array, Date64Array, TimestampMicrosecondArray, TimestampMillisecondArray,
+            TimestampNanosecondArray, TimestampSecondArray,
+        };
+        use arrow::datatypes::TimeUnit;
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("d32", DataType::Date32, true),
+            Field::new("d64", DataType::Date64, true),
+            Field::new("ts_s", DataType::Timestamp(TimeUnit::Second, None), true),
+            Field::new("ts_ms", DataType::Timestamp(TimeUnit::Millisecond, None), true),
+            Field::new("ts_us", DataType::Timestamp(TimeUnit::Microsecond, None), true),
+            Field::new("ts_ns", DataType::Timestamp(TimeUnit::Nanosecond, None), true),
+            Field::new(
+                "ts_utc",
+                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+                true,
+            ),
+            Field::new(
+                "ts_offset",
+                DataType::Timestamp(TimeUnit::Microsecond, Some("+09:00".into())),
+                true,
+            ),
+            Field::new(
+                "ts_named",
+                DataType::Timestamp(TimeUnit::Second, Some("America/New_York".into())),
+                true,
+            ),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                // The epoch and the day either side of it, then the far ends
+                // of Date32, which render with a sign and five digits of year.
+                Arc::new(Date32Array::from(vec![
+                    Some(19_723),
+                    Some(-1),
+                    Some(0),
+                    Some(4_000_000),
+                    Some(-4_000_000),
+                ])) as ArrayRef,
+                Arc::new(Date64Array::from(vec![
+                    Some(1_709_164_800_000),
+                    None,
+                    None,
+                    None,
+                    None,
+                ])) as ArrayRef,
+                // Year one and the last second of 9999: four-digit years at both ends.
+                Arc::new(TimestampSecondArray::from(vec![
+                    Some(1_704_164_645),
+                    Some(-1),
+                    Some(0),
+                    Some(-62_135_596_800),
+                    Some(253_402_300_799),
+                ])) as ArrayRef,
+                Arc::new(TimestampMillisecondArray::from(vec![
+                    Some(1_704_164_645_678),
+                    Some(-1),
+                    None,
+                    None,
+                    None,
+                ])) as ArrayRef,
+                Arc::new(TimestampMicrosecondArray::from(vec![
+                    Some(1_704_164_645_678_901),
+                    Some(-1),
+                    None,
+                    None,
+                    None,
+                ])) as ArrayRef,
+                Arc::new(TimestampNanosecondArray::from(vec![
+                    Some(1_704_164_645_678_901_234),
+                    Some(-1),
+                    None,
+                    None,
+                    None,
+                ])) as ArrayRef,
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![
+                        Some(1_704_164_645_678_901),
+                        Some(-1),
+                        Some(0),
+                        None,
+                        None,
+                    ])
+                    .with_timezone("UTC"),
+                ) as ArrayRef,
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![
+                        Some(1_704_164_645_678_901),
+                        Some(-1),
+                        Some(0),
+                        None,
+                        None,
+                    ])
+                    .with_timezone("+09:00"),
+                ) as ArrayRef,
+                // January and July of the same zone, so the offset moves with DST.
+                Arc::new(
+                    TimestampSecondArray::from(vec![
+                        Some(1_704_164_645),
+                        Some(1_720_000_000),
+                        Some(0),
+                        None,
+                        None,
+                    ])
+                    .with_timezone("America/New_York"),
+                ) as ArrayRef,
+            ],
+        )
+        .unwrap();
+
+        let rows = super::batches_to_rows(&[batch]).unwrap();
+        let mut rendered: Vec<String> = rows
+            .iter()
+            .flat_map(|row| row.as_object().expect("a row is an object").values())
+            .filter_map(|value| value.as_str().map(str::to_owned))
+            .collect();
+        rendered.sort();
+        rendered.dedup();
+
+        let cases: Vec<TemporalWireCase> = serde_json::from_str(include_str!(
+            "../../../contracts/temporal-wire-cases.json"
+        ))
+        .expect("the shared temporal-wire contract must be valid JSON");
+        let mut expected: Vec<String> = cases.into_iter().map(|case| case.value).collect();
+        expected.sort();
+        assert_eq!(
+            rendered, expected,
+            "the contract must list exactly the strings these columns render as"
+        );
+    }
+
     #[test]
     fn page_query_covers_every_clause_combination() {
         use super::build_page_query;

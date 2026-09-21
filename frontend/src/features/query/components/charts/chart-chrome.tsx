@@ -1,6 +1,12 @@
 import React, { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+/** The (row, series) a mark belongs to; what the tooltip and the detail describe. */
+export interface MarkRef {
+  rowIndex: number;
+  seriesOrdinal: number;
+}
+
 /** The plot area's size, from a ResizeObserver so a hidden tab's chart is measured when it comes back. */
 export function useElementSize(ref: React.RefObject<HTMLElement>) {
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -23,26 +29,43 @@ export function useElementSize(ref: React.RefObject<HTMLElement>) {
 }
 
 /**
- * One handler on the plot reads the mark under the pointer, at most once a
- * frame: a result can hold ten thousand marks, and a listener each would
- * cost more than the chart.
+ * Where the pointer is in the plot's own coordinates, at most once a
+ * frame: a result can hold ten thousand marks, and answering every move
+ * would cost more than the chart. The plot does not scroll vertically and
+ * a kind that scrolls sideways places its marks in the same coordinates
+ * the tooltip is placed in, so the position is taken from the container's
+ * box as it stands.
  */
-export function usePointerMark(plotRef: React.RefObject<HTMLElement>, onMark: (mark: SVGElement, at: { x: number; y: number }) => void) {
+export function usePointerAt(
+  plotRef: React.RefObject<HTMLElement>,
+  onMove: (at: { x: number; y: number }, target: Element) => void,
+) {
   const frame = useRef<number | null>(null);
   const onPointerMove = useCallback((event: React.PointerEvent) => {
-    const target = (event.target as Element).closest?.('[data-mark]') as SVGElement | null;
     const container = plotRef.current;
-    if (!target || !container) return;
+    if (!container) return;
+    const target = event.target as Element;
     const bounds = container.getBoundingClientRect();
     const at = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
       frame.current = null;
-      onMark(target, at);
+      onMove(at, target);
     });
-  }, [plotRef, onMark]);
+  }, [plotRef, onMove]);
   useLayoutEffect(() => () => { if (frame.current !== null) cancelAnimationFrame(frame.current); }, []);
   return onPointerMove;
+}
+
+/**
+ * The mark under the pointer, for the kinds that draw one element per
+ * value and can be asked which one the pointer is over.
+ */
+export function usePointerMark(plotRef: React.RefObject<HTMLElement>, onMark: (mark: SVGElement, at: { x: number; y: number }) => void) {
+  return usePointerAt(plotRef, useCallback((at, target) => {
+    const mark = target.closest?.('[data-mark]') as SVGElement | null;
+    if (mark) onMark(mark, at);
+  }, [onMark]));
 }
 
 /** An X label as a chart draws it: an empty string is named rather than shown as nothing. */

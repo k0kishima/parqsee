@@ -1330,7 +1330,7 @@ await scenario('S20-chart', async ({ page }) => {
   await c.svg().waitFor();
   check('S20.bar', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await c.marks().count()) === 4 && await c.pressed(c.kindGroup().getByRole('button', { name: 'Bar', exact: true })),
     `kind=${await c.svg().getAttribute('data-chart-kind')} marks=${await c.marks().count()}`);
-  check('S20.implementedKinds', (await c.kindGroup().getByRole('button').allTextContents()).join('|') === 'Bar|Pie', `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
+  check('S20.implementedKinds', (await c.kindGroup().getByRole('button').allTextContents()).join('|') === 'Bar|Line|Pie', `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
   const legend = await act(page).getByRole('button', { name: /^Series details:/ }).allTextContents();
   check('S20.legend', legend.join('|') === '#1 y1|#2 y2', legend.join('|'));
   // The negative bar hangs from the baseline: its top is the baseline line's y.
@@ -1416,6 +1416,90 @@ await scenario('S20-chart-ja-dark', async ({ page }) => {
   check('S20ja.detail', (await c.detailText()) === '#1 y、1 行目。x: あ、y: 1', await c.detailText());
   await screenshot(page, { path: `${OUT}/shots/S20-ja-dark.png` });
 }, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
+
+// ---------------------------------------------------------------- S20-line the line chart
+// A date or timestamp X asks for a line, so these are the only charts the
+// suite does not pick by hand. The instants come back from the real
+// backend as the strings arrow writes, which is the half a unit test
+// cannot check: contracts/temporal-wire-cases.json says what they are,
+// and here they have to survive the round trip and land on an axis.
+await scenario('S20-line', async ({ page }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  const c = chartSql(page);
+  const chart = async (sql) => {
+    await c.run(sql);
+    const toChart = c.modeGroup().getByRole('button', { name: 'Chart', exact: true });
+    if (!await c.pressed(toChart)) await toChart.click();
+    await c.svg().waitFor();
+  };
+  const linePath = (ordinal = 0) => act(page).locator(`path[data-series-index="${ordinal}"]`);
+  /** The vertices of a path, as [x, y] pairs. */
+  const vertices = async (ordinal = 0) => {
+    const d = (await linePath(ordinal).getAttribute('d')) ?? '';
+    return d.split(/(?=[ML])/).map(part => part.slice(1).trim().split(/\s+/).map(Number));
+  };
+  const note = (pattern) => act(page).locator(`text=${pattern}`).first().textContent().catch(() => 'none');
+
+  // A date X picks the line by itself, and the axis ticks by the calendar.
+  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3), (DATE '2024-01-03', 2)) AS v(t, y)`);
+  check('S20line.inferred', (await c.svg().getAttribute('data-chart-kind')) === 'line' && await c.pressed(c.kindGroup().getByRole('button', { name: 'Line', exact: true })),
+    `kind=${await c.svg().getAttribute('data-chart-kind')}`);
+  const days = await vertices();
+  check('S20line.path', days.length === 3 && days[0][0] < days[1][0] && days[1][0] < days[2][0] && days[1][1] < days[0][1],
+    JSON.stringify(days));
+  check('S20line.calendarAxis', (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).some(label => /^2024-01-0\d$/.test(label)),
+    (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).join('|'));
+  check('S20line.aria', ((await act(page).getByRole('img').getAttribute('aria-label')) ?? '').startsWith('Line chart; X: t; series: 1; points: 3'),
+    await act(page).getByRole('img').getAttribute('aria-label'));
+  await screenshot(page, { path: `${OUT}/shots/S20-line.png` });
+
+  // A zoneless timestamp keeps its wall clock, and the axis says so; the
+  // microsecond that cannot be drawn is counted, not silently dropped.
+  await chart(`SELECT * FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05.000001', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
+  check('S20line.naive', (await note('/No time zone/')) === 'No time zone' && (await note('/^Dates:/')) === 'Dates: 2024-01-02',
+    `zone=${await note('/No time zone/')} dates=${await note('/^Dates:/')}`);
+  check('S20line.timePrecision', (await note('/Finer than a millisecond/')) === 'Finer than a millisecond, drawn at the millisecond: 1',
+    await note('/Finer than a millisecond/'));
+
+  // A column that names a zone is drawn on a UTC axis instead.
+  await chart(`SELECT arrow_cast(t, 'Timestamp(Microsecond, Some("+09:00"))') AS t, y FROM (VALUES (TIMESTAMP '2024-01-02 03:04:05', 1), (TIMESTAMP '2024-01-02 03:04:35', 2)) AS v(t, y)`);
+  check('S20line.utc', (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).includes('UTC'),
+    (await act(page).locator('svg[data-chart-kind="line"] text').allTextContents()).join('|'));
+
+  // A missing value cuts the line; the point left alone is drawn as a mark.
+  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', CAST(NULL AS INT)), (DATE '2024-01-03', 3), (DATE '2024-01-04', 4)) AS v(t, y)`);
+  const gap = await vertices();
+  const isolated = act(page).locator('circle[data-isolated]');
+  check('S20line.gap', gap.length === 2 && (await isolated.count()) === 1 && (await isolated.getAttribute('data-row-index')) === '0',
+    `vertices=${JSON.stringify(gap)} isolated=${await isolated.count()}`);
+  check('S20line.gapCounted', (await note('/Excluded points/')).startsWith('Excluded points: 1 / 4'), await note('/Excluded points/'));
+
+  // The rows are joined as the query returned them. Sorting behind the
+  // SQL would draw a shape the table does not have, so the chart says
+  // ORDER BY instead.
+  await chart(`SELECT * FROM (VALUES (DATE '2024-01-03', 1), (DATE '2024-01-01', 2), (DATE '2024-01-05', 3)) AS v(t, y)`);
+  const backwards = await vertices();
+  check('S20line.keepsOrder', backwards[1][0] < backwards[0][0] && backwards[2][0] > backwards[0][0], JSON.stringify(backwards));
+  check('S20line.orderHint', (await note('/Connected in the order/')).includes('ORDER BY'), await note('/Connected in the order/'));
+
+  // The pointer is answered by measuring: the line draws no mark to hit.
+  await chart(`SELECT * FROM (VALUES (DATE '2024-01-01', 1), (DATE '2024-01-02', 3)) AS v(t, y)`);
+  const box = await c.svg().boundingBox();
+  const [first] = await vertices();
+  await page.mouse.move(box.x + first[0], box.y + first[1]);
+  await page.waitForTimeout(100);
+  check('S20line.tooltip', (await act(page).getByRole('tooltip').textContent()) === '#1 y, row 1; t: 2024-01-01; y: 1',
+    await act(page).getByRole('tooltip').textContent().catch(() => 'none'));
+  check('S20line.selectedMark', (await act(page).locator('circle[data-selected]').getAttribute('data-row-index')) === '0',
+    await act(page).locator('circle[data-selected]').getAttribute('data-row-index').catch(() => 'none'));
+
+  // A column of labels has no axis to place them on.
+  await chart(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
+  const lineButton = c.kindGroup().getByRole('button', { name: 'Line', exact: true });
+  check('S20line.refused', (await lineButton.getAttribute('aria-disabled')) === 'true' && (await lineButton.getAttribute('title')) === 'Requires a numeric or date/time first column.',
+    `disabled=${await lineButton.getAttribute('aria-disabled')} title=${await lineButton.getAttribute('title')}`);
+});
 
 // ---------------------------------------------------------------- S20-pie the pie chart
 // A pie is never inferred — nothing in a column's type says its values

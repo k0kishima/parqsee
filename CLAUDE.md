@@ -85,6 +85,9 @@ parqsee/
 │   ├── Info.plist                # Merged into the bundle's Info.plist: App Store Connect keys and CFBundleLocalizations
 │   ├── tauri.conf.json           # Tauri config (window, bundle, build hooks)
 │   └── tauri.appstore.conf.json  # Overlay for the store build: turns the `app-store` feature on
+├── contracts/                    # Cases both sides must agree on, read by a Rust
+│                                 # test and a Vitest one (identifier quoting,
+│                                 # sortable kinds, the temporal wire format, …)
 ├── docs/
 │   ├── ASSETS.md
 │   └── MANUAL_QA.md              # Shell-dependent checks to run on the release app
@@ -158,8 +161,8 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   is inferred from X's `chart_type` (labels → bar, time → line, numbers →
   scatter; pie is never inferred — nothing in a type says the values are
   shares of a whole, so the user picks it) among the kinds in
-  `IMPLEMENTED_CHART_KINDS` — bar and pie so far; a line and scatter stage
-  each add a renderer under `components/charts/` and its name there.
+  `IMPLEMENTED_CHART_KINDS` — bar, line and pie so far; a scatter stage
+  adds a renderer under `components/charts/` and its name there.
   `QueryChart` is the frame (the notes, the problem, the footer rule);
   each kind owns its plot, legend and selection, and
   `components/charts/chart-chrome.tsx` holds what they share.
@@ -170,9 +173,32 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   10,000 plotted points across all series (`MAX_CHART_POINTS`; past it the
   chart is refused and the SQL asked to narrow, never thinned).
   `lib/chart-scales.ts` and `lib/chart-geometry.ts` are pure; the axis is
-  its own SVG so many groups scroll under it. One focusable "data point
-  details" box walks the points with the arrow keys instead of a tab stop
-  per mark, and the pointer, the legend and the keyboard all drive it.
+  its own SVG so many groups scroll under it.
+  A date or timestamp X becomes an instant through `lib/chart-time.ts`,
+  never `Date.parse` (which reads a bare date-time as local time in some
+  engines, takes free-form text, and rolls `2024-02-30` into March): every
+  field is checked, a zoneless column's wall clock is placed in UTC rather
+  than in the machine's zone, digits finer than a millisecond are
+  truncated and the rows that lost some are counted above the plot, and a
+  row the parser refuses leaves the chart with its Y values. What shapes
+  arrive is not a guess — `contracts/temporal-wire-cases.json` is asserted
+  against arrow's JSON writer in `services::parquet` and read back by the
+  parser's test. Its axis ticks by the calendar (`timeAxis` in
+  `chart-scales.ts`): the step is one a clock or a calendar has, months
+  and years are placed from the calendar itself and weeks from a Monday,
+  the mean length of a month is used to choose a step and never to place a
+  tick, and the axis is UTC throughout. A label carries as much of the
+  instant as its step distinguishes; the axis names the rest — the days,
+  and whether the column had a zone — once beside it.
+  The line joins the rows in the order the query returned them, says so
+  when they do not run forward (`ORDER BY` is where the order is decided),
+  and cuts the path at a row with no value rather than drawing across it;
+  a point with no neighbour to join becomes a mark. It draws no mark per
+  point — ten thousand circles would be a DOM the size of the grid — so
+  the pointer is answered by measuring to the nearest vertex.
+  One focusable "data point details" box walks the points with the arrow
+  keys instead of a tab stop per mark, and the pointer, the legend and the
+  keyboard all drive it.
   The mode and the picked kind live in `QueryView` for the tab's life and
   are not in the saved session (neither the SQL nor its result is): a
   re-run of the same SQL keeps the pick, a different SQL re-infers, and
@@ -753,7 +779,15 @@ load, a restored sort kept or dropped by the file's columns), the column profile
 conditions, the partial-list note, a late answer discarded), the SQL chart
 (`features/query`: value parsing at the safe-integer and 15-digit
 boundaries, inference and availability per X type, the point cap over all
-series, exclusion counts by reason, bar geometry; the pie's conditions
+series, exclusion counts by reason, bar geometry; the temporal parser
+against the shared wire cases and at its own edges (the rollovers and
+free-form strings it refuses, years 0 to 99, the leap-year rules,
+truncation towards the earlier instant on both sides of the epoch, an
+instant a date cannot hold), the calendar ticks (the step chosen per
+span, a month that is not thirty days, Mondays, a day across a
+daylight-saving change) and the line's geometry (the path cut at a gap
+and at an unplaceable X, an isolated point, a backwards X drawn
+backwards, the nearest vertex); the pie's conditions
 and its slices (the row counts at 1 / 8 / 9 / 50 / 51, a repeated,
 empty or NULL category, negative and invalid values, zeros, one
 positive value, a truncated result, a total past the safe range, the
@@ -830,11 +864,14 @@ into the last slot, the prompt at the fourth tab, cancelled and
 completed purchases, a refund, the capped restore and Restore
 Purchases), the column profile (S19: values and NULL as conditions, the
 bins of a hundred thousand ids and a drill-down into one, non-finite
-floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; S20-pie: the kind picked by hand
+floats including a NaN click, empty strings, restored filters and stale bars), the sort (S21: a category column's ties in id order across two pages, the reverse, another column, under a filter, back to file order, the sorted export of the current page, the sort back after a relaunch), the SQL chart (S20: table first, the bar chart with its computed fills in light and dark, negative bars, exclusion counts from the real backend's big integers and NaN, the problem states, an error leaving no stale chart, 300 groups scrolling, the keyboard walk and the tooltip, the mode kept per tab, in en and ja; S20-line: a date X inferring the
+line, the calendar axis, a zoneless timestamp's caption and a zoned
+one's UTC, the microsecond counted, the path cut at a NULL, rows left in
+the order they came, the nearest-vertex tooltip; S20-pie: the kind picked by hand
 because it is never inferred, eight slices and the ninth folded into
 Other with its breakdown and its own colour, forty-three rows behind
 one slice, a zero counted and a single value as a circle, and every
-condition that refuses the kind named on its button; run both under
+condition that refuses the kind named on its button; run all three under
 `csp-server` too) or the SQL view — see its README for setup (`cargo build --example bridge`,
 `pnpm dev`, `pnpm suite`); rebuild the bridge after backend edits.
 What only the macOS shell can show — native menu shortcuts, `alert()`,
