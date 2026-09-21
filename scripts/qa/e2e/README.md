@@ -90,6 +90,11 @@ pnpm suite                 # the regression suite; exit code 1 on any FAIL/ERROR
 pnpm test                  # inject browser errors and verify the suite fails
 ONLY=S3 pnpm suite         # one scenario prefix
 pnpm large-file            # needs `uv run scripts/qa/gen_huge.py`; use a release bridge for real numbers
+                           # (the last page, and the column profile: click-to-bars per column, a page
+                           #  move during a profile, clicking along the header. Serve `frontend/dist`
+                           #  with `pnpm csp-server` and point DEV_URL at it — React's development
+                           #  build mounts an effect twice under StrictMode, so the dev server asks
+                           #  the backend twice per panel)
 BRIDGE_BIN=../../../backend/target/release/examples/bridge pnpm suite
 ```
 

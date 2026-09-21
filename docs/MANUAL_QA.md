@@ -157,8 +157,8 @@ around ten items or nobody will run it.
 | | |
 |---|---|
 | Fixture | `huge.parquet` (58M rows, 2.5 GiB, `gen_huge.py`) |
-| Steps | Open it. Jump to the last page (»). Apply the filter `x > 3`, then clear it. Export all rows to CSV (~6 GB, ~30 s) and, while it runs, page and switch tabs. Watch memory in Activity Monitor. Delete the CSV afterwards. |
-| Expected | Open < 3 s; the last page renders in well under a second; the filter count returns in < 1 s; the UI stays responsive during the export; memory stays flat (≈150 MB). |
+| Steps | Open it. Jump to the last page (»). Apply the filter `x > 3`, then clear it. Open the column profile on `category`, then on `ts`, and page while one is still loading. Export all rows to CSV (~6 GB, ~30 s) and, while it runs, page and switch tabs. Watch memory in Activity Monitor. Delete the CSV afterwards. |
+| Expected | Open < 3 s; the last page renders in well under a second; the filter count returns in < 1 s; the profile of `category` shows its bars in about a second and `ts` in about three, with the page move answering immediately either way; the UI stays responsive during the export; memory stays flat (≈150 MB) except while a profile runs, where a column with one distinct value per row holds about 1.2 GB and gives it back. |
 | Why manual | Timing and memory behaviour on the real runtime; the reference numbers above were measured on the release backend and must hold in the bundled app. |
 
 ### MQ-7 · Window and appearance
