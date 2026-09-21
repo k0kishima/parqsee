@@ -75,7 +75,10 @@ struct FileVersion {
 impl FileVersion {
     // Call only after a metadata/session fill has acquired sandbox access.
     fn read(path: &str) -> Result<Self, String> {
-        let metadata = std::fs::metadata(path).map_err(|e| format!("Cannot stat {path}: {e}"))?;
+        // Worded like the reader's own failure: opening a file is where this
+        // is reached first, and a file that is gone or unreadable must read
+        // the same on the error screen whichever of the two noticed.
+        let metadata = std::fs::metadata(path).map_err(|e| format!("Cannot open {path}: {e}"))?;
         Ok(Self {
             size: metadata.len(),
             modified: metadata.modified().map_err(|e| format!("Cannot read modification time for {path}: {e}"))?,
