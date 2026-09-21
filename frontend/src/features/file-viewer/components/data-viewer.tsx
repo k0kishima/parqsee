@@ -381,7 +381,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     );
   }
 
-  const actionButton = 'inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600';
+  const actionButton = 'inline-flex items-center px-3 py-1.5 text-sm border rounded-md transition-colors bg-white border-secondary text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600';
   const whileLoading = loading ? 'opacity-50 cursor-not-allowed' : '';
 
   const actions = (
@@ -449,13 +449,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       {/* The visible name is the tab's; this one is for assistive technology. */}
       <h1 className="sr-only">{fileName}</h1>
       {toolbarSlot === undefined ? (
-        <div className="px-2 py-1 flex items-center justify-end gap-2 border-b bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700">
+        <div className="px-2 py-1 flex items-center justify-end gap-2 border-b bg-white border-primary dark:bg-gray-800">
           {actions}
         </div>
       ) : toolbarSlot && createPortal(actions, toolbarSlot)}
 
       {/* Filter Bar - Sequel Pro Style */}
-      <div className="shadow-sm border-b border-slate-200 dark:border-gray-700">
+      <div className="shadow-sm border-b border-primary">
         <FilterBar
           ref={filterBarRef}
           columns={metadata?.columns || []}
@@ -526,7 +526,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         {!loading && (
           <>
             {/* Footer with Pagination */}
-            <div className="px-6 py-3 flex items-center justify-between border-t bg-white border-slate-200 dark:bg-gray-800 dark:border-gray-700">
+            <div className="px-6 py-3 flex items-center justify-between border-t bg-white border-primary dark:bg-gray-800">
               <div className="flex items-center space-x-3">
                 <div className="flex items-center space-x-1.5">
                   <select
@@ -539,7 +539,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                       setCurrentPage(1);
                       updateSettings({ rowsPerPage: Number(e.target.value) });
                     }}
-                    className="px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-slate-300 text-slate-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                    className="px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-secondary text-slate-700 dark:bg-gray-700 dark:text-gray-200"
                   >
                     {ROWS_PER_PAGE_OPTIONS.map((value) => (
                       <option key={value} value={value}>{value}</option>
@@ -572,7 +572,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
+                  className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed bg-white border-secondary text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
                 >
                   {t('viewer.pagination.previous')}
                 </button>
@@ -595,7 +595,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                     onBlur={() => {
                       commitPageInput();
                     }}
-                    className="w-16 px-2 py-1 text-sm text-center border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-slate-300 text-slate-700 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                    className="w-16 px-2 py-1 text-sm text-center border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-secondary text-slate-700 dark:bg-gray-700 dark:text-gray-200"
                   />
                   <span className="text-sm text-slate-600 dark:text-gray-400">{t('viewer.pagination.of', { total: totalPages })}</span>
                 </div>
@@ -603,7 +603,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed bg-white border-slate-300 text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600"
+                  className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed bg-white border-secondary text-slate-700 hover:bg-slate-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
                 >
                   {t('viewer.pagination.next')}
                 </button>

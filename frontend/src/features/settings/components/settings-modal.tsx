@@ -65,7 +65,7 @@ export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModa
     <Modal onClose={onClose} labelledBy="settings-title" panelClassName="max-w-md">
       <ModalHeader id="settings-title" title={t('settings.title')} onClose={onClose} />
 
-      <div className="py-2 divide-y divide-slate-200 dark:divide-gray-700">
+      <div className="py-2 divide-y divide-primary">
         <SettingRow label={t('settings.language')}>
           <select
             value={settings.language}

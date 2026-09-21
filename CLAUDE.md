@@ -429,10 +429,27 @@ command's answer carries the higher `revision`, since the two can cross.
    owns the storage key and schema and must not import from `contexts/` — `lib/i18n.ts`
    reads the saved language at import time, and routing that through `SettingsContext`
    would create an import cycle.
-6. Theme styling is mid-migration: `index.css` defines CSS-variable utilities
-   (`bg-primary`, `text-secondary`, `border-primary`, …) used by the newer components,
-   while older components still branch on `effectiveTheme === 'dark'` inline.
-   Prefer the CSS variables in new code.
+6. Theme styling is mid-migration. `index.css` holds the tokens and the
+   `@utility` classes that read them (`bg-primary`, `text-secondary`,
+   `border-primary`, …); newer components use them, while older ones still
+   write a Tailwind palette class per theme (`bg-gray-50 dark:bg-gray-800`).
+   Nothing branches on `effectiveTheme` any more — that is only how
+   `SettingsContext` puts the `dark` class on `<html>`.
+   Borders are the part that is finished, and they are finished because a
+   line written as a palette class drifts: the same kind of divider had
+   reached three different greys in dark mode, one lighter than the pane
+   seams and one nearly invisible, while light mode had them all within
+   0.001 of each other and so looked fine. Every line of chrome now names
+   what it is — `border-primary` for a seam between panes, `border-secondary`
+   for a control's outline, `border-subtle` for the rules inside a grid (a
+   step lighter, since a table draws one per row) — and `divide-primary` /
+   `divide-subtle` are the same colours for `divide-y`.
+   `lib/__tests__/border-tokens.test.ts` reads the components and fails on a
+   raw border colour, with the two exceptions named there: a spinner's arc
+   and the active tab painting its own background over the tab bar's line.
+   Backgrounds and text have not been migrated. Prefer the tokens in new
+   code; a border colour that is not one of the three should be a state
+   (focus, error, the drop zone's blue), not chrome.
 7. Both grids (`file-viewer/components/data-table.tsx` and
    `query/components/query-results.tsx`) only render the columns — and in the query
    grid, the rows — that overlap the scroll viewport via `hooks/useVirtualRange`,

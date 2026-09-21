@@ -400,12 +400,12 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
         apply(withBase(baseFilter, buildFilterExpression(filters, columns)));
     };
 
-    const inputBg = 'bg-white border-slate-300 text-slate-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100';
+    const inputBg = 'bg-white border-secondary text-slate-800 dark:bg-gray-800 dark:text-gray-100';
     // The same field with its text dimmed, for a select that has nothing
     // picked yet. A whole class string rather than a text colour appended to
     // `inputBg`: two text colours on one element are resolved by the order of
     // the stylesheet, not the order of the attribute.
-    const unsetInputBg = 'bg-white border-slate-300 text-slate-400 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500';
+    const unsetInputBg = 'bg-white border-secondary text-slate-400 dark:bg-gray-800 dark:text-gray-500';
     const iconButtonClass = `p-1 rounded transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700`;
 
     // One grid for every condition, so the value inputs line up whatever

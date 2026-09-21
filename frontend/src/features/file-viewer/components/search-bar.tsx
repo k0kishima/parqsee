@@ -106,7 +106,7 @@ export function SearchBar({
           onChange={(e) => setLocalInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('viewer.searchPlaceholder')}
-          className="pl-10 pr-3 py-1.5 w-56 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white border-slate-200 text-slate-800 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100"
+          className="pl-10 pr-3 py-1.5 w-56 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white border-secondary text-slate-800 dark:bg-gray-800 dark:text-gray-100"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"

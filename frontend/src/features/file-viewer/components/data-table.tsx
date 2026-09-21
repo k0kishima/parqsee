@@ -114,7 +114,7 @@ const DataRow = React.memo(function DataRow({
       onClick={() => onSelect(rowIndex)}
       className={`
         border-b cursor-pointer transition-colors
-        border-slate-100 dark:border-gray-700
+        border-subtle
         ${selected
           ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-900 dark:hover:bg-blue-800'
           : 'hover:bg-slate-50 dark:hover:bg-gray-700'
@@ -130,7 +130,7 @@ const DataRow = React.memo(function DataRow({
           <td
             key={index}
             title={mayTruncate && cellValueStr !== null ? cellValueStr : undefined}
-            className={`px-4 ${cellPadding} text-sm border-r whitespace-nowrap overflow-hidden text-ellipsis border-slate-100 dark:border-gray-700 ${activeMatchCol === index
+            className={`px-4 ${cellPadding} text-sm border-r whitespace-nowrap overflow-hidden text-ellipsis border-subtle ${activeMatchCol === index
               ? 'bg-orange-200'
               : hasSearchMatch
                 ? 'bg-yellow-100'
@@ -250,7 +250,7 @@ export const DataTable = React.memo(function DataTable({
           ))}
           {padRight > 0 && <col style={{ width: padRight }} />}
         </colgroup>
-        <thead className="sticky top-0 z-10 border-b bg-slate-100 border-slate-200 dark:bg-gray-700 dark:border-gray-600">
+        <thead className="sticky top-0 z-10 border-b bg-slate-100 border-primary dark:bg-gray-700">
           <tr>
             {padLeft > 0 && <th aria-hidden="true" />}
             {visibleColumns.map(({ index, name }) => {
@@ -261,7 +261,7 @@ export const DataTable = React.memo(function DataTable({
                 key={index}
                 title={name}
                 aria-sort={sortedBy ? (sortedBy === 'asc' ? 'ascending' : 'descending') : undefined}
-                className={`relative px-4 ${onProfileColumn ? 'pr-7' : ''} ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-slate-200 dark:text-gray-200 dark:border-gray-600 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
+                className={`relative px-4 ${onProfileColumn ? 'pr-7' : ''} ${ROW_DENSITY_CLASSES[density].header} text-left font-medium border-r whitespace-nowrap overflow-hidden text-ellipsis text-slate-700 border-primary dark:text-gray-200 ${matchedColumns.has(index) ? 'bg-yellow-100' : profiledColumn === name ? 'bg-selected' : ''
                   }`}
               >
                 {/* The name stays the cell's first element: the e2e harness

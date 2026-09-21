@@ -55,7 +55,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
   }
 
   return (
-    <div className={`flex items-stretch border-b bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-700 ${TOP_ROW_HEIGHT}`}>
+    <div className={`flex items-stretch border-b bg-gray-50 border-primary dark:bg-gray-900 ${TOP_ROW_HEIGHT}`}>
       <div className="flex items-center px-2">
         <SidebarToggle isOpen={isSidebarOpen} onToggle={onToggleSidebar} />
       </div>
@@ -71,8 +71,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabSelect
                 group flex items-center gap-2 px-3 py-2 border-t border-l border-r cursor-pointer
                 min-w-[120px] max-w-[200px] transition-all
                 ${isActive
-                  ? 'bg-white border-gray-200 border-b-white dark:bg-gray-800 dark:border-gray-600 dark:border-b-gray-800'
-                  : 'bg-gray-100 border-gray-200 hover:bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700 dark:hover:bg-gray-800/70'
+                  ? 'bg-white border-primary border-b-white dark:bg-gray-800 dark:border-secondary dark:border-b-gray-800'
+                  : 'bg-gray-100 border-primary hover:bg-gray-50 dark:bg-gray-800/50 dark:hover:bg-gray-800/70'
                 }
                 ${isActive ? 'relative top-[1px]' : ''}
               `}

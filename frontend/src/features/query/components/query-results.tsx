@@ -63,7 +63,7 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
-            <div className="p-2 border-b text-xs text-gray-500 flex justify-between gap-4 bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800">
+            <div className="p-2 border-b text-xs text-gray-500 flex justify-between gap-4 bg-gray-50 border-primary dark:bg-gray-800">
                 <span>
                     {t('viewer.query.rows', { count: result.rows.length })}
                     {result.truncated && (
@@ -193,7 +193,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
     const visibleColumns = useMemo(() => columns.slice(cols.start, cols.end), [columns, cols.start, cols.end]);
     const cellCount = visibleColumns.length + (padLeft > 0 ? 1 : 0) + (padRight > 0 ? 1 : 0);
 
-    const headerBg = 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-800';
+    const headerBg = 'bg-gray-50 border-primary dark:bg-gray-800';
 
     const onScroll = () => {
         cols.onScroll();
@@ -217,7 +217,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                             <th
                                 key={cols.start + i}
                                 title={col.name}
-                                className={`px-4 ${density.queryHeader} font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-gray-200 dark:text-gray-300 dark:border-gray-700`}
+                                className={`px-4 ${density.queryHeader} font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-primary dark:text-gray-300`}
                             >
                                 <div className="flex flex-col">
                                     <span>{col.name}</span>
@@ -228,7 +228,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                         {padRight > 0 && <th aria-hidden="true" />}
                     </tr>
                 </thead>
-                <tbody ref={tbodyRef} className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody ref={tbodyRef} className="divide-y divide-subtle">
                     {rowsVirt.padStart > 0 && (
                         <tr aria-hidden="true" style={{ height: rowsVirt.padStart }}>
                             <td colSpan={cellCount} className="p-0 border-0" />
@@ -246,7 +246,7 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                                         <td
                                             key={cols.start + c}
                                             title={mayTruncate ? text : undefined}
-                                            className={`px-4 ${density.queryCell} border-r whitespace-nowrap overflow-hidden text-ellipsis text-gray-900 border-gray-100 dark:text-gray-100 dark:border-gray-800`}
+                                            className={`px-4 ${density.queryCell} border-r whitespace-nowrap overflow-hidden text-ellipsis text-gray-900 border-subtle dark:text-gray-100`}
                                         >
                                             {text}
                                         </td>

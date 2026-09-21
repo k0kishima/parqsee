@@ -51,7 +51,7 @@ export const RecentFilesList: React.FC<RecentFilesListProps> = ({ onFileSelect }
                     shown.map((file) => (
                         <div
                             key={file.path}
-                            className={`w-full flex items-center rounded-lg border transition-all group bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:shadow-none ${file.available ? '' : 'opacity-60'}`}
+                            className={`w-full flex items-center rounded-lg border transition-all group bg-white border-primary hover:border-blue-300 hover:shadow-sm dark:bg-gray-800 dark:hover:border-secondary dark:hover:shadow-none ${file.available ? '' : 'opacity-60'}`}
                         >
                             <button
                                 onClick={() => onFileSelect(file.path)}

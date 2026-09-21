@@ -103,7 +103,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // This lazy loads tabs when they're first accessed
   // Determine styles based on theme
   const containerBg = 'bg-white dark:bg-gray-900';
-  const toolbarBg = 'bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-800';
+  const toolbarBg = 'bg-gray-50 border-primary dark:bg-gray-900';
 
   const getButtonStyle = (mode: ViewMode) => {
     const isSelected = viewMode === mode;
