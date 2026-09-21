@@ -3,6 +3,18 @@ import { Filter, X, Plus, Minus, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColumnInfo, ColumnKind } from "../api";
 import { assertNever } from "../../../lib/exhaustive";
+import {
+    conditionSql,
+    FILTER_OPERATORS,
+    isBooleanLiteral,
+    isFilterOperator,
+    isNumericLiteral,
+    KIND_LITERAL,
+    operatorCompares,
+    operatorTakesValue,
+    quoteIdentifier,
+    type FilterOperator,
+} from "../../../lib/filter-sql";
 
 interface FilterBarProps {
     columns: ColumnInfo[];
@@ -41,34 +53,13 @@ export interface FilterBarHandle {
     addConditions: (conditions: FilterCondition[]) => void;
 }
 
-export const FILTER_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IS NULL", "IS NOT NULL"] as const;
-export type FilterOperator = typeof FILTER_OPERATORS[number];
-
-export function isFilterOperator(value: string): value is FilterOperator {
-    return (FILTER_OPERATORS as readonly string[]).includes(value);
-}
-
-/**
- * How an operator uses the typed value: compared against a literal of the
- * column's type, matched as a text pattern, or not at all.
- */
-type OperatorForm = 'compare' | 'pattern' | 'unary';
-
-const OPERATOR_FORM = {
-    "=": 'compare',
-    "!=": 'compare',
-    ">": 'compare',
-    "<": 'compare',
-    ">=": 'compare',
-    "<=": 'compare',
-    "LIKE": 'pattern',
-    "IS NULL": 'unary',
-    "IS NOT NULL": 'unary',
-} satisfies Record<FilterOperator, OperatorForm>;
-
-export function operatorTakesValue(operator: FilterOperator): boolean {
-    return OPERATOR_FORM[operator] !== 'unary';
-}
+export {
+    FILTER_OPERATORS,
+    isFilterOperator,
+    operatorTakesValue,
+    quoteIdentifier,
+    type FilterOperator,
+} from "../../../lib/filter-sql";
 
 export interface FilterRow {
     /** A profile click or restored literal can deliberately select an empty value. */
@@ -106,47 +97,6 @@ function newFilterRow(column?: string): FilterRow {
  * trimmed and quoted so DataFusion coerces it to the column type (its
  * parsers do not trim, so a stray space from a paste would fail the filter).
  */
-type LiteralKind = 'number' | 'boolean' | 'text' | 'hex' | 'quoted';
-
-const KIND_LITERAL = {
-    boolean: 'boolean',
-    integer: 'number',
-    float: 'number',
-    decimal: 'number',
-    text: 'text',
-    temporal: 'quoted',
-    binary: 'hex',
-    nested: 'quoted',
-    other: 'quoted',
-} satisfies Record<ColumnKind, LiteralKind>;
-
-/**
- * DataFusion lower-cases bare identifiers, so `MixedCase` resolves to
- * nothing. The backend's `quote_identifier` escapes the same way, and it
- * has to: what this builds is sent as a `WHERE` fragment for that side to
- * plan, so a column name the two spell differently resolves in one and not
- * the other. `contracts/identifier-quoting-cases.json` is the shared list
- * both are tested against.
- */
-export const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
-const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
-
-const isBooleanLiteral = (value: string) => /^(true|false)$/i.test(value);
-const isNumericLiteral = (value: string) => value !== "" && Number.isFinite(Number(value));
-
-function formatLiteral(literal: LiteralKind, value: string): string {
-    // A value that does not parse still goes in quoted, so the backend
-    // reports a cast error instead of "no field named abc".
-    switch (literal) {
-        case 'text': return quoteLiteral(value);
-        case 'hex': return quoteLiteral(value.trim().toLowerCase());
-        case 'boolean': { const trimmed = value.trim(); return isBooleanLiteral(trimmed) ? trimmed : quoteLiteral(trimmed); }
-        case 'number': { const trimmed = value.trim(); return isNumericLiteral(trimmed) ? trimmed : quoteLiteral(trimmed); }
-        case 'quoted': return quoteLiteral(value.trim());
-        default: return assertNever(literal, 'literal kind');
-    }
-}
-
 const kindOf = (columns: ColumnInfo[], name: string): ColumnKind =>
     columns.find(c => c.name === name)?.kind ?? 'other';
 
@@ -164,7 +114,7 @@ const EXPECTS_MESSAGE_KEY = {
 } satisfies Record<InvalidFilterValue['expects'], string>;
 
 function invalidValueOf(filter: FilterRow, kind: ColumnKind): InvalidFilterValue | null {
-    if (!filter.column || OPERATOR_FORM[filter.operator] !== 'compare') return null;
+    if (!filter.column || !operatorCompares(filter.operator)) return null;
     const value = filter.value.trim();
     if (!value) return null;
     if (filter.explicitValue && kind === 'float' && ['NaN', 'Infinity', '-Infinity'].includes(value)) return null;
@@ -192,38 +142,17 @@ export function findInvalidFilterValue(filters: FilterRow[], columns: ColumnInfo
 
 /** The SQL condition for one row, or null for a row that is not filled in. */
 function conditionOf(filter: FilterRow, kind: ColumnKind): string | null {
+    // A row with no column picked states no condition. The check is here
+    // rather than inside `conditionSql`, which is handed a column already
+    // written as SQL — and `""` is a name, not an empty one.
     if (!filter.column) return null;
-    const form = OPERATOR_FORM[filter.operator];
-    if (form !== 'unary' && !filter.value.trim() && !filter.explicitValue) return null;
-
-    if (kind === 'float' && filter.value.trim() === 'NaN' &&
-        (filter.operator === '=' || filter.operator === '!=')) {
-        // NaN equality is not portable across Arrow's comparison kernels.
-        return `${filter.operator === '!=' ? 'NOT ' : ''}isnan(CAST(${quoteIdentifier(filter.column)} AS DOUBLE))`;
-    }
-    const literal = KIND_LITERAL[kind];
-    // The grid shows binary as lowercase hex, so that is what gets typed
-    // back in; compare the same rendering rather than the raw bytes. The
-    // cast folds fixed-size and large binary into the one type encode()
-    // accepts.
-    const columnRef = literal === 'hex'
-        ? `encode(CAST(${quoteIdentifier(filter.column)} AS BYTEA), 'hex')`
-        : quoteIdentifier(filter.column);
-
-    switch (form) {
-        case 'unary':
-            return `${columnRef} ${filter.operator}`;
-        case 'pattern': {
-            // Patterns only apply to text, so cast anything else to keep
-            // partial matches working on numbers and dates.
-            const target = literal === 'text' || literal === 'hex' ? columnRef : `CAST(${columnRef} AS TEXT)`;
-            return `${target} ${filter.operator} ${quoteLiteral(filter.value)}`;
-        }
-        case 'compare':
-            return `${columnRef} ${filter.operator} ${formatLiteral(literal, filter.value)}`;
-        default:
-            return assertNever(form, 'operator form');
-    }
+    return conditionSql({
+        column: quoteIdentifier(filter.column),
+        operator: filter.operator,
+        value: filter.value,
+        kind,
+        explicitValue: filter.explicitValue,
+    });
 }
 
 /** Build the WHERE fragment the backend appends to `SELECT * FROM t`. */
