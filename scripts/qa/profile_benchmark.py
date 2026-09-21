@@ -39,24 +39,20 @@ Four sections, each switchable off:
 
 import argparse
 import json
-import os
-import platform
 import statistics
-import subprocess
 import tempfile
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
 import psutil
 
+from bench_common import DEFAULT_BRIDGE, ROOT, output_path, report_header, resolve_inputs, spawn_bridge, stop_bridge, write_report
 
-ROOT = Path(__file__).resolve().parents[2]
+
 DEFAULT_DATASET = ROOT / "scripts" / "qa" / "fixtures" / "huge.parquet"
-DEFAULT_BRIDGE = ROOT / "backend" / "target" / "release" / "examples" / "bridge"
 SECTIONS = ("columns", "concurrency", "pileup", "abandonment")
 
 
@@ -150,14 +146,7 @@ class Bridge:
         self.sequence = 0
         self.lock = threading.Lock()
         self.pending: dict[int, Call] = {}
-        self.process = subprocess.Popen(
-            [str(binary)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            env={**os.environ, "PARQSEE_DATA_DIR": str(state_dir)},
-        )
-        assert self.process.stdin is not None and self.process.stdout is not None
+        self.process = spawn_bridge(binary, state_dir)
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
         self.usage = Usage(self.process.pid, sample_ms)
@@ -191,12 +180,7 @@ class Bridge:
 
     def close(self) -> None:
         self.usage.stop()
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
+        stop_bridge(self.process)
 
 
 class Usage:
@@ -270,11 +254,6 @@ def fresh_bridge(spawn: Spawn, dataset: str) -> Iterator[Bridge]:
         yield bridge
     finally:
         bridge.close()
-
-
-def git_revision() -> str | None:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True, check=False)
-    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def chart_shape(profile: dict[str, Any]) -> dict[str, Any]:
@@ -567,15 +546,8 @@ def measure_abandonment(spawn: Spawn, dataset: str, args: argparse.Namespace) ->
 
 def main() -> None:
     args = parse_args()
-    dataset = args.dataset.resolve()
-    bridge_path = args.bridge.resolve()
-    if not dataset.is_file():
-        raise SystemExit(f"dataset does not exist: {dataset}")
-    if not bridge_path.is_file():
-        raise SystemExit(f"bridge does not exist: {bridge_path}; build it with cargo build --release --example bridge")
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output = (args.output or Path(tempfile.gettempdir()) / f"parqsee-profile-benchmark-{timestamp}.json").resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
+    dataset, bridge_path = resolve_inputs(args.dataset, args.bridge)
+    output = output_path(args.output, "profile")
     sections = [s for s in SECTIONS if s not in args.skip]
 
     measured: dict[str, Any] = {}
@@ -595,20 +567,8 @@ def main() -> None:
         if "abandonment" in sections:
             measured["abandonment"] = measure_abandonment(spawn, str(dataset), args)
 
-    stat = dataset.stat()
     report = {
-        "measured_at_utc": datetime.now(timezone.utc).isoformat(),
-        "git_revision": git_revision(),
-        "platform": platform.platform(),
-        "python": platform.python_version(),
-        "bridge": str(bridge_path),
-        "dataset": {
-            "path": str(dataset),
-            "size_bytes": stat.st_size,
-            "modified_ns": stat.st_mtime_ns,
-            "rows": metadata["num_rows"],
-            "columns": metadata["num_columns"],
-        },
+        **report_header(bridge_path, dataset, metadata),
         "conditions": {
             "columns": args.columns,
             "filters": [{"label": label, "sql": sql} for label, sql in args.filters],
@@ -624,8 +584,7 @@ def main() -> None:
         },
         **measured,
     }
-    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"results: {output}")
+    write_report(output, report)
 
 
 if __name__ == "__main__":
