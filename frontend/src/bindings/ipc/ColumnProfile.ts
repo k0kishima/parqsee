@@ -15,4 +15,12 @@ total_rows: number, null_count: number,
  * Distinct non-null values; absent for a type the count is not
  * defined on (nested, interval).
  */
-distinct_count: number | null, chart: ProfileChart, };
+distinct_count: number | null, 
+/**
+ * Whether `distinct_count` is an estimate. An exact count keeps every
+ * distinct value in memory and cannot spill, so on a large column it
+ * asks for more than the session's memory pool has; the profile then
+ * estimates rather than failing, and says so here — a number the panel
+ * prints unqualified would be read as the count it is not.
+ */
+distinct_approximate: boolean, chart: ProfileChart, };

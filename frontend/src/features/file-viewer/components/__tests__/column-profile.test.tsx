@@ -24,6 +24,7 @@ const topValues: ColumnProfile = {
   total_rows: 5,
   null_count: 1,
   distinct_count: 3,
+  distinct_approximate: false,
   chart: { shape: 'top_values', values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }, { value: 'c', count: 1 }], other: 0 },
 };
 
@@ -33,6 +34,7 @@ const histogram: ColumnProfile = {
   total_rows: 100,
   null_count: 0,
   distinct_count: 90,
+  distinct_approximate: false,
   chart: {
     shape: 'histogram',
     buckets: [{ lower: '0', upper: '0.5', upper_inclusive: false, count: 60 }, { lower: '0.5', upper: '1', upper_inclusive: false, count: 37 }],
@@ -122,7 +124,7 @@ describe('ColumnProfilePanel', () => {
   });
 
   it('keeps the counts for a column with no chart', async () => {
-    mockProfileColumn.mockResolvedValue({ column: 'li', kind: 'nested', total_rows: 3, null_count: 1, distinct_count: null, chart: { shape: 'unsupported' } });
+    mockProfileColumn.mockResolvedValue({ column: 'li', kind: 'nested', total_rows: 3, null_count: 1, distinct_count: null, distinct_approximate: false, chart: { shape: 'unsupported' } });
     renderPanel({ ...cat, name: 'li', kind: 'nested' });
     expect(await screen.findByText('viewer.profile.noChart')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
@@ -191,5 +193,23 @@ describe('ColumnProfilePanel', () => {
     // Closing the panel is the other way to stop waiting.
     unmount();
     expect(mockCancelProfile).toHaveBeenCalledWith(secondId);
+  });
+
+  // A column too wide to count exactly is answered with an estimate, and
+  // the panel has to say so: the number would otherwise be read as a count.
+  it('marks an estimated distinct count as one and says why there is no exact number', async () => {
+    mockProfileColumn.mockResolvedValue({
+      ...topValues,
+      total_rows: 58_000_000,
+      distinct_count: 57_963_093,
+      distinct_approximate: true,
+      chart: { ...topValues.chart, other: 57_999_997 },
+    });
+    renderPanel(cat);
+
+    expect(await screen.findByText('≈ 57,963,093')).toBeInTheDocument();
+    expect(screen.getByText('viewer.profile.distinctEstimated')).toBeInTheDocument();
+    // Not as a plain number beside "Rows" and "NULL".
+    expect(screen.queryByText('57,963,093')).not.toBeInTheDocument();
   });
 });

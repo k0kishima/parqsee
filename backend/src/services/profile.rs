@@ -25,11 +25,13 @@
 //! What a profile costs is the counts query, and inside it the
 //! `COUNT(DISTINCT)`: on 58M rows a low-cardinality column answers in about a
 //! second and holds 40 MB, while one distinct value per row takes two to three
-//! seconds and 1.2 GB — and a text column of 58M distinct values is refused
-//! outright, because the distinct aggregate cannot spill and exhausts the
-//! session's 2 GiB pool after about 1.9 GB (the process had 4.3 GB resident by
-//! then: the pool tracks less than arrow actually holds). The webview is left
-//! with DataFusion's own sentence about `AggregateStream` reservations.
+//! seconds and 1.2 GB — and a text column of 58M distinct values cannot be
+//! counted exactly at all, because the distinct aggregate cannot spill and
+//! exhausts the session's 2 GiB pool after about 1.9 GB (the process had
+//! 4.3 GB resident by then: the pool tracks less than arrow actually holds).
+//! That column is estimated instead (`approx_distinct`, a sketch of a fixed
+//! size) and the answer says the number is an estimate, so the panel can
+//! print it as one.
 //! That reservation is also why a superseded profile is cancelled rather
 //! than merely ignored (`services::profile_requests`): while nothing stopped
 //! the abandoned scan, clicking along four columns of that file ended with
@@ -50,7 +52,8 @@ use datafusion::prelude::SessionContext;
 
 use crate::models::{ColumnKind, ColumnProfile, HistogramBucket, ProfileChart, ValueCount};
 use crate::services::parquet::{
-    batches_to_rows, execute_sql_with_cache, quote_identifier, where_clause, ParquetCache,
+    batches_to_rows, execute_sql_with_cache, is_memory_exhausted, quote_identifier, where_clause,
+    ParquetCache,
 };
 
 /// What a profile aggregates over. Both answer SQL against a table called
@@ -203,22 +206,49 @@ pub async fn profile(
     // COUNT(DISTINCT) is not defined on a list or a struct, and an
     // interval's ordering is not one a chart could use either.
     let countable = !matches!(kind, ColumnKind::Nested | ColumnKind::Other);
-    let counts_query = if countable {
-        format!(
-            "SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM t{}",
-            where_sql(filter, &[])
-        )
-    } else {
-        format!("SELECT COUNT(*), COUNT({col}) FROM t{}", where_sql(filter, &[]))
+    let counts = |distinct: Option<&str>| {
+        let third = distinct.map(|d| format!(", {d}")).unwrap_or_default();
+        format!("SELECT COUNT(*), COUNT({col}){third} FROM t{}", where_sql(filter, &[]))
     };
-    let (batches, _) = source.query(&counts_query).await?;
+    let (batches, distinct_approximate) = if countable {
+        match source.query(&counts(Some(&format!("COUNT(DISTINCT {col})")))).await {
+            Ok((batches, _)) => (batches, false),
+            // An exact count keeps every distinct value in a hash set that
+            // cannot spill, so a column with tens of millions of them asks
+            // for more than the session's pool holds. An estimate is a
+            // sketch of a fixed size: it answers where the exact count gives
+            // up, and the panel prints it as an estimate. Anything else that
+            // could fail here — a filter that does not parse, a column the
+            // query cannot resolve — fails the estimate too, and the first
+            // error is the one that says what is wrong.
+            Err(exhausted) if is_memory_exhausted(&exhausted) => {
+                // Cast because the sketch counts in `UInt64` while every
+                // other count here arrives as `Int64`, and the cell is read
+                // by type.
+                match source
+                    .query(&counts(Some(&format!("CAST(approx_distinct({col}) AS BIGINT)"))))
+                    .await
+                {
+                    Ok((batches, _)) => (batches, true),
+                    Err(_) => return Err(exhausted),
+                }
+            }
+            Err(other) => return Err(other),
+        }
+    } else {
+        (source.query(&counts(None)).await?.0, false)
+    };
     let total_rows = count_cell(&batches, 0)?;
     let non_null = count_cell(&batches, 1)?;
     let distinct_count = if countable { Some(count_cell(&batches, 2)?) } else { None };
 
     let chart = match distinct_count {
         None => ProfileChart::Unsupported,
-        Some(distinct) if distinct <= TOP_VALUES => top_values(source, col, filter, non_null).await?,
+        // An estimate never takes the branch that lists every value: the
+        // list would claim to be complete on a count that is not exact.
+        Some(distinct) if distinct <= TOP_VALUES && !distinct_approximate => {
+            top_values(source, col, filter, non_null).await?
+        }
         Some(_) if matches!(
             kind,
             ColumnKind::Integer | ColumnKind::Float | ColumnKind::Decimal | ColumnKind::Temporal
@@ -235,6 +265,7 @@ pub async fn profile(
         total_rows,
         null_count: total_rows.saturating_sub(non_null),
         distinct_count,
+        distinct_approximate,
         chart,
     })
 }
@@ -548,6 +579,48 @@ mod tests {
             ),
             other => panic!("expected a histogram, got {other:?}"),
         }
+    }
+
+    /// The exact distinct count is a hash set of every value and cannot
+    /// spill, so a wide enough column asks for more than the session's pool
+    /// holds. The profile answers with an estimate rather than the error
+    /// DataFusion raises, and says that is what it is.
+    #[tokio::test]
+    async fn a_distinct_count_past_the_memory_pool_is_estimated_and_says_so() {
+        let values: Vec<String> = (0..200_000).map(|n| format!("value-{n:018}")).collect();
+        let path = fixture(
+            "wide_distinct.parquet",
+            vec![(
+                "token",
+                Arc::new(StringArray::from(values.iter().map(String::as_str).collect::<Vec<_>>())) as ArrayRef,
+            )],
+        );
+
+        let exact = profile_column(&ParquetCache::new(), &path, "token", None).await.unwrap();
+        assert_eq!(exact.distinct_count, Some(200_000));
+        assert!(!exact.distinct_approximate, "an exact count that fits is not an estimate");
+
+        // 16 MiB is between the two aggregates this column needs: the
+        // exact count keeps a `ScalarValue` per distinct value and wants
+        // more, while the chart's group-by holds the same values in its
+        // compact row format and fits with room for the top-k above it. A
+        // bigger pool would count exactly and never reach the estimate.
+        let cramped = ParquetCache::new().with_memory_limit(16 * 1024 * 1024);
+        let estimated = profile_column(&cramped, &path, "token", None).await.unwrap();
+        assert!(estimated.distinct_approximate, "the count that did not fit is not marked as an estimate");
+        let estimate = estimated.distinct_count.expect("an estimate, not nothing");
+        // A sketch, not a count: near the truth and never sold as exact.
+        assert!(
+            (180_000..=220_000).contains(&estimate),
+            "estimate {estimate} is not within 10% of 200,000"
+        );
+        assert_eq!(estimated.total_rows, 200_000);
+        assert_eq!(estimated.null_count, 0);
+        // Twenty values out of forty thousand: the estimate cannot turn the
+        // chart into a list that claims to be complete.
+        let (values, other) = top_values(&estimated.chart);
+        assert_eq!(values.len(), TOP_VALUES);
+        assert_eq!(other, 200_000 - TOP_VALUES);
     }
 
     #[tokio::test]

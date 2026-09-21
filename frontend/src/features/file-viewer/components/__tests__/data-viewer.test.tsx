@@ -151,7 +151,7 @@ describe('DataViewer search commands', () => {
 describe('DataViewer column profile', () => {
   beforeEach(() => {
     mockProfileColumn.mockResolvedValue({
-      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2,
+      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2, distinct_approximate: false,
       chart: { shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0 },
     });
   });
@@ -194,7 +194,7 @@ describe('DataViewer column profile', () => {
 
   it('keeps the panel open on a bucket and re-profiles the range under the filter', async () => {
     mockProfileColumn.mockResolvedValue({
-      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 90,
+      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 90, distinct_approximate: false,
       chart: { shape: 'histogram', buckets: [{ lower: '0', upper: '50', upper_inclusive: false, count: 60 }], other: 40 },
     });
     render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);

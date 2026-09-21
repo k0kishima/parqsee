@@ -205,6 +205,8 @@
       "rows": "行数",
       "nulls": "NULL",
       "distinct": "種類数",
+      "distinctApproximate": "約 {{value}}",
+      "distinctEstimated": "種類をすべて正確に数えるにはこのファイルのセッションのメモリでは足りないため、種類数は推定値です。",
       "values": "値",
       "topValues": "{{distinct}} 種類のうち上位 {{shown}} 件",
       "distribution": "分布",

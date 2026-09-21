@@ -315,9 +315,21 @@ function ProfileRequest({ name, typeLabel, columnRef, load, notice, onClose, onA
               />
               <Stat
                 label={t('viewer.profile.distinct')}
-                value={profile.distinct_count === null ? '—' : profile.distinct_count.toLocaleString()}
+                value={
+                  profile.distinct_count === null
+                    ? '—'
+                    : profile.distinct_approximate
+                      // An estimate that printed like a count would be read
+                      // as one; the sign says what it is and the line below
+                      // says why there is no exact number.
+                      ? t('viewer.profile.distinctApproximate', { value: profile.distinct_count.toLocaleString() })
+                      : profile.distinct_count.toLocaleString()
+                }
               />
             </dl>
+            {profile.distinct_approximate && (
+              <p className="text-xs text-tertiary">{t('viewer.profile.distinctEstimated')}</p>
+            )}
             {chart}
           </div>
         ) : null}

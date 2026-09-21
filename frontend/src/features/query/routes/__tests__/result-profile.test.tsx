@@ -42,6 +42,7 @@ const profileOf = (extra: Partial<ColumnProfile> = {}): ColumnProfile => ({
   total_rows: 3,
   null_count: 0,
   distinct_count: 2,
+  distinct_approximate: false,
   chart: { shape: 'top_values', values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }], other: 0 },
   ...extra,
 });
