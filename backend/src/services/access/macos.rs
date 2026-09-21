@@ -107,4 +107,27 @@ mod tests {
         std::fs::remove_file(&moved).unwrap();
         assert!(provider.resolve(&bookmark).is_err());
     }
+
+    /// The path a bookmark resolves to is the canonical one — the symlink
+    /// here stands in for `/tmp`, and for `/var`, which the temp directory
+    /// itself is reached through. `FileAccess` records the path the user
+    /// opened, so its checks have to reach past the difference.
+    #[test]
+    fn a_file_recorded_through_a_symlink_is_still_found() {
+        let dir = temp_path("access-macos", "symlinked-path");
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        let link = dir.join("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(dir.join("real"), &link).unwrap();
+        let file = link.join("f.parquet");
+        std::fs::write(&file, b"x").unwrap();
+        let path = file.to_string_lossy().into_owned();
+
+        let access = crate::services::access::FileAccess::load(Box::new(MacBookmarks), Some(&dir));
+        access.remember_file(&path).unwrap();
+        // The tab is closed; the next check has to resolve the bookmark.
+        access.release(&path);
+
+        assert!(access.file_exists(&path));
+    }
 }
