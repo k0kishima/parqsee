@@ -39,6 +39,19 @@ use crate::services::access::FileAccess;
 /// machine, since even a spilling sort needs memory for its merge batches.
 pub const SESSION_MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
+/// Whether a query failed because it wanted more than `SESSION_MEMORY_LIMIT`.
+/// DataFusion reports the memory pool's refusal as a `ResourcesExhausted`
+/// error, and by the time a query's error reaches a caller here it is a
+/// `String`, so the wording is all there is to go on. It decides both what
+/// the user is told (the grid and an export each name their own way out)
+/// and whether a top-k retries as the spillable full sort, which is why
+/// the three callers must agree on it: a wording that stopped matching
+/// would turn the retry into a plain failure without any test noticing
+/// the message changed.
+pub fn is_memory_exhausted(error: &str) -> bool {
+    error.contains("Resources exhausted")
+}
+
 // Shared across files, not an additional allowance for every open tab.
 const RESULT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const RESULT_CACHE_ENTRIES: usize = 64;
@@ -1318,7 +1331,7 @@ pub async fn read_data(
     if let Some(sort) = sort {
         let batches = sorted_page_batches(cache, path, offset, limit, filter, sort, ResultCachePolicy::Populate)
             .await.map_err(|e| {
-                if e.contains("Resources exhausted") {
+                if is_memory_exhausted(&e) {
                     "This page is too deep into the sort for a file this large: sorting it \
                      needs more memory than the app allows itself. Narrow the rows with a \
                      filter, page from the other end, or sort in the SQL view.".to_string()
@@ -1433,7 +1446,7 @@ async fn sorted_rows(
         return Ok(batches);
     }
     let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
-        Err(e) if !full_sort && e.contains("Resources exhausted") => {
+        Err(e) if !full_sort && is_memory_exhausted(&e) => {
             run_browse_query(&ctx, query, true).await?
         }
         other => other?,
@@ -3127,7 +3140,7 @@ mod tests {
         let order = super::sort_order(&sort, &cache.get_or_create_metadata(&file).await.unwrap().columns).unwrap();
         let query = super::build_position_query(None, &order, Some(offset), Some(50));
         let err = super::run_browse_query(&ctx, &query, false).await.unwrap_err();
-        assert!(err.contains("Resources exhausted"), "{err}");
+        assert!(super::is_memory_exhausted(&err), "{err}");
 
         let rows = super::read_data(&cache, &file, offset, 50, None, Some(sort)).await.unwrap();
         assert_eq!(rows.len(), 50);
