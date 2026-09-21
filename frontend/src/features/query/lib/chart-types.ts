@@ -112,6 +112,14 @@ export interface ChartModel {
   points: ChartPoint[];
   /** Min and max over every plotted Y, or null without a point. */
   yExtent: { min: number; max: number } | null;
+  /** Min and max over the X of every placeable row, or null when X has no coordinate. */
+  xExtent: { min: number; max: number } | null;
+  /**
+   * The rows do not run forward along X. The chart connects them in the
+   * order the query returned rather than sorting behind the SQL, so a line
+   * that doubles back says so and points at `ORDER BY`.
+   */
+  xOutOfOrder: boolean;
   diagnostics: ChartDiagnostics;
   /** Something that stops every kind; the per-kind entries repeat it. */
   problem: ChartProblem | null;

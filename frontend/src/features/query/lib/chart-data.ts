@@ -202,6 +202,8 @@ function emptyModel(problem: ChartProblem, truncated: boolean): ChartModel {
     rows: [],
     points: [],
     yExtent: null,
+    xExtent: null,
+    xOutOfOrder: false,
     diagnostics: { candidatePoints: 0, excludedPoints: 0, byReason: { missing: 0, nonFinite: 0, precision: 0, invalid: 0 }, ignoredColumns: [], subMillisecondRows: 0 },
     problem,
     availability: allUnavailable(problem),
@@ -254,6 +256,10 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   let min = Infinity;
   let max = -Infinity;
   let subMillisecondRows = 0;
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let xOutOfOrder = false;
+  let previousX: number | null = null;
   rows.forEach((row, rowIndex) => {
     const placed = placeRow(xKind, xColumn.chart_type, rowIndex, row[xColumn.name]);
     chartRows.push(placed.row);
@@ -261,6 +267,13 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
     if (placed.reason) {
       byReason[placed.reason] += series.length;
       return;
+    }
+    const x = placed.row.value;
+    if (x !== null) {
+      if (x < xMin) xMin = x;
+      if (x > xMax) xMax = x;
+      if (previousX !== null && x < previousX) xOutOfOrder = true;
+      previousX = x;
     }
     for (const s of series) {
       const raw = row[s.name];
@@ -281,6 +294,7 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   const candidatePoints = rows.length * series.length;
   const diagnostics = { candidatePoints, excludedPoints: candidatePoints - valid, byReason, ignoredColumns, subMillisecondRows };
   const yExtent = valid > 0 ? { min, max } : null;
+  const xExtent = xMin <= xMax ? { min: xMin, max: xMax } : null;
 
   let problem: ChartProblem | null = null;
   if (valid === 0) problem = { code: 'noValidPoints' };
@@ -289,15 +303,20 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   // the table has them, a rescale in SQL puts them on a chart.
   else if (yExtent && !Number.isFinite(yExtent.max - yExtent.min)) problem = { code: 'unsafeRange' };
 
-  const base: ChartModel = { x, series, rows: chartRows, points: problem ? [] : points, yExtent, diagnostics, problem, availability: allUnavailable(problem ?? { code: 'empty' }), inferred: null, truncated };
+  const base: ChartModel = { x, series, rows: chartRows, points: problem ? [] : points, yExtent, xExtent, xOutOfOrder, diagnostics, problem, availability: allUnavailable(problem ?? { code: 'empty' }), inferred: null, truncated };
   if (problem) return base;
 
   const continuous = xKind === 'numeric' || xKind === 'date' || xKind === 'timestamp';
+  // Two X coordinates whose difference overflows cannot share an axis, the
+  // same way two Y values cannot; the kinds that place X keep their hands off.
+  const placeableX = continuous && xExtent !== null && Number.isFinite(xExtent.max - xExtent.min);
+  const continuousX = (kind: ChartKind): ChartAvailability =>
+    placeableX ? AVAILABLE : unavailable(continuous ? 'unsafeRange' : kind === 'line' ? 'continuousXRequired' : 'numericXRequired');
   const pie = pieData(base);
   const availability: Record<ChartKind, ChartAvailability> = {
     bar: AVAILABLE,
-    line: continuous ? AVAILABLE : unavailable('continuousXRequired'),
-    scatter: xKind === 'numeric' ? AVAILABLE : unavailable('numericXRequired'),
+    line: continuousX('line'),
+    scatter: xKind === 'numeric' ? continuousX('scatter') : unavailable('numericXRequired'),
     pie: pie.ok ? AVAILABLE : { available: false, reason: pie.reason },
   };
   return { ...base, availability, inferred: inferChartKind(xKind, availability, implemented) };
