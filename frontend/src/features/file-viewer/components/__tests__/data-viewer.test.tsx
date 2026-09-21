@@ -46,21 +46,27 @@ const applyFilter = async (value: string) => {
   await user.click(screen.getByText('common.apply'));
 };
 
+/**
+ * A backend that answers every call, so each suite below only sets up what
+ * it is actually about. `clearAllMocks` comes first: a `mockResolvedValueOnce`
+ * left over from one test would otherwise answer the next one's first call.
+ */
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockOpenParquetFile.mockResolvedValue(metadata);
+  mockReadParquetData.mockResolvedValue([{ id: 1 }]);
+  mockCountParquetData.mockResolvedValue(5);
+  mockEvictCache.mockResolvedValue(undefined);
+});
+
+/** The viewer on screen with its first page loaded. */
+const renderViewer = async (initialState?: Parameters<typeof DataViewer>[0]['initialState']) => {
+  render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={initialState} />);
+  await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+};
+
 describe('DataViewer failed-load rollback', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockOpenParquetFile.mockResolvedValue(metadata);
-    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
-    mockCountParquetData.mockResolvedValue(5);
-    mockEvictCache.mockResolvedValue(undefined);
-  });
-
-  const renderViewer = async () => {
-    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
-    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
-  };
-
   it('rolls the filter back when the filtered load fails, without an echo reload', async () => {
     await renderViewer();
     mockCountParquetData.mockRejectedValueOnce('boom: bad filter');
@@ -127,13 +133,6 @@ describe('DataViewer failed-load rollback', () => {
 });
 
 describe('DataViewer search commands', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockOpenParquetFile.mockResolvedValue(metadata);
-    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
-    mockEvictCache.mockResolvedValue(undefined);
-  });
-
   it('opens the search bar on the find command, only while it is the view on screen', async () => {
     const isActiveRef = { current: false };
     render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} isActiveRef={isActiveRef} />);
@@ -151,11 +150,6 @@ describe('DataViewer search commands', () => {
 
 describe('DataViewer column profile', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockOpenParquetFile.mockResolvedValue(metadata);
-    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
-    mockCountParquetData.mockResolvedValue(5);
-    mockEvictCache.mockResolvedValue(undefined);
     mockProfileColumn.mockResolvedValue({
       column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2,
       chart: { shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0 },
@@ -220,19 +214,6 @@ describe('DataViewer column profile', () => {
 });
 
 describe('DataViewer sort', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockOpenParquetFile.mockResolvedValue(metadata);
-    mockReadParquetData.mockResolvedValue([{ id: 1 }]);
-    mockCountParquetData.mockResolvedValue(5);
-    mockEvictCache.mockResolvedValue(undefined);
-  });
-
-  const renderViewer = async (initialState?: Parameters<typeof DataViewer>[0]['initialState']) => {
-    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={initialState} />);
-    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
-  };
   const sortButton = () => screen.getByTitle('viewer.sort.toggle');
   const header = () => screen.getByTitle('id');
 
