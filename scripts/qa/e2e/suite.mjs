@@ -1685,6 +1685,90 @@ await scenario('S20-pie-ja-dark', async ({ page }) => {
   await screenshot(page, { path: `${OUT}/shots/S20-pie-ja-dark.png` });
 }, { localStorage: { 'parqsee-settings': JSON.stringify({ language: 'ja', theme: 'dark', rowsPerPage: 50 }) } });
 
+
+// ---------------------------------------------------------------- S22 the profile of a SQL result
+// The rows here are the ones the query returned, held by the backend in
+// their own Arrow types: the point of keeping them is that a big integer
+// and a decimal are strings by the time the grid has them, and a
+// distinct count over strings is a count of strings.
+await scenario('S22-result-profile', async ({ page, bridge }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  const c = chartSql(page);
+  // The browse grid is in the panel too, only hidden; the result sits under `.z-0`.
+  const profileButton = (col) => act(page).locator(`.z-0 thead th button[aria-label="Profile column ${col}"]`);
+  const panel = () => act(page).locator('.z-0 aside[aria-label^="Profile of "]');
+  const PANEL_BARS = `${ACTIVE_PANEL} .z-0 aside[aria-label^="Profile of "] ul button`;
+  const waitBars = (expected, timeout = 30000) => page.waitForFunction(
+    ([sel, want]) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label')).join('|') === want,
+    [PANEL_BARS, expected], { timeout }
+  );
+  const rowCount = () => act(page).locator('.z-0 tbody tr[data-row]').count();
+  const footer = () => act(page).locator('text=/rows?$|^\\d+ rows/').first().textContent().catch(() => 'none');
+  const profiled = () => bridge.log.filter(l => l.cmd === 'profile_query_column').map(l => l.args);
+
+  // Seven groups over a hundred thousand rows, counted by the query; the
+  // profile then describes those seven rows, not the file.
+  await c.run('SELECT grp, COUNT(*) AS n FROM t GROUP BY grp ORDER BY grp');
+  await profileButton('grp').click();
+  await waitBars('0: 1|1: 1|2: 1|3: 1|4: 1|5: 1|6: 1');
+  const stats = await panel().locator('dd').allTextContents();
+  check('S22.overResult', stats.join('|') === '7|0 0%|7', stats.join('|'));
+  check('S22.byPosition', profiled().some(a => a.columnIndex === 0 && a.resultId), JSON.stringify(profiled()));
+  await screenshot(page, { path: `${OUT}/shots/S22.png` });
+
+  // A click narrows the rows on screen and says so, and the SQL is untouched.
+  await panel().locator('ul button').first().click();
+  await page.waitForFunction(sel => document.querySelectorAll(sel).length === 1, `${ACTIVE_PANEL} .z-0 tbody tr[data-row]`);
+  check('S22.narrowed', (await rowCount()) === 1, `rows=${await rowCount()}`);
+  check('S22.sqlUntouched', (await c.ta.inputValue()) === 'SELECT grp, COUNT(*) AS n FROM t GROUP BY grp ORDER BY grp', await c.ta.inputValue());
+  check('S22.conditionNamed', (await act(page).locator('text=/^grp = /').first().textContent()) === 'grp = 0', await act(page).locator('text=/^grp = /').first().textContent().catch(() => 'none'));
+  // grp is an INT32, so the clicked value is written as a number: the
+  // condition is built from the kind the backend gave the column.
+  check('S22.narrowedSql', bridge.log.some(l => l.cmd === 'filter_query_result' && l.args.filter === 'c0 = 0'),
+    JSON.stringify(bridge.log.filter(l => l.cmd === 'filter_query_result').map(l => l.args)));
+  // The footer counts the rows the grid has, which are the narrowed ones.
+  check('S22.footerAgrees', (await footer()) === '1 rows', await footer());
+
+  // Clearing puts every row back.
+  await act(page).locator('button:has-text("Clear")').last().click();
+  await page.waitForFunction(sel => document.querySelectorAll(sel).length === 7, `${ACTIVE_PANEL} .z-0 tbody tr[data-row]`);
+  check('S22.cleared', (await rowCount()) === 7 && (await act(page).locator('text=/^Narrowed to/').count()) === 0, `rows=${await rowCount()}`);
+
+  // A column with no name of its own is still reachable, by position.
+  await c.run('SELECT grp, COUNT(*) FROM t GROUP BY grp ORDER BY grp');
+  const derived = act(page).locator('.z-0 thead th button[aria-label^="Profile column "]').nth(1);
+  await derived.click();
+  await page.waitForFunction(sel => document.querySelectorAll(sel).length > 0, PANEL_BARS, { timeout: 30000 });
+  const counts = await panel().locator('ul button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')));
+  const rowsBehind = counts.reduce((sum, label) => sum + Number(label.split(': ').pop()), 0);
+  check('S22.derivedColumn', profiled().some(a => a.columnIndex === 1) && rowsBehind === 7,
+    `${counts.join('|')} over ${rowsBehind} rows`);
+
+  // The exact digits of an integer past 2^53 survive, which is the whole
+  // reason the rows are kept as Arrow rather than re-read from the grid.
+  await c.run('SELECT CAST(9007199254740993 AS BIGINT) AS big FROM t LIMIT 2');
+  await profileButton('big').click();
+  await waitBars('9007199254740993: 2');
+  const exact = await panel().locator('ul button').first().getAttribute('aria-label');
+  check('S22.bigInteger', exact === '9007199254740993: 2', exact);
+
+  // A result cut at the row limit profiles what came back, and says so.
+  await c.run('SELECT id FROM t LIMIT 10001');
+  await profileButton('id').click();
+  await act(page).locator('text=/^Of the .* rows returned/').first().waitFor();
+  check('S22.truncatedSaid', ((await act(page).locator('text=/^Of the .* rows returned/').first().textContent()) ?? '').includes('10,000'),
+    await act(page).locator('text=/^Of the .* rows returned/').first().textContent().catch(() => 'none'));
+
+  // A new result is a new set of rows: the panel and the conditions go,
+  // and the rows kept for the old one are let go.
+  const released = () => bridge.log.filter(l => l.cmd === 'release_query_result').length;
+  const before = released();
+  await c.run('SELECT grp FROM t GROUP BY grp');
+  check('S22.panelClosed', (await panel().count()) === 0, `panels=${await panel().count()}`);
+  check('S22.released', released() > before, `release calls: ${before} -> ${released()}`);
+});
+
 // ---------------------------------------------------------------- S21 column sort
 const S21_DATA = path.join(OUT, 'data', 's21');
 const S21_OUT = `${OUT}/e2e_sort_exports`;
