@@ -14,6 +14,7 @@ import {
   type NumericKind,
   type XKind,
 } from './chart-types';
+import { parseDateValue, parseTimestampValue } from './chart-time';
 import { pieData } from './pie-data';
 
 /**
@@ -119,15 +120,23 @@ export function xKindOf(type: QueryChartType): XKind {
   }
 }
 
+interface PlacedRow {
+  row: ChartRow;
+  reason: ExclusionReason | null;
+  /** The X was a time finer than a millisecond and was truncated to one. */
+  subMillisecond?: boolean;
+}
+
 /**
- * The first column as an axis position. A category, a date or a timestamp
- * is a label per row here — the temporal axis is the line chart's, and
- * until it exists a bar chart lists the rows as they came. A numeric X
- * goes through the same parser as a Y: a big integer is not rescued as a
- * label, since the bar would then sit at a place the number does not have.
+ * The first column as an axis position. A category is a label per row and
+ * has no coordinate — the bar chart lists those rows as they came. A
+ * number and an instant are both parsed into one, and a row the parser
+ * refuses is out of the chart entirely, its Y values with it: a point
+ * whose X cannot be placed has nowhere to go, and keeping it as a label
+ * would put it at a position the value does not have.
  */
-function placeRow(kind: XKind, chartType: QueryChartType, rowIndex: number, raw: unknown): { row: ChartRow; reason: ExclusionReason | null } {
-  const invalid = (reason: ExclusionReason): { row: ChartRow; reason: ExclusionReason } =>
+function placeRow(kind: XKind, chartType: QueryChartType, rowIndex: number, raw: unknown): PlacedRow {
+  const invalid = (reason: ExclusionReason): PlacedRow =>
     ({ row: { rowIndex, raw, label: formatCellValue(raw) ?? '', value: null, valid: false }, reason });
   if (isMissing(raw)) return invalid('missing');
   if (kind === 'numeric') {
@@ -136,8 +145,16 @@ function placeRow(kind: XKind, chartType: QueryChartType, rowIndex: number, raw:
     if (!parsed.ok) return invalid(parsed.reason);
     return { row: { rowIndex, raw, label: String(raw), value: parsed.value, valid: true }, reason: null };
   }
+  if (kind === 'date' || kind === 'timestamp') {
+    const parsed = kind === 'date' ? parseDateValue(raw) : parseTimestampValue(raw);
+    if (!parsed.ok) return invalid(parsed.reason);
+    return {
+      row: { rowIndex, raw, label: formatCellValue(raw) ?? '', value: parsed.value, valid: true },
+      reason: null,
+      subMillisecond: parsed.subMillisecond,
+    };
+  }
   if (kind === 'category' && typeof raw !== 'string' && typeof raw !== 'boolean') return invalid('invalid');
-  if ((kind === 'date' || kind === 'timestamp') && typeof raw !== 'string') return invalid('invalid');
   return { row: { rowIndex, raw, label: formatCellValue(raw) ?? '', value: null, valid: true }, reason: null };
 }
 
@@ -185,7 +202,7 @@ function emptyModel(problem: ChartProblem, truncated: boolean): ChartModel {
     rows: [],
     points: [],
     yExtent: null,
-    diagnostics: { candidatePoints: 0, excludedPoints: 0, byReason: { missing: 0, nonFinite: 0, precision: 0, invalid: 0 }, ignoredColumns: [] },
+    diagnostics: { candidatePoints: 0, excludedPoints: 0, byReason: { missing: 0, nonFinite: 0, precision: 0, invalid: 0 }, ignoredColumns: [], subMillisecondRows: 0 },
     problem,
     availability: allUnavailable(problem),
     inferred: null,
@@ -236,9 +253,11 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   let valid = 0;
   let min = Infinity;
   let max = -Infinity;
+  let subMillisecondRows = 0;
   rows.forEach((row, rowIndex) => {
     const placed = placeRow(xKind, xColumn.chart_type, rowIndex, row[xColumn.name]);
     chartRows.push(placed.row);
+    if (placed.subMillisecond) subMillisecondRows += 1;
     if (placed.reason) {
       byReason[placed.reason] += series.length;
       return;
@@ -260,7 +279,7 @@ export function buildChartModel(result: QueryResult, implemented: readonly Chart
   });
 
   const candidatePoints = rows.length * series.length;
-  const diagnostics = { candidatePoints, excludedPoints: candidatePoints - valid, byReason, ignoredColumns };
+  const diagnostics = { candidatePoints, excludedPoints: candidatePoints - valid, byReason, ignoredColumns, subMillisecondRows };
   const yExtent = valid > 0 ? { min, max } : null;
 
   let problem: ChartProblem | null = null;

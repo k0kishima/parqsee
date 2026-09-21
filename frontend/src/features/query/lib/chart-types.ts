@@ -66,6 +66,12 @@ export interface ChartDiagnostics {
   byReason: Record<ExclusionReason, number>;
   /** Result columns after the first that are not numeric and so not Y. */
   ignoredColumns: string[];
+  /**
+   * Rows whose X carried digits finer than a millisecond. They are plotted
+   * at the millisecond they were truncated to, which the chart says rather
+   * than letting a microsecond series look evenly spaced when it is not.
+   */
+  subMillisecondRows: number;
 }
 
 /**
