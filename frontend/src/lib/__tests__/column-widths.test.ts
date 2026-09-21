@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { measureColumnWidths, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH } from '../column-widths';
+import {
+  displayCells,
+  estimateCellWidth,
+  measureCharWidth,
+  measureColumnWidths,
+  MIN_COLUMN_WIDTH,
+  MAX_COLUMN_WIDTH,
+} from '../column-widths';
 
 // jsdom has no canvas, so widths come from the character-count fallback;
 // these tests pin the behaviour that does not depend on real font metrics.
@@ -30,5 +37,48 @@ describe('measureColumnWidths', () => {
       format: value => JSON.stringify(value),
     });
     expect(objects[0]).toBeGreaterThan(nulls[0]);
+  });
+});
+
+describe('displayCells', () => {
+  it('counts one cell per narrow character', () => {
+    expect(displayCells('abc')).toBe(3);
+    expect(displayCells('')).toBe(0);
+  });
+
+  it('counts two cells for an ideograph and one for a halfwidth kana', () => {
+    expect(displayCells('日本')).toBe(4);
+    expect(displayCells('ｱｲ')).toBe(2);
+  });
+});
+
+// A monospaced grid gives an ideograph, a fullwidth form or an emoji the
+// width of two digits; measuring by character count made those columns half
+// as wide as their contents.
+describe('measureColumnWidths with wide characters', () => {
+  const charWidth = measureCharWidth('mono');
+  const widthOf = (value: string) =>
+    measureColumnWidths([{ name: 'v', typeLabel: '' }], [{ v: value }])[0];
+
+  it('measures a CJK value at two cells per character', () => {
+    const cjk = widthOf('日本語日本語');
+    const latin = widthOf('abcdef');
+    expect(cjk).toBeGreaterThan(latin);
+    expect(cjk - latin).toBeCloseTo(6 * charWidth, 0);
+  });
+
+  it('counts an emoji as a wide cell', () => {
+    expect(widthOf('\u{1f389}'.repeat(8))).toBeGreaterThan(widthOf('a'.repeat(8)));
+  });
+
+  it('gives a combining mark no width of its own', () => {
+    expect(widthOf('e\u0301'.repeat(20))).toBe(widthOf('e'.repeat(20)));
+  });
+});
+
+describe('estimateCellWidth', () => {
+  it('is the cells of the text at the width of one character', () => {
+    expect(estimateCellWidth('ab', 8)).toBe(16);
+    expect(estimateCellWidth('日本', 8)).toBe(32);
   });
 });
