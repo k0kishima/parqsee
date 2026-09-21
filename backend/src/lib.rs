@@ -253,6 +253,7 @@ pub fn run() {
             app.manage(Arc::clone(&access));
             app.manage(ParquetCache::with_access(access));
             app.manage(crate::services::query_results::QueryResults::new());
+            app.manage(crate::services::profile_requests::ProfileRequests::new());
 
             // The purchase state. Read in the background; `iap_status` waits
             // for the first read (`License::status`).
@@ -299,6 +300,7 @@ pub fn run() {
             commands::data::read_parquet_data,
             commands::data::count_parquet_data,
             commands::data::profile_column,
+            commands::data::cancel_profile,
             commands::data::export_data,
             commands::data::export_default_dir,
             commands::data::evict_cache,

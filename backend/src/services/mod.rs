@@ -4,6 +4,7 @@ pub mod menu_labels;
 pub mod opened;
 pub mod parquet;
 pub mod profile;
+pub mod profile_requests;
 pub mod query_results;
 pub mod recent_menu;
 pub mod sample;

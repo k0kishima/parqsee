@@ -151,7 +151,7 @@ describe('DataViewer search commands', () => {
 describe('DataViewer column profile', () => {
   beforeEach(() => {
     mockProfileColumn.mockResolvedValue({
-      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2,
+      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 2, distinct_approximate: false,
       chart: { shape: 'top_values', values: [{ value: 7, count: 60 }, { value: 9, count: 40 }], other: 0 },
     });
   });
@@ -167,7 +167,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(openButton());
     expect(panel()).toBeInTheDocument();
     expect(openButton()).toHaveAttribute('aria-pressed', 'true');
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined));
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledWith('/data/test.parquet', 'id', undefined, expect.any(String)));
 
     await userEvent.click(openButton());
     expect(panel()).not.toBeInTheDocument();
@@ -194,7 +194,7 @@ describe('DataViewer column profile', () => {
 
   it('keeps the panel open on a bucket and re-profiles the range under the filter', async () => {
     mockProfileColumn.mockResolvedValue({
-      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 90,
+      column: 'id', kind: 'integer', total_rows: 100, null_count: 0, distinct_count: 90, distinct_approximate: false,
       chart: { shape: 'histogram', buckets: [{ lower: '0', upper: '50', upper_inclusive: false, count: 60 }], other: 40 },
     });
     render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
@@ -204,7 +204,7 @@ describe('DataViewer column profile', () => {
     await userEvent.click(await screen.findByRole('button', { name: '0 – 50: 60' }));
 
     await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" >= 0 AND "id" < 50', null));
-    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50'));
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenLastCalledWith('/data/test.parquet', 'id', '"id" >= 0 AND "id" < 50', expect.any(String)));
     // The panel stayed mounted across the grid's reload, for the drill-down.
     expect(panel()).toBeInTheDocument();
     const values = screen.getAllByPlaceholderText('viewer.filterValuePlaceholder');

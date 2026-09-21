@@ -205,6 +205,8 @@
             "rows": "Rows",
             "nulls": "NULL",
             "distinct": "Distinct",
+            "distinctApproximate": "≈ {{value}}",
+            "distinctEstimated": "Counting every distinct value exactly needed more memory than this file's session has, so the distinct count is an estimate.",
             "values": "Values",
             "topValues": "Top {{shown}} of {{distinct}} values",
             "distribution": "Distribution",

@@ -8,6 +8,7 @@ use crate::commands::guarded;
 use crate::models::{ColumnProfile, QueryChartType, QueryColumn, QueryResult};
 use crate::services::parquet::{batches_to_rows, execute_sql_limited, where_clause, ParquetCache};
 use crate::services::profile::{column_kind_of, profile, ProfileSource};
+use crate::services::profile_requests::ProfileRequests;
 use crate::services::query_results::{column_alias, QueryResults};
 
 /// Upper bound on rows returned to the webview from one query. Rendering and
@@ -35,12 +36,19 @@ pub async fn execute_sql(
 #[command]
 pub async fn profile_query_column(
     results: tauri::State<'_, QueryResults>,
+    requests: tauri::State<'_, ProfileRequests>,
     result_id: String,
     column_index: usize,
     filter: Option<String>,
+    request_id: Option<String>,
 ) -> Result<ColumnProfile, String> {
     guarded("The column profile", async {
-        run_profile_query_column(&results, &result_id, column_index, filter).await
+        requests
+            .run(
+                request_id,
+                run_profile_query_column(&results, &result_id, column_index, filter),
+            )
+            .await
     })
     .await
 }

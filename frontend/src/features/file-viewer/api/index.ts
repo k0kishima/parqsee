@@ -54,10 +54,11 @@ export const countParquetData = async (path: string, filter?: string): Promise<n
 /**
  * What `column` holds under `filter` (the grid's WHERE fragment): counts and
  * a chart of its values. A scan of the file on the backend; ask when the
- * profile panel is open, not when a file is.
+ * profile panel is open, not when a file is. `requestId` is what
+ * `cancelProfile` ends the scan by.
  */
-export const profileColumn = async (path: string, column: string, filter?: string): Promise<ColumnProfile> => {
-    return await invoke('profile_column', { path, column, filter });
+export const profileColumn = async (path: string, column: string, filter?: string, requestId?: string): Promise<ColumnProfile> => {
+    return await invoke('profile_column', { path, column, filter, requestId });
 };
 
 export const evictCache = async (path: string): Promise<void> => {

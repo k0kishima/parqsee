@@ -42,6 +42,7 @@ const profileOf = (extra: Partial<ColumnProfile> = {}): ColumnProfile => ({
   total_rows: 3,
   null_count: 0,
   distinct_count: 2,
+  distinct_approximate: false,
   chart: { shape: 'top_values', values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }], other: 0 },
   ...extra,
 });
@@ -66,7 +67,7 @@ describe('the profile of a query result', () => {
     await run();
     const buttons = await screen.findAllByRole('button', { name: 'viewer.profile.open' });
     await userEvent.click(buttons[1]);
-    await waitFor(() => expect(mockProfile).toHaveBeenCalledWith('r1', 1, undefined));
+    await waitFor(() => expect(mockProfile).toHaveBeenCalledWith('r1', 1, undefined, expect.any(String)));
     expect(await screen.findByRole('complementary', { name: 'viewer.profile.title' })).toBeInTheDocument();
   });
 

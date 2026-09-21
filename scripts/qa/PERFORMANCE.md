@@ -205,3 +205,17 @@ These three answers are what the measurement above was run to settle (#30).
   rather than waits, and it fails with a DataFusion sentence about
   `AggregateStream` reservations. That is a defect of its own, not a tuning
   question.
+
+The distinct count now falls back to `approx_distinct` when the exact one is
+refused by the pool, and the profile says the number is an estimate so the
+panel can print it as `≈ n` rather than as a count. On this file that turns
+`token`'s error into an answer: about 1.5 s for the estimate, and the top
+values behind it spill to disk and take about 17 s — the same query any text
+column past twenty distinct values gets, on 58M rows.
+
+Cancellation landed as `services::profile_requests` and the `cancel_profile`
+command: the panel names each request and cancels the ones it supersedes, and
+cancelling is dropping the work, which drops the DataFusion stream and releases
+its reservation. Clicking along the same four columns afterwards ended three
+runs out of three with the `ts` panel's bars after about 3.8 s — what that
+profile costs on its own — instead of the error it showed before.

@@ -9,6 +9,12 @@ vi.mock('../../api', () => ({
   profileColumn: (...args: unknown[]) => mockProfileColumn(...args),
 }));
 
+const mockCancelProfile = vi.fn();
+vi.mock('../../../../lib/profile-request', async (original) => ({
+  ...(await original<typeof import('../../../../lib/profile-request')>()),
+  cancelProfile: (...args: unknown[]) => mockCancelProfile(...args),
+}));
+
 const cat: ColumnInfo = { name: 'cat', column_type: 'STRING', kind: 'text', logical_type: 'STRING', physical_type: 'BYTE_ARRAY' };
 const price: ColumnInfo = { name: 'price', column_type: 'DOUBLE', kind: 'float', logical_type: null, physical_type: 'DOUBLE' };
 
@@ -18,6 +24,7 @@ const topValues: ColumnProfile = {
   total_rows: 5,
   null_count: 1,
   distinct_count: 3,
+  distinct_approximate: false,
   chart: { shape: 'top_values', values: [{ value: 'a', count: 2 }, { value: 'b', count: 1 }, { value: 'c', count: 1 }], other: 0 },
 };
 
@@ -27,6 +34,7 @@ const histogram: ColumnProfile = {
   total_rows: 100,
   null_count: 0,
   distinct_count: 90,
+  distinct_approximate: false,
   chart: {
     shape: 'histogram',
     buckets: [{ lower: '0', upper: '0.5', upper_inclusive: false, count: 60 }, { lower: '0.5', upper: '1', upper_inclusive: false, count: 37 }],
@@ -37,10 +45,13 @@ const histogram: ColumnProfile = {
 function renderPanel(column: ColumnInfo, filter = '') {
   const onAddConditions = vi.fn();
   const onClose = vi.fn();
-  render(
+  const { rerender, unmount } = render(
     <ColumnProfilePanel filePath="/data/t.parquet" column={column} filter={filter} onClose={onClose} onAddConditions={onAddConditions} />
   );
-  return { onAddConditions, onClose };
+  const show = (next: ColumnInfo, nextFilter = '') => rerender(
+    <ColumnProfilePanel filePath="/data/t.parquet" column={next} filter={nextFilter} onClose={onClose} onAddConditions={onAddConditions} />
+  );
+  return { onAddConditions, onClose, show, unmount };
 }
 
 describe('ColumnProfilePanel', () => {
@@ -54,7 +65,7 @@ describe('ColumnProfilePanel', () => {
     expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
 
     expect(await screen.findByText('5')).toBeInTheDocument();
-    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'cat', undefined);
+    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'cat', undefined, expect.any(String));
     expect(screen.getByText('1 20%')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     // A complete list is headed "Values", not "Top n of m".
@@ -76,7 +87,7 @@ describe('ColumnProfilePanel', () => {
     mockProfileColumn.mockResolvedValue(histogram);
     const { onAddConditions, onClose } = renderPanel(price, '"price" > 0');
     expect(await screen.findByText('viewer.profile.distribution')).toBeInTheDocument();
-    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'price', '"price" > 0');
+    expect(mockProfileColumn).toHaveBeenCalledWith('/data/t.parquet', 'price', '"price" > 0', expect.any(String));
     expect(screen.getByText('viewer.profile.notBinned')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '0.5 – 1: 37' }));
@@ -113,7 +124,7 @@ describe('ColumnProfilePanel', () => {
   });
 
   it('keeps the counts for a column with no chart', async () => {
-    mockProfileColumn.mockResolvedValue({ column: 'li', kind: 'nested', total_rows: 3, null_count: 1, distinct_count: null, chart: { shape: 'unsupported' } });
+    mockProfileColumn.mockResolvedValue({ column: 'li', kind: 'nested', total_rows: 3, null_count: 1, distinct_count: null, distinct_approximate: false, chart: { shape: 'unsupported' } });
     renderPanel({ ...cat, name: 'li', kind: 'nested' });
     expect(await screen.findByText('viewer.profile.noChart')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
@@ -161,5 +172,44 @@ describe('ColumnProfilePanel', () => {
     expect(screen.queryByRole('button', { name: 'a: 2' })).not.toBeInTheDocument();
     expect(screen.getByText('viewer.profile.loading')).toBeInTheDocument();
     expect(props.onAddConditions).not.toHaveBeenCalled();
+  });
+
+  // A profile is a scan holding memory the next one needs, so a panel that
+  // has moved on says so rather than only dropping the answer.
+  it('cancels the request it stops waiting for, by the id it asked with', async () => {
+    mockProfileColumn.mockResolvedValue(topValues);
+    const { show, unmount } = renderPanel(cat);
+    expect(await screen.findByText('5')).toBeInTheDocument();
+    const [, , , firstId] = mockProfileColumn.mock.calls[0];
+
+    mockProfileColumn.mockResolvedValue(histogram);
+    show(price);
+    await waitFor(() => expect(mockProfileColumn).toHaveBeenCalledTimes(2));
+    const [, , , secondId] = mockProfileColumn.mock.calls[1];
+    expect(secondId).not.toBe(firstId);
+    expect(mockCancelProfile).toHaveBeenCalledWith(firstId);
+    expect(mockCancelProfile).not.toHaveBeenCalledWith(secondId);
+
+    // Closing the panel is the other way to stop waiting.
+    unmount();
+    expect(mockCancelProfile).toHaveBeenCalledWith(secondId);
+  });
+
+  // A column too wide to count exactly is answered with an estimate, and
+  // the panel has to say so: the number would otherwise be read as a count.
+  it('marks an estimated distinct count as one and says why there is no exact number', async () => {
+    mockProfileColumn.mockResolvedValue({
+      ...topValues,
+      total_rows: 58_000_000,
+      distinct_count: 57_963_093,
+      distinct_approximate: true,
+      chart: { ...topValues.chart, other: 57_999_997 },
+    });
+    renderPanel(cat);
+
+    expect(await screen.findByText('≈ 57,963,093')).toBeInTheDocument();
+    expect(screen.getByText('viewer.profile.distinctEstimated')).toBeInTheDocument();
+    // Not as a plain number beside "Rows" and "NULL".
+    expect(screen.queryByText('57,963,093')).not.toBeInTheDocument();
   });
 });

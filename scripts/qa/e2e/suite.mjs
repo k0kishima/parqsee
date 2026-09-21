@@ -1247,10 +1247,19 @@ await scenario('S19-profile', async ({ page, bridge }) => {
   await page.evaluate(() => { window.__delays.profile_column = 600; });
   await profileButton('n').click();
   check('S19.noStaleBars', (await bars()).length === 0, 'old column bars are not clickable while the new request is pending');
+  // Dropping the answer is not enough: a profile is a scan that reserves
+  // memory the next one needs, so the superseded request is cancelled in
+  // the backend by the id it was asked with.
+  const requestOf = (col) => bridge.log.filter(l => l.cmd === 'profile_column' && l.args.column === col).at(-1)?.args.requestId;
+  const cancelled = () => bridge.log.filter(l => l.cmd === 'cancel_profile').map(l => l.args.requestId);
+  const supersededRequest = requestOf('cat');
+  check('S19.cancelsSuperseded', !!supersededRequest && cancelled().includes(supersededRequest), `cat=${supersededRequest} cancelled=${JSON.stringify(cancelled())}`);
+  check('S19.keepsTheWantedRequest', !cancelled().includes(requestOf('n')), `n=${requestOf('n')} cancelled=${JSON.stringify(cancelled())}`);
   await waitBars('1: 1|2: 1|3: 1|4: 1|5: 1');
   await page.evaluate(() => { window.__delays.profile_column = 0; });
   await profileButton('n').click();
   check('S19.toggleClosed', (await panel().count()) === 0, `panels=${await panel().count()}`);
+  check('S19.cancelsOnClose', cancelled().includes(requestOf('n')), `n=${requestOf('n')} cancelled=${JSON.stringify(cancelled())}`);
 
   // A hundred thousand ids are binned on round edges; a bucket filters to
   // its range, and the next profile bins that range again.
