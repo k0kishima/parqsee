@@ -120,6 +120,63 @@ describe('DataViewer failed-load rollback', () => {
     expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument();
   });
 
+  it('drops a restored filter the file refuses and shows the plain page under a banner', async () => {
+    // The file was rewritten while the tab was closed: the saved filter
+    // names a column it no longer has.
+    mockCountParquetData.mockRejectedValueOnce('boom: No field named gone');
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={{ activeFilter: '"gone" = 1' }} />);
+
+    // The plain first page loaded, and it is the only read that was made:
+    // the refused count never reached one.
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
+    expect(mockReadParquetData).toHaveBeenCalledWith('/data/test.parquet', 0, 50, '', null);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+
+    // The tab is a working tab, not an error screen, and the banner says
+    // what was dropped.
+    expect(screen.queryByText('viewer.error')).not.toBeInTheDocument();
+    expect(screen.getByText('viewer.filterDropped')).toBeInTheDocument();
+    expect(screen.getByText('boom: No field named gone')).toBeInTheDocument();
+    expect(screen.getByText('"gone" = 1')).toBeInTheDocument();
+    expect(screen.getByText('common.apply')).toBeInTheDocument();
+  });
+
+  it('drops a filter the file no longer has on Refresh and keeps the tab', async () => {
+    await renderViewer();
+    await applyFilter('5');
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(2));
+
+    // The file changed under the tab: the count for the kept filter is
+    // refused, and so would the one the rollback would ask for.
+    mockCountParquetData.mockRejectedValue('boom: No field named id');
+    await userEvent.click(screen.getByText('viewer.refresh'));
+
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(3));
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '', null);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(screen.queryByText('viewer.error')).not.toBeInTheDocument();
+    expect(screen.getByText('viewer.filterDropped')).toBeInTheDocument();
+    expect(screen.getByText('"id" = 5')).toBeInTheDocument();
+  });
+
+  it('is still a file-level error when the plain first page fails', async () => {
+    mockReadParquetData.mockRejectedValueOnce('boom: corrupt page');
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('viewer.error')).toBeInTheDocument();
+    expect(screen.getByText('boom: corrupt page')).toBeInTheDocument();
+    expect(screen.queryByText('common.apply')).not.toBeInTheDocument();
+  });
+
+  it('is a file-level error when the page read after a dropped filter fails too', async () => {
+    mockCountParquetData.mockRejectedValueOnce('boom: No field named gone');
+    mockReadParquetData.mockRejectedValueOnce('boom: corrupt page');
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={{ activeFilter: '"gone" = 1' }} />);
+
+    expect(await screen.findByText('viewer.error')).toBeInTheDocument();
+    expect(screen.getByText('boom: corrupt page')).toBeInTheDocument();
+  });
+
   it('still reloads the file on Refresh when the cache could not be evicted', async () => {
     await renderViewer();
     mockEvictCache.mockRejectedValueOnce('boom: evict');
