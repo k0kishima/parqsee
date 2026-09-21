@@ -193,6 +193,19 @@ describe('lineGeometry', () => {
     expect(geometry.series[0].path.match(/L/g)).toHaveLength(2);
   });
 
+  it('keeps two rows with the same X as two vertices rather than combining them', () => {
+    const model = buildChartModel(timeResult(date, [
+      { t: '2024-01-01', y: 1 }, { t: '2024-01-02', y: 2 }, { t: '2024-01-02', y: 4 },
+    ]));
+    const geometry = lineGeometry(model, viewport, 'en')!;
+    const [, second, third] = geometry.series[0].vertices;
+    expect(geometry.series[0].vertices).toHaveLength(3);
+    expect(third.x).toBeCloseTo(second.x);
+    expect(third.y).not.toBeCloseTo(second.y);
+    // One run: the query returned them in a row, so the line goes straight up.
+    expect(geometry.series[0].path.match(/M/g)).toHaveLength(1);
+  });
+
   it('ticks the X axis by the calendar and names the days when the labels are clock times', () => {
     const daily = buildChartModel(timeResult(date, [
       { t: '2024-01-01', y: 1 }, { t: '2024-02-01', y: 2 }, { t: '2024-03-01', y: 3 },
