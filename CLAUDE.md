@@ -566,7 +566,10 @@ command's answer carries the higher `revision`, since the two can cross.
    the webview parses the IPC payload with JS number semantics.
    `batches_to_rows` (`services/parquet.rs`) is the one choke point that renders
    decimals, non-finite floats and integers outside ±2^53 as strings — route
-   every row the webview consumes through it.
+   every row the webview consumes through it. Those conversions match on the
+   type of the values, so a dictionary-encoded column is unpacked to its value
+   type first (`unpack_dictionaries`, also before a JSON export); otherwise a
+   pandas categorical's NaN reaches the grid as `null`.
 10. Commands wrap their bodies in `commands::guarded`, which turns a panic into
     an error; a panic that escapes a Tauri command never resolves the promise
     and leaves the grid on its spinner.
