@@ -2,25 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { QueryChartType, QueryResult } from '../../types';
 import { buildChartModel } from '../chart-data';
 import { compensatedSum, MAX_PIE_ROWS, MAX_PIE_SLICES, pieData, type PieResult } from '../pie-data';
-
-const T = {
-  integer: { kind: 'integer' } as QueryChartType,
-  float: { kind: 'float' } as QueryChartType,
-  decimal: { kind: 'decimal' } as QueryChartType,
-  date: { kind: 'date' } as QueryChartType,
-  category: { kind: 'category' } as QueryChartType,
-};
-
-function result(columns: [string, QueryChartType][], rows: Record<string, unknown>[], extra: Partial<QueryResult> = {}): QueryResult {
-  return {
-    columns: columns.map(([name, chart_type]) => ({ name, data_type: chart_type.kind, chart_type })),
-    rows,
-    execution_time_ms: 1,
-    truncated: false,
-    max_rows: 10_000,
-    ...extra,
-  };
-}
+import { result, T } from './test-support';
 
 /** A category X and one integer Y, the shape a pie wants. */
 const shares = (rows: Record<string, unknown>[], extra: Partial<QueryResult> = {}, y: QueryChartType = T.integer): PieResult =>
