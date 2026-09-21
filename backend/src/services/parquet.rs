@@ -717,6 +717,7 @@ fn contains_json_unsafe(data_type: &DataType) -> bool {
         | DataType::FixedSizeList(field, _)
         | DataType::Map(field, _) => contains_json_unsafe(field.data_type()),
         DataType::Struct(fields) => fields.iter().any(|f| contains_json_unsafe(f.data_type())),
+        DataType::Dictionary(_, value) => contains_json_unsafe(value),
         _ => false,
     }
 }
@@ -875,9 +876,49 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
                 .ok_or_else(|| "Failed to read struct column".to_string())?;
             decimals_in_struct(structs).map(|a| Arc::new(a) as ArrayRef)
         }
+        // The arms above match on the type of the values, which a dictionary
+        // hides behind its keys; unpack it and convert what it encoded.
+        DataType::Dictionary(_, value_type) => {
+            let values = unpack_dictionary(array, value_type)?;
+            json_unsafe_as_strings(&values)
+        }
         // contains_json_unsafe only claims the container types handled above.
         _ => Ok(array.clone()),
     }
+}
+
+/// One dictionary-encoded column as an array of the values it encoded,
+/// repeated per row.
+fn unpack_dictionary(array: &ArrayRef, value_type: &DataType) -> Result<ArrayRef, String> {
+    arrow::compute::cast(array, value_type)
+        .map_err(|e| format!("Failed to unpack dictionary column: {}", e))
+}
+
+/// `batch` with every top-level dictionary column replaced by its values.
+///
+/// A dictionary is an encoding, not a type the grid shows: the same values
+/// with their repetitions factored out. The conversions below match on the
+/// type of the values — float, decimal, Date64 — and a dictionary hides that
+/// type behind its keys, so a `Dictionary(Int32, Float64)` written by a
+/// pandas categorical slipped past the float handling and its NaN and
+/// infinities reached the webview as `null`, indistinguishable from a missing
+/// value. Unpacking first puts every such column back on the ordinary path.
+///
+/// The repetitions come back with it, which is why this is confined to what
+/// is about to be rendered — a page of at most a few thousand rows, or one
+/// export batch — and never applied to a scan.
+fn unpack_dictionaries(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    rebuild_columns(
+        batch,
+        |t| matches!(t, DataType::Dictionary(_, _)),
+        |field, column| {
+            let DataType::Dictionary(_, value_type) = column.data_type() else {
+                return Ok((field.clone(), column.clone()));
+            };
+            let values = unpack_dictionary(column, value_type)?;
+            Ok((retyped_field(field, values.data_type()), values))
+        },
+    )
 }
 
 /// Arrow's JSON writers refuse decimals outright, which used to fail the read
@@ -886,7 +927,7 @@ fn json_unsafe_as_strings(array: &ArrayRef) -> Result<ArrayRef, String> {
 /// strings — exact, and distinguishable from NULL — print Date64 as the date
 /// it is, and leave every other column alone.
 pub fn json_unsafe_to_strings(batch: &RecordBatch) -> Result<RecordBatch, String> {
-    convert_batch(batch, false)
+    convert_batch(&unpack_dictionaries(batch)?, false)
 }
 
 /// `keep_top_level_floats` leaves top-level float columns untouched for
@@ -1025,13 +1066,19 @@ fn contains_big_integer(data_type: &DataType) -> bool {
 /// the conversions live in this choke point precisely so a new path cannot
 /// forget them.
 pub fn batches_to_rows(batches: &[RecordBatch]) -> Result<Vec<Value>, String> {
-    let buf = batches_to_json_bytes(batches)?;
+    // Both stages below read the column's type, and neither looks through a
+    // dictionary's keys; unpack once so they see the values themselves.
+    let batches = batches
+        .iter()
+        .map(unpack_dictionaries)
+        .collect::<Result<Vec<_>, String>>()?;
+    let buf = batches_to_json_bytes(&batches)?;
     let mut rows = serde_json::Deserializer::from_slice(&buf)
         .into_iter::<Value>()
         .collect::<Result<Vec<Value>, _>>()
         .map_err(|e| format!("Failed to parse JSON results: {}", e))?;
 
-    restore_non_finite_floats(&mut rows, batches);
+    restore_non_finite_floats(&mut rows, &batches);
 
     // The walk touches every value, so skip it for schemas that cannot hold
     // an unsafe integer (mirrors json_unsafe_to_strings' early return).
@@ -1942,10 +1989,11 @@ mod tests {
     use crate::models::{ColumnInfo, ColumnKind, ParquetMetadata, SortDirection, SortSpec};
     use crate::services::test_support::{self, write_parquet};
     use arrow::array::{
-        Array, ArrayRef, Decimal128Array, Decimal128Builder, FixedSizeListBuilder, Int32Array,
-        Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder, StructArray,
+        Array, ArrayRef, Decimal128Array, Decimal128Builder, DictionaryArray, FixedSizeListBuilder,
+        Int32Array, Int32Builder, Int64Array, ListBuilder, MapBuilder, StringArray, StringBuilder,
+        StructArray,
     };
-    use arrow::datatypes::{DataType, Field, Fields, Schema};
+    use arrow::datatypes::{DataType, Field, Fields, Int32Type, Schema};
     use arrow::record_batch::RecordBatch;
     use std::path::{Path, PathBuf};
     use std::sync::{mpsc, Arc};
@@ -2264,6 +2312,106 @@ mod tests {
         // Columns without a non-finite value stay numbers.
         assert_eq!(rows[0]["y"], 2.0);
         assert_eq!(rows[0]["plain"], 0.1 + 0.2);
+    }
+
+    /// `[1.5, NaN, +inf, NULL, 2.5]` as a `Dictionary(Int32, Float64)`, the
+    /// shape pandas' categorical and pyarrow's `dictionary_encode()` write.
+    fn write_dictionary_float_fixture(name: &str) -> PathBuf {
+        let values = Arc::new(arrow::array::Float64Array::from(vec![
+            1.5,
+            f64::NAN,
+            f64::INFINITY,
+            2.5,
+        ])) as ArrayRef;
+        let keys = Int32Array::from(vec![Some(0), Some(1), Some(2), None, Some(3)]);
+        let dictionary = DictionaryArray::<Int32Type>::try_new(keys, values).unwrap();
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "dfloat",
+            dictionary.data_type().clone(),
+            true,
+        )]));
+        let batch =
+            RecordBatch::try_new(schema, vec![Arc::new(dictionary) as ArrayRef]).unwrap();
+        let path = temp_path(&format!("{name}.parquet"));
+        write_parquet(&path, &batch, None);
+        path
+    }
+
+    #[tokio::test]
+    async fn dictionary_encoded_floats_keep_nan_and_infinity() {
+        let path = write_dictionary_float_fixture("dictionary_float");
+        let cache = ParquetCache::new();
+
+        // The dictionary column is a column like any other to the schema read.
+        let metadata = cache
+            .get_or_create_metadata(&path.to_string_lossy())
+            .await
+            .unwrap();
+        assert_eq!(metadata.num_rows, 5);
+        assert_eq!(metadata.columns[0].name, "dfloat");
+
+        // The three read paths: the parquet reader, DataFusion under a
+        // filter, and a sorted page.
+        let sort = SortSpec {
+            column: "dfloat".into(),
+            direction: SortDirection::Asc,
+        };
+        for (label, filter, sort) in [
+            ("unfiltered", None, None),
+            ("filtered", Some("1 = 1".to_string()), None),
+            ("sorted", None, Some(sort)),
+        ] {
+            let rows = super::read_data(&cache, &path.to_string_lossy(), 0, 5, filter, sort)
+                .await
+                .unwrap();
+            // The sorted page orders by the float, which puts NULL last and
+            // NaN above the infinities; find each row by its value instead of
+            // pinning an order this test is not about.
+            let spellings: Vec<Option<&serde_json::Value>> =
+                rows.iter().map(|r| r.get("dfloat")).collect();
+            assert!(
+                spellings.contains(&Some(&serde_json::json!("NaN"))),
+                "{label}: NaN came back as {spellings:?}"
+            );
+            assert!(
+                spellings.contains(&Some(&serde_json::json!("Infinity"))),
+                "{label}: Infinity came back as {spellings:?}"
+            );
+            assert!(
+                spellings.contains(&Some(&serde_json::json!(1.5))),
+                "{label}: a finite value stopped being a number: {spellings:?}"
+            );
+            assert!(
+                spellings.contains(&Some(&serde_json::json!(2.5))),
+                "{label}: a finite value stopped being a number: {spellings:?}"
+            );
+            // NULL is the one row with no value at all.
+            assert_eq!(
+                spellings.iter().filter(|v| v.is_none()).count(),
+                1,
+                "{label}: {spellings:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn dictionary_encoded_big_integers_stay_exact() {
+        let values = Arc::new(Int64Array::from(vec![9_007_199_254_740_993i64])) as ArrayRef;
+        let keys = Int32Array::from(vec![Some(0)]);
+        let dictionary = DictionaryArray::<Int32Type>::try_new(keys, values).unwrap();
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "id",
+            dictionary.data_type().clone(),
+            true,
+        )]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(dictionary) as ArrayRef]).unwrap();
+        let path = temp_path("dictionary_big_int.parquet");
+        write_parquet(&path, &batch, None);
+
+        let rows = super::read_data(&ParquetCache::new(), &path.to_string_lossy(), 0, 1, None, None)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["id"], "9007199254740993");
     }
 
     #[tokio::test]

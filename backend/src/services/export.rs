@@ -471,9 +471,10 @@ mod tests {
     use crate::models::{SortDirection, SortSpec};
     use crate::services::parquet::ParquetCache;
     use arrow::array::{
-        ArrayRef, Decimal128Array, Float64Array, Int64Array, ListBuilder, StringArray, StringBuilder,
+        Array, ArrayRef, Decimal128Array, DictionaryArray, Float64Array, Int32Array, Int64Array,
+        ListBuilder, StringArray, StringBuilder,
     };
-    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::datatypes::{DataType, Field, Int32Type, Schema};
     use arrow::record_batch::RecordBatch;
     use std::collections::VecDeque;
     use std::io::{self, Read, Write};
@@ -714,6 +715,35 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
         assert_eq!(parsed[0]["amount"], "12345.6789");
+    }
+
+    #[tokio::test]
+    async fn dictionary_floats_export_as_json_strings() {
+        // What pandas' categorical and pyarrow's `dictionary_encode()` write:
+        // the values JSON cannot spell are behind a dictionary encoding.
+        let values = Arc::new(Float64Array::from(vec![1.5, f64::NAN, f64::INFINITY])) as ArrayRef;
+        let keys = Int32Array::from(vec![Some(0), Some(1), Some(2), None]);
+        let dictionary = DictionaryArray::<Int32Type>::try_new(keys, values).unwrap();
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "dfloat",
+            dictionary.data_type().clone(),
+            true,
+        )]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(dictionary) as ArrayRef]).unwrap();
+        let src = temp_path("dictionary_float.parquet");
+        write_parquet(&src, &batch, None);
+
+        let out = temp_path("dictionary_float.json");
+        let n = export(&ParquetCache::new(), &src, &out, "json", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(n, 4);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(parsed[0]["dfloat"], "1.5");
+        assert_eq!(parsed[1]["dfloat"], "NaN");
+        assert_eq!(parsed[2]["dfloat"], "Infinity");
+        assert!(parsed[3].get("dfloat").is_none());
     }
 
     #[tokio::test]
