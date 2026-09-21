@@ -1330,7 +1330,7 @@ await scenario('S20-chart', async ({ page }) => {
   await c.svg().waitFor();
   check('S20.bar', (await c.svg().getAttribute('data-chart-kind')) === 'bar' && (await c.marks().count()) === 4 && await c.pressed(c.kindGroup().getByRole('button', { name: 'Bar', exact: true })),
     `kind=${await c.svg().getAttribute('data-chart-kind')} marks=${await c.marks().count()}`);
-  check('S20.implementedKinds', (await c.kindGroup().getByRole('button').allTextContents()).join('|') === 'Bar|Line|Pie', `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
+  check('S20.implementedKinds', (await c.kindGroup().getByRole('button').allTextContents()).join('|') === 'Bar|Line|Scatter|Pie', `kind buttons=${await c.kindGroup().getByRole('button').allTextContents()}`);
   const legend = await act(page).getByRole('button', { name: /^Series details:/ }).allTextContents();
   check('S20.legend', legend.join('|') === '#1 y1|#2 y2', legend.join('|'));
   // The negative bar hangs from the baseline: its top is the baseline line's y.
@@ -1499,6 +1499,64 @@ await scenario('S20-line', async ({ page }) => {
   const lineButton = c.kindGroup().getByRole('button', { name: 'Line', exact: true });
   check('S20line.refused', (await lineButton.getAttribute('aria-disabled')) === 'true' && (await lineButton.getAttribute('title')) === 'Requires a numeric or date/time first column.',
     `disabled=${await lineButton.getAttribute('aria-disabled')} title=${await lineButton.getAttribute('title')}`);
+});
+
+// ---------------------------------------------------------------- S20-scatter the scatter chart
+// The point cap and the DOM it costs are the whole question here, so the
+// rows come from the fixture rather than from VALUES: ten thousand marks
+// is what the cap allows and what the browser has to carry.
+await scenario('S20-scatter', async ({ page }) => {
+  await openFile(page, `${FIX}/multi_rowgroup.parquet`);
+  await act(page).locator('button:has-text("Query")').click();
+  const c = chartSql(page);
+  const chart = async (sql) => {
+    await c.run(sql);
+    const toChart = c.modeGroup().getByRole('button', { name: 'Chart', exact: true });
+    if (!await c.pressed(toChart)) await toChart.click();
+  };
+
+  // A numeric X picks the scatter by itself.
+  await chart('SELECT id, id * 2 AS y FROM t LIMIT 10');
+  await c.svg().waitFor();
+  check('S20scatter.inferred', (await c.svg().getAttribute('data-chart-kind')) === 'scatter' && await c.pressed(c.kindGroup().getByRole('button', { name: 'Scatter', exact: true })),
+    `kind=${await c.svg().getAttribute('data-chart-kind')}`);
+  check('S20scatter.marks', (await c.marks().count()) === 10 && (await c.marks().first().evaluate(el => el.tagName)) === 'circle',
+    `marks=${await c.marks().count()}`);
+  await screenshot(page, { path: `${OUT}/shots/S20-scatter.png` });
+
+  // Every one of the ten thousand the cap allows is drawn: no thinning.
+  const drawn = Date.now();
+  await chart('SELECT id, id * 2 AS y FROM t LIMIT 10000');
+  await act(page).locator('[data-mark]').first().waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('[data-mark]').length === 10_000, null, { timeout: 30_000 });
+  report('S20scatter.drawMs', 'OBSERVE', `10,000 marks drawn in ${Date.now() - drawn}ms (debug bridge, not a budget)`);
+  check('S20scatter.cap', (await c.marks().count()) === 10_000, `marks=${await c.marks().count()}`);
+
+  // The detail box reaches the ends of that crowd, and answers a key
+  // press without walking every mark in the DOM.
+  await c.detail().focus();
+  const pressed = Date.now();
+  await page.keyboard.press('Home');
+  await page.waitForFunction(() => document.querySelector('[data-mark][data-selected]')?.getAttribute('data-row-index') === '0');
+  report('S20scatter.homeMs', 'OBSERVE', `Home answered in ${Date.now() - pressed}ms over 10,000 marks`);
+  check('S20scatter.home', (await c.detailText()).startsWith('#1 y, row 1; id: 0;'), await c.detailText());
+  await page.keyboard.press('End');
+  await page.waitForFunction(() => document.querySelector('[data-mark][data-selected]')?.getAttribute('data-row-index') === '9999');
+  check('S20scatter.end', (await c.detailText()).startsWith('#1 y, row 10,000; id: 9999;'), await c.detailText());
+
+  // The cap is over every series together, so two of them halve the rows.
+  await chart('SELECT id, id AS a, id AS b FROM t LIMIT 5000');
+  await c.svg().waitFor();
+  check('S20scatter.twoSeries', (await c.marks().count()) === 10_000, `marks=${await c.marks().count()}`);
+  await chart('SELECT id, id AS a, id AS b FROM t LIMIT 5001');
+  check('S20scatter.overCap', ((await act(page).getByRole('status').textContent()) ?? '').startsWith('Plot limit: 10,000 points') && (await c.svg().count()) === 0,
+    await act(page).getByRole('status').textContent().catch(() => 'none'));
+
+  // A column of labels has no axis to place them on.
+  await chart(`SELECT * FROM (VALUES ('a', 1), ('b', 2)) AS v(x, y)`);
+  const scatterButton = c.kindGroup().getByRole('button', { name: 'Scatter', exact: true });
+  check('S20scatter.refused', (await scatterButton.getAttribute('aria-disabled')) === 'true' && (await scatterButton.getAttribute('title')) === 'Requires a numeric first column.',
+    `disabled=${await scatterButton.getAttribute('aria-disabled')} title=${await scatterButton.getAttribute('title')}`);
 });
 
 // ---------------------------------------------------------------- S20-pie the pie chart

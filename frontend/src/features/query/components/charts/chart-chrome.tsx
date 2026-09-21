@@ -1,5 +1,6 @@
 import React, { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PLOT_MARGIN, type CartesianAxes } from '../../lib/chart-geometry';
 
 /** The (row, series) a mark belongs to; what the tooltip and the detail describe. */
 export interface MarkRef {
@@ -150,5 +151,56 @@ export function ChartTooltip({ text, style }: { text: string; style: React.CSSPr
     >
       {text}
     </div>
+  );
+}
+
+/**
+ * The grid behind a plot drawn against two continuous axes: a rule at
+ * every tick, the axis line along the bottom, and a rule at zero when the
+ * Y domain crosses it — the Y axis is not forced to include zero, so a
+ * chart that does contain it says where it is.
+ *
+ * Kept apart from the labels below so a renderer can put its own marks
+ * between the two: the grid is behind the data, the labels in front of it.
+ */
+export function CartesianGrid({ axes }: { axes: CartesianAxes }) {
+  const axisY = PLOT_MARGIN.top + axes.plotHeight;
+  const zeroY = axes.yScale.domain.min < 0 && axes.yScale.domain.max > 0 ? axes.yScale(0) : null;
+  return (
+    <g aria-hidden="true">
+      {axes.yTicks.map(tick => (
+        <line key={`y${tick.value}`} x1={0} x2={axes.contentWidth} y1={tick.position} y2={tick.position} stroke="var(--chart-grid)" strokeWidth={1} />
+      ))}
+      {axes.xTicks.map(tick => (
+        <line key={`x${tick.value}`} x1={tick.position} x2={tick.position} y1={PLOT_MARGIN.top} y2={axisY} stroke="var(--chart-grid)" strokeWidth={1} />
+      ))}
+      {zeroY !== null && <line x1={0} x2={axes.contentWidth} y1={zeroY} y2={zeroY} stroke="var(--chart-axis)" strokeWidth={1} />}
+      <line x1={0} x2={axes.contentWidth} y1={axisY} y2={axisY} stroke="var(--chart-axis)" strokeWidth={1} />
+    </g>
+  );
+}
+
+interface CartesianAxisLabelsProps {
+  axes: CartesianAxes;
+  /** A caption under the left of the axis: what the tick labels leave off the front. */
+  left?: string | null;
+  /** A caption under the right: which clock the axis is keeping. */
+  right?: string | null;
+}
+
+/** The X ticks, their labels and the captions for what the labels do not say. */
+export function CartesianAxisLabels({ axes, left, right }: CartesianAxisLabelsProps) {
+  const axisY = PLOT_MARGIN.top + axes.plotHeight;
+  return (
+    <g aria-hidden="true" fill="var(--text-tertiary)" fontSize={11}>
+      {axes.xTicks.map(tick => (
+        <g key={tick.value}>
+          <line x1={tick.position} x2={tick.position} y1={axisY} y2={axisY + 5} stroke="var(--chart-axis)" strokeWidth={1} />
+          <text x={tick.position} y={axisY + 18} textAnchor="middle">{tick.label}</text>
+        </g>
+      ))}
+      {left && <text x={0} y={axisY + 34}>{left}</text>}
+      {right && <text x={axes.contentWidth} y={axisY + 34} textAnchor="end">{right}</text>}
+    </g>
   );
 }

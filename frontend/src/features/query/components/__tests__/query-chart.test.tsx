@@ -325,3 +325,66 @@ describe('QueryChart (line)', () => {
     }
   });
 });
+
+function numericResult(rows: Record<string, unknown>[], series = ['y']): QueryResult {
+  return {
+    columns: [{ name: 'x', data_type: 'Int64', chart_type: int }, ...series.map(name => ({ name, data_type: 'Int64', chart_type: int }))],
+    rows,
+    execution_time_ms: 1,
+    truncated: false,
+    max_rows: 10_000,
+  };
+}
+
+const scatterModel = (rows: Record<string, unknown>[], series = ['y']) =>
+  buildChartModel(numericResult(rows, series), ['bar', 'scatter']);
+
+describe('QueryChart (scatter)', () => {
+  it('is what a numeric X asks for, and draws a mark per plotted pair', () => {
+    const model = scatterModel([{ x: 1, y1: 10, y2: 20 }, { x: 2, y1: 11, y2: 21 }], ['y1', 'y2']);
+    expect(model.inferred).toBe('scatter');
+    render(<QueryChart model={model} kind="scatter" />);
+    expect(document.querySelector('svg[data-chart-kind="scatter"]')).toBeInTheDocument();
+    // Column order, then row order: the second series is drawn over the first.
+    expect(marks().map(m => [m.getAttribute('data-series-index'), m.getAttribute('data-row-index')]))
+      .toEqual([['0', '0'], ['0', '1'], ['1', '0'], ['1', '1']]);
+    expect(screen.getByRole('img', { name: 'viewer.query.chart.svgLabel' })).toBeInTheDocument();
+  });
+
+  it('gives each series its own shape as well as its own colour', () => {
+    const model = scatterModel([{ x: 1, a: 1, b: 2, c: 3, d: 4, e: 5 }], ['a', 'b', 'c', 'd', 'e']);
+    render(<QueryChart model={model} kind="scatter" />);
+    expect(marks().map(m => m.tagName)).toEqual(['circle', 'rect', 'polygon', 'polygon', 'circle']);
+    expect(marks().map(m => m.getAttribute('fill')))
+      .toEqual(['var(--chart-series-1)', 'var(--chart-series-2)', 'var(--chart-series-3)', 'var(--chart-series-4)', 'var(--chart-series-5)']);
+    // Translucent fill for the crowd, an opaque outline for the loner.
+    expect(marks()[0].closest('g')).toHaveAttribute('fill-opacity', '0.65');
+    expect(marks()[0].getAttribute('stroke')).toBe('var(--chart-series-1)');
+  });
+
+  it('walks the marks from the detail box and outlines the selected one', async () => {
+    const model = scatterModel([{ x: 1, y: 10 }, { x: 2, y: 11 }, { x: 3, y: 12 }]);
+    render(<QueryChart model={model} kind="scatter" />);
+    detail().focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-row-index', '0');
+    await userEvent.keyboard('{End}');
+    const last = document.querySelector('[data-mark][data-selected]')!;
+    expect(last).toHaveAttribute('data-row-index', '2');
+    expect(last.getAttribute('stroke')).toBe('var(--chart-focus)');
+    expect(detailText()).toBe('viewer.query.chart.pointDescription');
+  });
+
+  it('shows a tooltip for the mark under the pointer', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      render(<QueryChart model={scatterModel([{ x: 1, y: 10 }, { x: 2, y: 11 }])} kind="scatter" />);
+      fireEvent.pointerMove(marks()[1], { clientX: 120, clientY: 90 });
+      act(() => { vi.runAllTimers(); });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('viewer.query.chart.pointDescription');
+      expect(document.querySelector('[data-mark][data-selected]')).toHaveAttribute('data-row-index', '1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
