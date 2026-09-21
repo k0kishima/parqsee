@@ -1,8 +1,23 @@
-export type Theme = 'light' | 'dark' | 'system';
-export type TypeDisplay = 'logical' | 'physical' | 'both';
-export type Language = 'en' | 'ja';
+/**
+ * Each setting's values as one list, the way ROWS_PER_PAGE_OPTIONS already
+ * was: the type is read off the list, `loadSettings` validates against it,
+ * and the pickers offer it. A value set otherwise gets spelled three times
+ * — the union, the whitelist that keeps saved JSON honest, and the picker's
+ * options — and only the first two are in the same file, so adding a theme
+ * or a density in two of the three is the natural mistake.
+ */
+export const THEMES = ['light', 'dark', 'system'] as const;
+export type Theme = typeof THEMES[number];
+
+export const TYPE_DISPLAYS = ['logical', 'physical', 'both'] as const;
+export type TypeDisplay = typeof TYPE_DISPLAYS[number];
+
+export const LANGUAGES = ['en', 'ja'] as const;
+export type Language = typeof LANGUAGES[number];
+
 /** Vertical padding of the grids' rows; `comfortable` is the original size. */
-export type RowDensity = 'comfortable' | 'compact';
+export const ROW_DENSITIES = ['comfortable', 'compact'] as const;
+export type RowDensity = typeof ROW_DENSITIES[number];
 
 /** Supported page sizes, shared by persisted settings and the picker. */
 export const ROWS_PER_PAGE_OPTIONS = [25, 50, 100, 200, 500] as const;
@@ -67,12 +82,12 @@ export function loadSettings(): Settings {
       // Persisted JSON is untrusted at runtime: TypeScript's Settings type
       // cannot prevent null or obsolete values from reaching the render tree.
       return {
-        theme: choice(values.theme, ['light', 'dark', 'system'], defaultSettings.theme),
+        theme: choice(values.theme, THEMES, defaultSettings.theme),
         rowsPerPage: choice(values.rowsPerPage, ROWS_PER_PAGE_OPTIONS, defaultSettings.rowsPerPage),
-        typeDisplay: choice(values.typeDisplay, ['logical', 'physical', 'both'], defaultSettings.typeDisplay),
-        language: choice(values.language, ['en', 'ja'], defaultSettings.language),
+        typeDisplay: choice(values.typeDisplay, TYPE_DISPLAYS, defaultSettings.typeDisplay),
+        language: choice(values.language, LANGUAGES, defaultSettings.language),
         restoreTabs: typeof values.restoreTabs === 'boolean' ? values.restoreTabs : defaultSettings.restoreTabs,
-        rowDensity: choice(values.rowDensity, ['comfortable', 'compact'], defaultSettings.rowDensity),
+        rowDensity: choice(values.rowDensity, ROW_DENSITIES, defaultSettings.rowDensity),
       };
     }
   } catch (e) {

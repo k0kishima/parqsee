@@ -5,7 +5,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { Modal, ModalHeader } from '../../../components/modal';
 import { PurchaseSettings } from '../../license';
-import type { Theme } from '../../../lib/settings-storage';
+import { THEMES, type Language, type Theme } from '../../../lib/settings-storage';
 import { shortcutKeys } from '../../../lib/shortcuts';
 
 interface SettingsModalProps {
@@ -25,11 +25,9 @@ function SettingRow({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-const THEMES: { value: Theme; Icon: typeof Sun }[] = [
-  { value: 'light', Icon: Sun },
-  { value: 'dark', Icon: Moon },
-  { value: 'system', Icon: Monitor },
-];
+/** A theme's button. Keyed by `Theme`, so a theme added to the shared list
+ * has to be given an icon before this compiles. */
+const THEME_ICONS: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
 /**
  * Settings, as a small centred dialog: language, theme, the startup option
@@ -69,7 +67,7 @@ export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModa
         <SettingRow label={t('settings.language')}>
           <select
             value={settings.language}
-            onChange={(e) => updateSettings({ language: e.target.value as 'en' | 'ja' })}
+            onChange={(e) => updateSettings({ language: e.target.value as Language })}
             aria-label={t('settings.language')}
             className="px-3 py-1.5 text-sm border border-primary rounded-md bg-primary text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-secondary transition-colors cursor-pointer"
             >
@@ -80,7 +78,8 @@ export function SettingsModal({ isOpen, onClose, onShowShortcuts }: SettingsModa
 
         <SettingRow label={t('settings.theme')}>
           <div role="radiogroup" aria-label={t('settings.theme')} className="inline-flex rounded-md border border-primary p-0.5 bg-secondary">
-            {THEMES.map(({ value, Icon }) => {
+            {THEMES.map(value => {
+              const Icon = THEME_ICONS[value];
               const selected = settings.theme === value;
               return (
                 <button
