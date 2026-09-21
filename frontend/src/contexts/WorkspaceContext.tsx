@@ -26,12 +26,12 @@ import {
     takePendingFiles,
     SessionTab,
 } from '../features/workspace/api';
+import { createSessionSaver, type SessionSaver } from './session-saver';
 import {
     Tab,
     ClosedTab,
     WorkspaceTabs,
     RestoredTab,
-    SessionSnapshot,
     EMPTY_WORKSPACE_TABS,
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
@@ -324,63 +324,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
     }, [tabLimit, sessionReady, dispatch]);
 
-    // Keep the latest unsaved snapshot until acknowledgement. Writes are
-    // serialized so an older completion cannot replace a newer disk state.
+    // The debounce, the serializing of writes and the flush on the way out
+    // live in `createSessionSaver`; what is left here is when to hand it a
+    // snapshot. It is made once: the saver holds the pending write, and a
+    // second one would write the same tabs twice.
     const [sessionSaveFailed, setSessionSaveFailed] = useState(false);
-    const lastSavedSession = useRef<string | null>(null);
-    const pendingSession = useRef<{ snapshot: SessionSnapshot; key: string; timer: ReturnType<typeof setTimeout> } | null>(null);
-    const savingSession = useRef(false);
-    const flushRequested = useRef(false);
-    const flushSession = useCallback(function flush() {
-        const pending = pendingSession.current;
-        if (!pending) return;
-        clearTimeout(pending.timer);
-        if (savingSession.current) {
-            flushRequested.current = true;
-            return;
-        }
-        if (pending.key === lastSavedSession.current) {
-            pendingSession.current = null;
-            setSessionSaveFailed(false);
-            return;
-        }
-        savingSession.current = true;
-        flushRequested.current = false;
-        saveSession(pending.snapshot.tabs, pending.snapshot.active)
-            .then(() => {
-                lastSavedSession.current = pending.key;
-                if (pendingSession.current === pending) {
-                    pendingSession.current = null;
-                    setSessionSaveFailed(false);
-                }
-            })
-            .catch(error => {
-                console.error('Failed to save the session:', error);
-                if (pendingSession.current === pending) setSessionSaveFailed(true);
-            })
-            .finally(() => {
-                savingSession.current = false;
-                // Only an explicit flush or an elapsed debounce requests
-                // another attempt; failure itself never starts a retry loop.
-                if (flushRequested.current) {
-                    flushRequested.current = false;
-                    flush();
-                }
-            });
-    }, []);
+    const saverRef = useRef<SessionSaver | null>(null);
+    if (saverRef.current === null) {
+        saverRef.current = createSessionSaver({
+            save: snapshot => saveSession(snapshot.tabs, snapshot.active),
+            delayMs: SESSION_SAVE_DELAY_MS,
+            onFailed: setSessionSaveFailed,
+        });
+    }
+    const saver = saverRef.current;
+    const flushSession = useCallback(() => saver.flush(), [saver]);
     useEffect(() => {
         if (!isTauri() || !sessionReady) return;
-        const snapshot = sessionSnapshot(workspaceTabs);
-        const key = JSON.stringify(snapshot);
-        if (key === pendingSession.current?.key) return;
-        if (pendingSession.current) clearTimeout(pendingSession.current.timer);
-        if (!savingSession.current && key === lastSavedSession.current) {
-            pendingSession.current = null;
-            setSessionSaveFailed(false);
-            return;
-        }
-        pendingSession.current = { snapshot, key, timer: setTimeout(flushSession, SESSION_SAVE_DELAY_MS) };
-    }, [workspaceTabs, sessionReady, flushSession]);
+        saver.schedule(sessionSnapshot(workspaceTabs));
+    }, [workspaceTabs, sessionReady, saver]);
     // The window going away is the one change that cannot wait.
     useEffect(() => {
         window.addEventListener('pagehide', flushSession);
