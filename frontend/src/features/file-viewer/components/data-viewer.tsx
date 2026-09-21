@@ -46,6 +46,18 @@ interface DataViewerProps {
 
 const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
 
+/**
+ * What the banner over the grid says. `kept` is the ordinary failure: the
+ * rows of the last good load are still on screen. `dropped` is the first
+ * load of a file that refused the filter or the sort it was asked for —
+ * the plain page is on screen instead, so the banner has to name the
+ * condition that is no longer applied; the filter bar cannot, having gone
+ * back to an empty row with it.
+ */
+type DataProblem =
+  | { kind: 'kept'; message: string }
+  | { kind: 'dropped'; message: string; filter: string };
+
 function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef, toolbarSlot }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
@@ -57,7 +69,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   /** Fatal: the file itself could not be opened. */
   const [error, setError] = useState<string | null>(null);
   /** Recoverable: a filter or a page read failed; the tab stays usable. */
-  const [dataError, setDataError] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<DataProblem | null>(null);
 
   // Use ref to break dependency cycle for onStateChange
   const onStateChangeRef = useRef(onStateChange);
@@ -108,6 +120,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   /** Skip the reload triggered by rolling state back after a failed load. */
   const skipReload = useRef(false);
   /**
+   * Carry the banner through the next load instead of clearing it at the
+   * start, as every other load does. Dropping a refused filter starts the
+   * plain load itself, and its success is exactly when the user has to be
+   * told why the condition is gone.
+   */
+  const keepBanner = useRef(false);
+  /**
    * Sequence number of the latest load. Loads resolve in arrival order, not
    * request order — a cleared filter answered before the slow filtered count
    * it superseded, and the filtered rows then overwrote the unfiltered grid.
@@ -149,8 +168,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setSort(s => (s && meta.columns.some(c => c.name === s.column && isSortableColumn(c)) ? s : null));
       // The filter is kept across a refresh: dropping it here left the filter
       // bar showing a condition the grid no longer applied. If the file's
-      // columns changed underneath it, the reload reports the error and the
-      // user clears it.
+      // columns changed underneath it, the reload below fails, drops the
+      // condition, reads the plain page instead and leaves the reason in a
+      // banner — a rewritten file must not cost the tab.
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setError(toErrorMessage(err));
@@ -164,7 +184,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
     try {
       setLoading(true);
-      setDataError(null);
+      if (!keepBanner.current) setDataError(null);
+      keepBanner.current = false;
 
       const total = activeFilter
         ? await countParquetData(filePath, activeFilter)
@@ -192,7 +213,20 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         setLoading(false);
         return;
       }
-      setDataError(toErrorMessage(err));
+      if (outcome.kind === 'retryPlain') {
+        // No rows have ever been on screen, so there is nothing to roll
+        // back to: the condition goes and the plain page is read in its
+        // place. `skipReload` is deliberately not set — the reload this
+        // state change starts is the point of it.
+        setDataError({ kind: 'dropped', message: toErrorMessage(err), filter: activeFilter });
+        keepBanner.current = true;
+        setActiveFilter('');
+        setSort(null);
+        setCurrentPage(1);
+        setLoading(false);
+        return;
+      }
+      setDataError({ kind: 'kept', message: toErrorMessage(err) });
       if (outcome.rewinds) {
         skipReload.current = true;
         setActiveFilter(outcome.restore.filter);
@@ -458,8 +492,13 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         {dataError && (
           <div className="px-6 py-2 flex items-start gap-3 border-b bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900">
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-red-800 dark:text-red-300">{t('viewer.dataError')}</p>
-              <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError}</p>
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                {t(dataError.kind === 'dropped' ? 'viewer.filterDropped' : 'viewer.dataError')}
+              </p>
+              <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError.message}</p>
+              {dataError.kind === 'dropped' && dataError.filter && (
+                <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError.filter}</p>
+              )}
             </div>
             <button
               onClick={() => setDataError(null)}
