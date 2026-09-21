@@ -1,0 +1,8 @@
+{
+  "ignore": [
+    "docs/qa/*-evidence/**",
+    "scripts/qa/e2e/out/**",
+    "frontend/src/bindings/**",
+    "**/pnpm-lock.yaml"
+  ]
+}
