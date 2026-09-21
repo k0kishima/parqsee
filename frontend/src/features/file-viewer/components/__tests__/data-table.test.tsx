@@ -74,3 +74,19 @@ describe('DataTable sort headers', () => {
     expect(screen.getByText('id')).toBeInTheDocument();
   });
 });
+
+describe('DataTable cell tooltips', () => {
+  it('titles the cells that do not fit their column and leaves the rest bare', () => {
+    const { container } = renderTable({
+      columns: [
+        { name: 'id', column_type: 'INT64', kind: 'integer', logical_type: null, physical_type: 'INT64' },
+        { name: 'note', column_type: 'BYTE_ARRAY', kind: 'text', logical_type: 'String', physical_type: 'BYTE_ARRAY' },
+      ],
+      rows: [{ id: 1, note: 'x'.repeat(500) }],
+    });
+
+    const cells = container.querySelectorAll('tbody td');
+    expect(cells[0]).not.toHaveAttribute('title');
+    expect(cells[1]).toHaveAttribute('title', 'x'.repeat(500));
+  });
+});

@@ -5,7 +5,7 @@ import type { ColumnInfo, SortSpec } from '../api';
 import { isSortableColumn } from '../lib/sort';
 import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../../lib/settings-storage';
 import { centerOffset, useColumnVirtualizer } from '../../../hooks/useVirtualRange';
-import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
+import { cellOverflows, measureCharWidth, measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
 import { SearchMatch, indexOfTerm } from '../lib/search';
 import type { RowData } from '../../../lib/row';
@@ -52,6 +52,8 @@ interface VisibleColumn {
   name: string;
   /** True when the column hit the width cap, so values may be clipped. */
   mayTruncate: boolean;
+  /** The column's measured width, to size its cells' contents against. */
+  width: number;
 }
 
 const stripPhysical = (physicalType: string) =>
@@ -94,6 +96,8 @@ interface DataRowProps {
   activeMatchCol: number;
   /** The vertical padding class of the density in force. */
   cellPadding: string;
+  /** Width in px of one cell of the monospaced value font. */
+  charWidth: number;
   onSelect: (rowIndex: number) => void;
 }
 
@@ -107,6 +111,7 @@ const DataRow = React.memo(function DataRow({
   searchTerm,
   activeMatchCol,
   cellPadding,
+  charWidth,
   onSelect,
 }: DataRowProps) {
   return (
@@ -122,14 +127,19 @@ const DataRow = React.memo(function DataRow({
       `}
     >
       {padLeft > 0 && <td aria-hidden="true" />}
-      {visibleColumns.map(({ index, name, mayTruncate }) => {
+      {visibleColumns.map(({ index, name, mayTruncate, width }) => {
         const cellValueStr = formatCellValue(row[name]);
         const hasSearchMatch = cellValueStr !== null && indexOfTerm(cellValueStr, searchTerm) !== -1;
+        // The column was sized to the widest value on the page, so a value is
+        // only clipped once the column hit the cap — but the width is an
+        // estimate, so each cell is checked against it as well.
+        const clipped = cellValueStr !== null
+          && (mayTruncate || cellOverflows(cellValueStr, charWidth, width));
 
         return (
           <td
             key={index}
-            title={mayTruncate && cellValueStr !== null ? cellValueStr : undefined}
+            title={clipped ? cellValueStr : undefined}
             className={`px-4 ${cellPadding} text-sm border-r whitespace-nowrap overflow-hidden text-ellipsis border-subtle ${activeMatchCol === index
               ? 'bg-orange-200'
               : hasSearchMatch
@@ -178,6 +188,10 @@ export const DataTable = React.memo(function DataTable({
     [columns, typeDisplay]
   );
 
+  // One measurement per render rather than one per cell: the cells all
+  // render in the same monospaced font.
+  const charWidth = useMemo(() => measureCharWidth('mono'), []);
+
   const widths = useMemo(
     () => measureColumnWidths(
       columns.map((col, i) => ({ name: col.name, typeLabel: typeLabels[i] })),
@@ -202,6 +216,7 @@ export const DataTable = React.memo(function DataTable({
       index: start + i,
       name: col.name,
       mayTruncate: widths[start + i] >= MAX_COLUMN_WIDTH,
+      width: widths[start + i],
     })),
     [columns, widths, start, end]
   );
@@ -327,6 +342,7 @@ export const DataTable = React.memo(function DataTable({
               searchTerm={searchTerm}
               activeMatchCol={activeMatch && activeMatch.rowIndex === rowIndex ? activeMatch.colIndex : -1}
               cellPadding={ROW_DENSITY_CLASSES[density].cell}
+              charWidth={charWidth}
               onSelect={onSelectRow}
             />
           ))}

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  cellOverflows,
   displayCells,
   estimateCellWidth,
   measureCharWidth,
@@ -80,5 +81,16 @@ describe('estimateCellWidth', () => {
   it('is the cells of the text at the width of one character', () => {
     expect(estimateCellWidth('ab', 8)).toBe(16);
     expect(estimateCellWidth('日本', 8)).toBe(32);
+  });
+});
+
+describe('cellOverflows', () => {
+  it('answers from the column width, wide characters counted', () => {
+    // 32px of padding, so two narrow characters need 48px and two
+    // ideographs 64px.
+    expect(cellOverflows('ab', 8, 48)).toBe(false);
+    expect(cellOverflows('ab', 8, 47)).toBe(true);
+    expect(cellOverflows('日本', 8, 48)).toBe(true);
+    expect(cellOverflows('日本', 8, 64)).toBe(false);
   });
 });

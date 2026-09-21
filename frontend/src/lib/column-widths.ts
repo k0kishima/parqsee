@@ -107,6 +107,18 @@ export function estimateCellWidth(text: string, charWidth: number): number {
 }
 
 /**
+ * Whether a cell showing `text` can be clipped by a column `width` px wide.
+ *
+ * Called for every rendered cell, so it opens with the bound the character
+ * count gives — no character is wider than two cells — and only walks the
+ * text when that bound leaves the question open.
+ */
+export function cellOverflows(text: string, charWidth: number, width: number): boolean {
+  if (text.length * 2 * charWidth + CELL_HORIZONTAL_PADDING <= width) return false;
+  return estimateCellWidth(text, charWidth) + CELL_HORIZONTAL_PADDING > width;
+}
+
+/**
  * Width in px of one grid cell in the font the values are rendered in. The
  * grids ask for it once per render and size their cells from it, rather than
  * measuring every value against the canvas.

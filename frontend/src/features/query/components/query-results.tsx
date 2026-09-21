@@ -7,7 +7,7 @@ import { ResultProfilePanel } from './result-profile';
 import type { ChartKind, ChartModel } from '../lib/chart-types';
 import { IMPLEMENTED_CHART_KINDS, QueryChart, useProblemText } from './query-chart';
 import { useColumnVirtualizer, useRowVirtualizer } from '../../../hooks/useVirtualRange';
-import { measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
+import { cellOverflows, measureCharWidth, measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { ROW_DENSITY_CLASSES } from '../../../lib/settings-storage';
@@ -242,6 +242,9 @@ const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> =
     const { columns, rows } = result;
     const density = ROW_DENSITY_CLASSES[useSettings().settings.rowDensity];
 
+    // One measurement per render rather than one per cell.
+    const charWidth = useMemo(() => measureCharWidth('sans'), []);
+
     const widths = useMemo(
         () => measureColumnWidths(
             columns.map(col => ({ name: col.name, typeLabel: col.data_type })),
@@ -325,11 +328,18 @@ const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> =
                                 {padLeft > 0 && <td aria-hidden="true" />}
                                 {visibleColumns.map((col, c) => {
                                     const text = formatCell(row[col.name]);
-                                    const mayTruncate = widths[cols.start + c] >= MAX_COLUMN_WIDTH;
+                                    const width = widths[cols.start + c];
+                                    // The column was sized to the widest value
+                                    // it holds, so a value is only clipped once
+                                    // the column hit the cap — but the width is
+                                    // an estimate, so each cell is checked
+                                    // against it as well.
+                                    const clipped = width >= MAX_COLUMN_WIDTH
+                                        || cellOverflows(text, charWidth, width);
                                     return (
                                         <td
                                             key={cols.start + c}
-                                            title={mayTruncate ? text : undefined}
+                                            title={clipped ? text : undefined}
                                             className={`px-4 ${density.queryCell} border-r whitespace-nowrap overflow-hidden text-ellipsis text-gray-900 border-subtle dark:text-gray-100`}
                                         >
                                             {text}
