@@ -1,6 +1,9 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChartBar, X } from 'lucide-react';
 import { QueryResult } from '../types';
+import type { AppliedCondition } from '../lib/result-filter';
+import { ResultProfilePanel } from './result-profile';
 import type { ChartKind, ChartModel } from '../lib/chart-types';
 import { IMPLEMENTED_CHART_KINDS, QueryChart, useProblemText } from './query-chart';
 import { useColumnVirtualizer, useRowVirtualizer } from '../../../hooks/useVirtualRange';
@@ -22,14 +25,35 @@ export interface ChartControls {
     notice: string | null;
 }
 
+/**
+ * The profile beside the result and the conditions narrowing it, owned by
+ * `QueryView`: the rows on screen are the narrowed ones, and the chart is
+ * of those same rows.
+ */
+export interface ProfileControls {
+    resultId: string;
+    /** The column whose profile is open, by position in the result. */
+    openColumn: number | null;
+    onOpenColumn: (columnIndex: number | null) => void;
+    conditions: AppliedCondition[];
+    onNarrow: (conditions: AppliedCondition[]) => void;
+    onRemoveCondition: (index: number) => void;
+    onClearConditions: () => void;
+    /** How many rows the result has before the conditions narrow it. */
+    totalRows: number;
+    /** The `WHERE` fragment the conditions make, for the profile's own query. */
+    filter?: string;
+}
+
 interface QueryResultsProps {
     result?: QueryResult;
     error?: string;
     isLoading: boolean;
     chart?: ChartControls;
+    profile?: ProfileControls;
 }
 
-export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading, chart }) => {
+export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading, chart, profile }) => {
     const { t } = useTranslation();
 
     if (isLoading) {
@@ -77,9 +101,68 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
                     {chart && <ResultModeToggle chart={chart} />}
                 </span>
             </div>
-            {chart && chart.mode === 'chart'
-                ? <ChartPane chart={chart} />
-                : <ResultGrid result={result} />}
+            {profile && profile.conditions.length > 0 && (
+                <NarrowedBy profile={profile} shown={result.rows.length} />
+            )}
+            <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                    {chart && chart.mode === 'chart'
+                        ? <ChartPane chart={chart} />
+                        : <ResultGrid result={result} profile={profile} />}
+                </div>
+                {profile && profile.openColumn !== null && result.columns[profile.openColumn] && (
+                    <ResultProfilePanel
+                        resultId={profile.resultId}
+                        column={result.columns[profile.openColumn]}
+                        columnIndex={profile.openColumn}
+                        filter={profile.filter}
+                        rows={result.rows.length}
+                        truncated={result.truncated}
+                        onClose={() => profile.onOpenColumn(null)}
+                        onNarrow={profile.onNarrow}
+                    />
+                )}
+            </div>
+        </div>
+    );
+};
+
+/**
+ * What the profile narrowed the result to, and the way back. The
+ * conditions are the user's own clicks, so each one goes on its own; the
+ * SQL in the editor is untouched and says nothing about them, which is
+ * why they are named here rather than left for the row count to imply.
+ */
+const NarrowedBy: React.FC<{ profile: ProfileControls; shown: number }> = ({ profile, shown }) => {
+    const { t } = useTranslation();
+    return (
+        <div className="px-2 py-1 border-b border-primary flex flex-wrap items-center gap-2 text-xs text-secondary">
+            <span>{t('viewer.query.result.narrowed', { shown: shown.toLocaleString(), total: profile.totalRows.toLocaleString() })}</span>
+            <ul className="flex flex-wrap items-center gap-1">
+                {profile.conditions.map((condition, index) => (
+                    <li key={`${condition.columnIndex}-${condition.operator}-${condition.sql}`}>
+                        <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border border-secondary bg-tertiary">
+                            <span className="font-mono">{condition.label}</span>
+                            <button
+                                type="button"
+                                onClick={() => profile.onRemoveCondition(index)}
+                                title={t('viewer.query.result.removeCondition')}
+                                aria-label={t('viewer.query.result.removeCondition')}
+                                className="p-0.5 rounded text-tertiary hover:text-primary hover:bg-primary"
+                            >
+                                <X size={11} />
+                            </button>
+                        </span>
+                    </li>
+                ))}
+            </ul>
+            <button
+                type="button"
+                onClick={profile.onClearConditions}
+                className="px-1.5 py-0.5 rounded border border-primary hover:bg-tertiary"
+            >
+                {t('common.clear')}
+            </button>
         </div>
     );
 };
@@ -153,7 +236,7 @@ const DEFAULT_ROW_HEIGHT = 33;
  * scroll viewport are rendered, and because a query can return thousands of
  * rows, only the rows that overlap it as well.
  */
-const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
+const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> = ({ result, profile }) => {
     const scrollerRef = useRef<HTMLDivElement>(null);
     const tbodyRef = useRef<HTMLTableSectionElement>(null);
     const { columns, rows } = result;
@@ -217,12 +300,13 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                             <th
                                 key={cols.start + i}
                                 title={col.name}
-                                className={`px-4 ${density.queryHeader} font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-primary dark:text-gray-300`}
+                                className={`relative px-4 ${density.queryHeader} font-medium border-b whitespace-nowrap overflow-hidden text-ellipsis text-gray-600 border-primary dark:text-gray-300`}
                             >
                                 <div className="flex flex-col">
                                     <span>{col.name}</span>
                                     <span className="text-[10px] text-gray-400 font-normal">{col.data_type}</span>
                                 </div>
+                                {profile && <ProfileButton profile={profile} name={col.name} columnIndex={cols.start + i} />}
                             </th>
                         ))}
                         {padRight > 0 && <th aria-hidden="true" />}
@@ -264,6 +348,26 @@ const ResultGrid: React.FC<{ result: QueryResult }> = ({ result }) => {
                 </tbody>
             </table>
         </div>
+    );
+};
+
+/** The chart button on a result column, the same one the browse grid carries. */
+const ProfileButton: React.FC<{ profile: ProfileControls; name: string; columnIndex: number }> = ({ profile, name, columnIndex }) => {
+    const { t } = useTranslation();
+    const open = profile.openColumn === columnIndex;
+    return (
+        <button
+            type="button"
+            onClick={() => profile.onOpenColumn(open ? null : columnIndex)}
+            aria-pressed={open}
+            aria-label={t('viewer.profile.open', { column: name })}
+            title={t('viewer.profile.open', { column: name })}
+            className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors hover:bg-slate-200 dark:hover:bg-gray-600 ${
+                open ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'
+            }`}
+        >
+            <ChartBar size={14} />
+        </button>
     );
 };
 
