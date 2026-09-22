@@ -1,6 +1,8 @@
 use arrow::csv::Writer as CsvWriter;
 use arrow::csv::WriterBuilder as CsvWriterBuilder;
 use arrow::json::ArrayWriter as JsonArrayWriter;
+use arrow::array::RecordBatchReader;
+use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use std::fs::File;
@@ -37,7 +39,17 @@ impl ExportFormat {
 }
 
 /// A CSV or JSON destination that batches are streamed into.
-enum RowWriter {
+struct RowWriter {
+    sink: RowSink,
+    /// Whether a batch has reached the sink. arrow's CSV writer writes the
+    /// header with the first batch it is given, so an export that reaches
+    /// `finish` without one has to be handed an empty batch or the file ends
+    /// up with nothing in it at all — not even the column names, which is
+    /// the one thing a result of no rows still has to say.
+    wrote_batch: bool,
+}
+
+enum RowSink {
     // Boxed: the CSV writer is several times the size of the JSON one
     // (clippy::large_enum_variant).
     Csv(Box<CsvWriter<BufWriter<File>>>),
@@ -64,39 +76,52 @@ impl RowWriter {
         let mut out = BufWriter::new(
             File::create(path).map_err(|e| format!("Cannot write {}: {}", path, e))?,
         );
-        match format {
+        let sink = match format {
             ExportFormat::Csv => {
                 // UTF-8 BOM for Excel compatibility.
                 out.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
-                Ok(RowWriter::Csv(Box::new(
+                RowSink::Csv(Box::new(
                     CsvWriterBuilder::new().with_header(true).build(out),
-                )))
+                ))
             }
-            ExportFormat::Json => Ok(RowWriter::Json(JsonArrayWriter::new(out))),
-        }
+            ExportFormat::Json => RowSink::Json(JsonArrayWriter::new(out)),
+        };
+        Ok(RowWriter { sink, wrote_batch: false })
     }
 
     fn write(&mut self, batch: &RecordBatch) -> Result<usize, String> {
-        match self {
+        match &mut self.sink {
             // The CSV writer refuses nested columns; JSON text keeps them readable.
             // Date64 is cast down for the same reason the JSON path casts it:
             // the writer would print the time of day a date does not have.
-            RowWriter::Csv(writer) => writer
+            RowSink::Csv(writer) => writer
                 .write(&nested_to_json_strings(&date64_as_date32(batch)?)?)
                 .map_err(|e| e.to_string())?,
             // The JSON writer refuses decimals and nulls out NaN; the CSV
             // writer handles both.
-            RowWriter::Json(writer) => writer
+            RowSink::Json(writer) => writer
                 .write(&json_unsafe_to_strings(batch)?)
                 .map_err(|e| e.to_string())?,
         }
+        self.wrote_batch = true;
         Ok(batch.num_rows())
     }
 
-    fn finish(self) -> Result<(), String> {
-        match self {
-            RowWriter::Csv(writer) => writer.into_inner().flush().map_err(|e| e.to_string()),
-            RowWriter::Json(mut writer) => {
+    /// Close the file. `schema` is the one the rows would have had, so that
+    /// a CSV nothing matched is still a file with its header — a filter that
+    /// excludes every row otherwise exported a byte-order mark and nothing
+    /// else, while the same export through the sorted path, which hands the
+    /// writer an empty batch of its own, wrote the header. The schema is
+    /// optional because one path has nothing but the batches to take it from.
+    fn finish(mut self, schema: Option<SchemaRef>) -> Result<(), String> {
+        if !self.wrote_batch {
+            if let (RowSink::Csv(_), Some(schema)) = (&self.sink, schema) {
+                self.write(&RecordBatch::new_empty(schema))?;
+            }
+        }
+        match self.sink {
+            RowSink::Csv(writer) => writer.into_inner().flush().map_err(|e| e.to_string()),
+            RowSink::Json(mut writer) => {
                 writer.finish().map_err(|e| e.to_string())?;
                 writer.into_inner().flush().map_err(|e| e.to_string())
             }
@@ -194,12 +219,13 @@ async fn export_data_with(
             })?;
             let staging = staging_path.clone();
             tokio::task::spawn_blocking(move || {
+                let schema = batches.first().map(|batch| batch.schema());
                 let mut writer = RowWriter::create(format, &staging)?;
                 let mut rows = 0;
                 for batch in batches {
                     rows += writer.write(&batch)?;
                 }
-                writer.finish()?;
+                writer.finish(schema)?;
                 Ok(rows)
             }).await.map_err(|e| format!("Export task failed: {}", e))?
         }
@@ -426,13 +452,14 @@ fn export_range(
     staging_path: &str,
 ) -> Result<usize, String> {
     let reader = range_reader(source_path, offset, limit, EXPORT_BATCH_SIZE)?;
+    let schema = reader.schema();
 
     let mut writer = RowWriter::create(format, staging_path)?;
     let mut rows_written = 0usize;
     for batch in reader {
         rows_written += writer.write(&batch.map_err(|e| e.to_string())?)?;
     }
-    writer.finish()?;
+    writer.finish(Some(schema))?;
     Ok(rows_written)
 }
 
@@ -475,6 +502,7 @@ async fn export_query(
     // is always joined, so the staging file is never touched after this
     // function returns.
     let staging = staging_path.to_string();
+    let schema = stream.schema();
     let (tx, rx) = std::sync::mpsc::sync_channel::<RecordBatch>(4);
     let writer_task = tokio::task::spawn_blocking(move || -> Result<usize, String> {
         let mut writer = RowWriter::create(format, &staging)?;
@@ -482,7 +510,7 @@ async fn export_query(
         for batch in rx {
             rows_written += writer.write(&batch)?;
         }
-        writer.finish()?;
+        writer.finish(Some(schema))?;
         Ok(rows_written)
     });
 
@@ -901,6 +929,52 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("gone"), "{err}");
         assert!(!out.exists());
+    }
+
+    /// A result of no rows is still a result: its columns are what says so.
+    /// arrow's CSV writer writes the header with the first batch, so a file
+    /// with no batch at all came out as a byte-order mark and nothing else,
+    /// which no spreadsheet opens as a table.
+    #[tokio::test]
+    async fn an_export_that_matches_no_rows_still_names_its_columns() {
+        let src = write_fixture("empty_csv");
+        let cache = ParquetCache::new();
+
+        let out = temp_path("no_rows.csv");
+        let n = export(&cache, &src, &out, "csv", None, Some("\"id\" > 1000"), None)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert_eq!(text.trim_start_matches('\u{feff}'), "id,name,score\n");
+
+        // The unfiltered path reads its schema from the file rather than
+        // from a batch, so a range past the last row says the same.
+        let out = temp_path("no_rows_range.csv");
+        let n = export(&cache, &src, &out, "csv", Some((1000, 10)), None, None)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert_eq!(text.trim_start_matches('\u{feff}'), "id,name,score\n");
+
+        // And the sorted path, which was the one that already did.
+        let out = temp_path("no_rows_sorted.csv");
+        let n = export(&cache, &src, &out, "csv", None, Some("\"id\" > 1000"),
+                       Some(SortSpec { column: "name".into(), direction: SortDirection::Asc }))
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert_eq!(text.trim_start_matches('\u{feff}'), "id,name,score\n");
+
+        // JSON has no header to write; an empty array is the whole answer.
+        let out = temp_path("no_rows.json");
+        let n = export(&cache, &src, &out, "json", None, Some("\"id\" > 1000"), None)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "[]");
     }
 
     #[tokio::test]

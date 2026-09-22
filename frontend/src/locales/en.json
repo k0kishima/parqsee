@@ -15,6 +15,7 @@
         "appName": "Parqsee",
         "apply": "Apply",
         "clear": "Clear",
+        "fileUnreachable": "Cannot open {{path}}: the file is missing or cannot be reached right now.",
         "addCondition": "Add Condition",
         "dismiss": "Dismiss",
         "removeCondition": "Remove condition"

@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tokio::sync::oneshot;
 
@@ -35,7 +36,16 @@ pub const SUPERSEDED: &str = "The profile was superseded by a newer one";
 /// state; the E2E bridge holds one of its own.
 #[derive(Default)]
 pub struct ProfileRequests {
-    running: Mutex<HashMap<String, oneshot::Sender<()>>>,
+    running: Mutex<HashMap<String, Registration>>,
+    next_run: AtomicU64,
+}
+
+/// One registered run. The serial tells two runs under the same id apart:
+/// an id is the webview's to mint and it may reuse one, and a run that
+/// cleared the entry without looking would cancel the run that replaced it.
+struct Registration {
+    run: u64,
+    cancel: oneshot::Sender<()>,
 }
 
 impl ProfileRequests {
@@ -51,10 +61,11 @@ impl ProfileRequests {
     {
         let Some(id) = id else { return work.await };
         let (tx, rx) = oneshot::channel();
+        let run = self.next_run.fetch_add(1, Ordering::Relaxed);
         // A second request under one id would be the webview's own mistake;
         // the older one is cancelled, as a supersession is.
-        if let Some(previous) = self.lock().insert(id.clone(), tx) {
-            let _ = previous.send(());
+        if let Some(previous) = self.lock().insert(id.clone(), Registration { run, cancel: tx }) {
+            let _ = previous.cancel.send(());
         }
         let outcome = tokio::select! {
             result = work => result,
@@ -62,7 +73,15 @@ impl ProfileRequests {
             // the map entry away still ends the work.
             _ = rx => Err(SUPERSEDED.to_string()),
         };
-        self.lock().remove(&id);
+        // Clear the entry only while it is still this run's. A run that was
+        // superseded finds the newer one there and leaves it alone;
+        // removing it would cancel the very request that replaced this one,
+        // and both would come back superseded.
+        let mut running = self.lock();
+        if running.get(&id).is_some_and(|entry| entry.run == run) {
+            running.remove(&id);
+        }
+        drop(running);
         outcome
     }
 
@@ -71,11 +90,11 @@ impl ProfileRequests {
     /// without waiting to see whether the work is still going.
     pub fn cancel(&self, id: &str) {
         if let Some(running) = self.lock().remove(id) {
-            let _ = running.send(());
+            let _ = running.cancel.send(());
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, oneshot::Sender<()>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Registration>> {
         // Nothing awaits under this lock, so a poisoned one can only come
         // from a panic between the two statements that hold it.
         self.running.lock().unwrap_or_else(|e| e.into_inner())
@@ -138,6 +157,39 @@ mod tests {
         assert!(!task.is_finished(), "another panel's cancel ended this one");
         requests.cancel("panel-1");
         assert_eq!(task.await.unwrap(), Err(SUPERSEDED.to_string()));
+    }
+
+    /// The webview does not reuse an id, but nothing stops it: the id is
+    /// its to mint. The second run has to be the one that survives — it is
+    /// the one whose answer the panel is waiting for.
+    #[tokio::test]
+    async fn a_second_request_under_one_id_supersedes_only_the_first() {
+        let requests = Arc::new(ProfileRequests::new());
+        let start = |requests: &Arc<ProfileRequests>| {
+            let running = Arc::clone(requests);
+            let (started, was_started) = oneshot::channel();
+            let task = tokio::spawn(async move {
+                running
+                    .run(Some("panel-1".into()), async {
+                        started.send(()).unwrap();
+                        std::future::pending::<Result<u8, String>>().await
+                    })
+                    .await
+            });
+            (task, was_started)
+        };
+
+        let (first, first_started) = start(&requests);
+        first_started.await.unwrap();
+        let (second, second_started) = start(&requests);
+        second_started.await.unwrap();
+
+        assert_eq!(first.await.unwrap(), Err(SUPERSEDED.to_string()));
+        assert!(!second.is_finished(), "the first run's cleanup cancelled the second");
+
+        requests.cancel("panel-1");
+        assert_eq!(second.await.unwrap(), Err(SUPERSEDED.to_string()));
+        assert!(requests.lock().is_empty());
     }
 
     #[tokio::test]

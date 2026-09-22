@@ -7,6 +7,7 @@ import type { ColumnInfo } from '../../api';
 const columns: ColumnInfo[] = [
   { name: 'id', column_type: 'INT64', kind: 'integer', logical_type: null, physical_type: 'INT64' },
   { name: 'name', column_type: 'STRING', kind: 'text', logical_type: null, physical_type: 'STRING' },
+  { name: 'tags', column_type: 'LIST<STRING>', kind: 'nested', logical_type: null, physical_type: 'BYTE_ARRAY' },
 ];
 
 // The mocked `t` answers with the key, so the buttons are named by it.
@@ -15,6 +16,9 @@ const removeButtons = () => screen.getAllByRole('button', { name: 'common.remove
 const valueInputs = () => screen.getAllByRole('textbox');
 // Two selects per row: the column, then the operator.
 const columnSelects = () => screen.getAllByRole('combobox').filter((_, i) => i % 2 === 0);
+const operatorSelects = () => screen.getAllByRole('combobox').filter((_, i) => i % 2 === 1);
+const operatorOptions = (index: number) =>
+  Array.from(operatorSelects()[index].querySelectorAll('option')).map(o => o.value);
 
 function renderBar() {
   const onFilterChange = vi.fn();
@@ -61,6 +65,51 @@ describe('FilterBar rows', () => {
     expect(columnSelects()[0]).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
     expect(onFilterChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('offers a nested column only the null checks, which need no value', () => {
+    renderBar();
+    expect(operatorOptions(0)).toContain('=');
+
+    fireEvent.change(columnSelects()[0], { target: { value: 'tags' } });
+    expect(operatorOptions(0)).toEqual(['IS NULL', 'IS NOT NULL']);
+    // The comparison it was carrying goes with them, rather than staying
+    // on screen as a condition the column cannot be asked.
+    expect(operatorSelects()[0]).toHaveValue('IS NULL');
+
+    fireEvent.change(columnSelects()[0], { target: { value: 'name' } });
+    expect(operatorOptions(0)).toContain('LIKE');
+    expect(operatorSelects()[0]).toHaveValue('IS NULL');
+  });
+
+  it('keeps a restored comparison on a nested column selectable', () => {
+    const onFilterChange = vi.fn();
+    render(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter={`"tags" = 'a'`} />);
+    expect(operatorSelects()[0]).toHaveValue('=');
+    expect(operatorOptions(0)).toEqual(['=', 'IS NULL', 'IS NOT NULL']);
+  });
+
+  it('keeps the rows of a submission the backend refused, and restores any other change', () => {
+    const onFilterChange = vi.fn();
+    const { rerender } = render(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter="" />);
+    fireEvent.change(columnSelects()[0], { target: { value: 'id' } });
+    fireEvent.change(valueInputs()[0], { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 5');
+
+    // The viewer rolls back to the filter in force before — none — and
+    // names the refused one: the draft stays for the user to correct.
+    rerender(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter="" rejectedFilter={'"id" = 5'} />);
+    expect(valueInputs()[0]).toHaveValue('5');
+    expect(columnSelects()[0]).toHaveValue('id');
+    fireEvent.change(valueInputs()[0], { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 7');
+
+    // A filter arriving from outside, with nothing refused, is restored
+    // into rows as before.
+    rerender(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter={'"id" = 9'} rejectedFilter={null} />);
+    expect(valueInputs()[0]).toHaveValue('9');
   });
 
   it('removes only the row whose − was pressed', () => {

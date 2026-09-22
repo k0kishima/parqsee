@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { useTranslation } from 'react-i18next';
 import { X, XSquare, ChevronsRight, Copy, FolderOpen, RotateCcw } from 'lucide-react';
 import { copyPath, revealInFinder } from '../../../lib/reveal';
-import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
+import { useEscapeLayer } from '../../../hooks/useEscapeLayer';
 import { shortcutKeys } from '../../../lib/shortcuts';
 
 export interface TabContextMenuProps {
@@ -73,12 +73,7 @@ export const TabContextMenu: React.FC<TabContextMenuProps> = ({
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [onDismiss]);
 
-  useGlobalKeydown(
-    useCallback((e: KeyboardEvent) => {
-      if (e.key === 'Escape') onDismiss();
-    }, [onDismiss]),
-    'document'
-  );
+  useEscapeLayer(onDismiss);
 
   const handleCopyPath = useCallback(() => copyPath(path), [path]);
   const handleRevealInFinder = useCallback(() => revealInFinder(path), [path]);

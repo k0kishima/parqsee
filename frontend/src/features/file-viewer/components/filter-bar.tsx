@@ -11,6 +11,7 @@ import {
     isNumericLiteral,
     KIND_LITERAL,
     operatorCompares,
+    operatorsForKind,
     operatorTakesValue,
     quoteIdentifier,
     type FilterOperator,
@@ -20,6 +21,16 @@ interface FilterBarProps {
     columns: ColumnInfo[];
     onFilterChange: (filter: string) => void;
     activeFilter: string;
+    /**
+     * The filter the viewer's last load failed with, while its banner is
+     * up; null otherwise. The viewer rolls `activeFilter` back to the one
+     * in force before it, and this is what tells the bar that the change
+     * is a rollback of its own submission rather than a filter arriving
+     * from outside — so the rows stay as typed, unapplied, for the user to
+     * correct and apply again instead of vanishing with the banner's SQL
+     * as the only trace of them.
+     */
+    rejectedFilter?: string | null;
 }
 
 /** A condition another part of the viewer asks the bar to add. */
@@ -210,7 +221,7 @@ function withBase(base: string, expression: string): string {
 }
 
 export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function FilterBar(
-    { columns, onFilterChange, activeFilter },
+    { columns, onFilterChange, activeFilter, rejectedFilter = null },
     ref
 ) {
     const { t } = useTranslation();
@@ -224,9 +235,16 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     const [previousActive, setPreviousActive] = useState(activeFilter);
     if (previousActive !== activeFilter) {
         setPreviousActive(activeFilter);
-        // Our own submission already has editable rows. External changes,
-        // including rollback after a failed query, must restore their rows.
-        if (activeFilter !== submitted.current) {
+        // Our own submission already has editable rows, and so does one the
+        // backend refused: the viewer rolls the filter back and names the
+        // refused one, and the rows are the draft to correct. Not when the
+        // refused filter carried a base predicate — SQL the bar could only
+        // show, not edit, restored with the tab onto a file that no longer
+        // takes it: kept, it would go back out with the next Apply and be
+        // refused again, with no ✕ to clear it while no filter is in force.
+        // Any other change from outside must restore its rows.
+        const rolledBack = rejectedFilter !== null && rejectedFilter === submitted.current && !baseFilter;
+        if (activeFilter !== submitted.current && !rolledBack) {
             const restored = restoreFilter(activeFilter, columns);
             setFilters(restored.filters);
             setBaseFilter(restored.base);
@@ -321,6 +339,19 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
         setFilters(filters.map(f => (f.id === id ? { ...f, ...patch, explicitValue: patch.value === undefined ? f.explicitValue : false } : f)));
     };
 
+    /**
+     * Picking a column also settles the operator, because the offered ones
+     * depend on the column: a comparison carried over onto a nested column
+     * would stay on screen as a condition the column cannot be asked, and
+     * the select would show a value that is no longer among its options.
+     */
+    const handleColumnChange = (id: number, column: string) => {
+        const operators = column ? operatorsForKind(kindOf(columns, column)) : FILTER_OPERATORS;
+        setFilters(filters.map(f => (f.id === id
+            ? { ...f, column, operator: operators.includes(f.operator) ? f.operator : operators[0] }
+            : f)));
+    };
+
     const handleClear = () => {
         setFilters([newFilterRow()]);
         setInvalid(null);
@@ -357,6 +388,16 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
             <form onSubmit={handleSubmit} className="grid grid-cols-[auto_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
+                    // A row with no column picked offers every operator: the
+                    // kind is not known yet. The row's own operator stays on
+                    // the list even when its column's kind no longer offers
+                    // it — a filter saved by an earlier version can carry
+                    // one, and a select whose value is not among its options
+                    // renders blank.
+                    const offered = filter.column ? operatorsForKind(kindOf(columns, filter.column)) : FILTER_OPERATORS;
+                    const operators = offered.includes(filter.operator)
+                        ? offered
+                        : FILTER_OPERATORS.filter(op => offered.includes(op) || op === filter.operator);
                     const isLast = index === filters.length - 1;
                     const lit = arrived.includes(filter.id) ? ' filter-arrived' : '';
 
@@ -394,7 +435,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 filtered on either way. */}
                             <select
                                 value={filter.column}
-                                onChange={(e) => handleChange(filter.id, { column: e.target.value })}
+                                onChange={(e) => handleColumnChange(filter.id, e.target.value)}
                                 className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${filter.column ? inputBg : unsetInputBg}${lit}`}
                             >
                                 {!filter.column && <option value="">{t('viewer.filterColumnPlaceholder')}</option>}
@@ -412,7 +453,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 }}
                                 className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}${lit}`}
                             >
-                                {FILTER_OPERATORS.map(op => (
+                                {operators.map(op => (
                                     <option key={op} value={op}>{op}</option>
                                 ))}
                             </select>

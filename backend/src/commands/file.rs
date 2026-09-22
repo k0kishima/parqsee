@@ -134,9 +134,19 @@ pub async fn sample_file_path(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 /// Describe one directory entry for the explorer.
+///
+/// The metadata is read of what the entry *points at*, not of the entry:
+/// `DirEntry::metadata` does not follow a symlink, so a link to a folder
+/// arrived in the tree as a file — with a size of a few dozen bytes, no way
+/// to expand it, and a `.parquet` link listed as a file the app then could
+/// not open. A link that points nowhere has no target to describe, so it
+/// falls back to the link itself and is listed as the file it is.
 fn file_entry(entry: io::Result<DirEntry>) -> Result<FileEntry, String> {
     let entry = entry.map_err(|e| e.to_string())?;
-    let metadata = entry.metadata().map_err(|e| e.to_string())?;
+    let metadata = match std::fs::metadata(entry.path()) {
+        Ok(metadata) => metadata,
+        Err(_) => entry.metadata().map_err(|e| e.to_string())?,
+    };
     let path = entry.path().to_string_lossy().into_owned();
     let is_directory = metadata.is_dir();
     Ok(FileEntry {
@@ -230,6 +240,41 @@ mod tests {
         assert_eq!(list_directory(missing).await.unwrap_err(), "Directory does not exist");
         let file = dir.join("file.txt").to_string_lossy().into_owned();
         assert_eq!(list_directory(file).await.unwrap_err(), "Path is not a directory");
+    }
+
+    /// The tree is drawn from `is_directory`, so a link to a folder listed
+    /// as a file cannot be expanded at all — and a link to a parquet file
+    /// listed with the link's own few dozen bytes is a file the app then
+    /// fails to open.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_is_listed_as_what_it_points_at() {
+        let dir = temp_dir("file", "symlinks");
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        std::fs::write(dir.join("real.parquet"), b"parquet").unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("to-folder")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real.parquet"), dir.join("to-file.parquet")).unwrap();
+        std::os::unix::fs::symlink(dir.join("gone"), dir.join("broken.parquet")).unwrap();
+
+        let entries = list_directory(dir.to_string_lossy().into_owned()).await.unwrap();
+        let entry = |name: &str| entries.iter().find(|e| e.name == name).unwrap();
+
+        assert!(entry("to-folder").is_directory, "a link to a folder is a folder");
+        assert_eq!(entry("to-folder").size, None);
+
+        let file = entry("to-file.parquet");
+        assert!(!file.is_directory);
+        assert!(file.is_parquet);
+        assert_eq!(file.size, Some(7), "the target's size, not the link's");
+
+        // A link with nothing at the end of it is described as itself,
+        // rather than dropping the whole listing.
+        let broken = entry("broken.parquet");
+        assert!(!broken.is_directory);
+
+        // And the folders still come first, however they are reached.
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["real", "to-folder", "broken.parquet", "real.parquet", "to-file.parquet"]);
     }
 
     #[test]

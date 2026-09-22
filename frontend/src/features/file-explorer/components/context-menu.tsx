@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, FolderOpen, ExternalLink } from 'lucide-react';
 import { copyPath, revealInFinder } from '../../../lib/reveal';
 import { FileEntry } from '../api';
-import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
+import { useEscapeLayer } from '../../../hooks/useEscapeLayer';
 
 interface ContextMenuProps {
   x: number;
@@ -27,14 +27,7 @@ export function ContextMenu({ x, y, entry, onClose, onFileSelect }: ContextMenuP
     return () => document.removeEventListener('mousedown', handleClick);
   }, [onClose]);
 
-  useGlobalKeydown(
-    useCallback((e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    }, [onClose]),
-    'document'
-  );
+  useEscapeLayer(onClose);
 
   const handleCopyPath = useCallback(async () => {
     await copyPath(entry.path);

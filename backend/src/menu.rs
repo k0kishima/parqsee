@@ -178,14 +178,21 @@ pub fn set_language(app: &AppHandle, language: &str) {
 /// created and dropped on the main thread; the rebuild is handed there and
 /// this returns at once, so a command that changed the list does not wait
 /// on the menu bar.
+///
+/// The list is read on the main thread, inside the rebuild, and not here.
+/// Two changes in quick succession queue two rebuilds, and the queue is the
+/// only thing that orders them: a list read before queueing could be the
+/// older of the two and arrive second, leaving the menu showing a Recent
+/// Files that no longer exists until something else changed it. Read where
+/// it is drawn and the last rebuild to run is the one holding the newest
+/// list, whatever order the callers arrived in.
 pub fn refresh_recent_menu(app: &AppHandle) {
-    let (Some(menu), Some(access)) = (app.try_state::<RecentMenu>(), app.try_state::<Arc<FileAccess>>()) else {
-        return;
-    };
-    let items = recent_menu_items(&access.recent_entries());
+    let Some(menu) = app.try_state::<RecentMenu>() else { return };
     let submenu = menu.0.clone();
     let handle = app.clone();
     if let Err(e) = app.run_on_main_thread(move || {
+        let Some(access) = handle.try_state::<Arc<FileAccess>>() else { return };
+        let items = recent_menu_items(&access.recent_entries());
         if let Err(e) = rebuild(&handle, &submenu, &items) {
             eprintln!("could not rebuild the Open Recent menu: {e}");
         }

@@ -103,6 +103,38 @@ struct State {
     held: HashMap<String, AccessToken>,
 }
 
+/// What a change to the store has to be put back to when it cannot be
+/// persisted.
+///
+/// A caller that is told the folder did not open, or the file was not
+/// recorded, must not find the app still behaving as though it had:
+/// `list_workspace_roots` would go on answering with a root the user never
+/// got, Recent Files would list a file whose entry is gone at the next
+/// launch, and the grant taken for either would be held for the life of the
+/// process with nothing left to release it.
+struct Undo {
+    store: BookmarkStore,
+    /// Whether the path's grant was already held, so an undo only gives
+    /// back the one this change took.
+    was_held: bool,
+}
+
+impl Undo {
+    fn taken(state: &State, path: &str) -> Self {
+        Self {
+            store: state.store.clone(),
+            was_held: state.held.contains_key(path),
+        }
+    }
+
+    fn apply(self, state: &mut State, path: &str) {
+        state.store = self.store;
+        if !self.was_held {
+            state.held.remove(path);
+        }
+    }
+}
+
 pub struct FileAccess {
     provider: Box<dyn BookmarkProvider>,
     /// Where the store is written; `None` keeps it in memory (tests).
@@ -347,9 +379,13 @@ impl FileAccess {
             available: true,
         };
         let mut state = self.lock()?;
+        let undo = Undo::taken(&state, path);
         state.store.upsert_recent(entry);
         self.hold_new(&mut state, path);
-        self.save(&state)?;
+        if let Err(e) = self.save(&state) {
+            undo.apply(&mut state, path);
+            return Err(e);
+        }
         Ok(recent)
     }
 
@@ -469,6 +505,7 @@ impl FileAccess {
             name: display_name(path),
         };
         let mut state = self.lock()?;
+        let undo = Undo::taken(&state, path);
         state.store.add_root(RootEntry {
             path: root.path.clone(),
             name: root.name.clone(),
@@ -476,7 +513,10 @@ impl FileAccess {
             added_at: now_ms(),
         });
         self.hold_new(&mut state, path);
-        self.save(&state)?;
+        if let Err(e) = self.save(&state) {
+            undo.apply(&mut state, path);
+            return Err(e);
+        }
         Ok(root)
     }
 
@@ -813,6 +853,48 @@ mod tests {
         access.release(&file);
         assert!(fake.active().is_empty());
         assert_eq!(fake.stops(), 1);
+    }
+
+    /// A change the caller is told failed must leave nothing of itself
+    /// behind: the webview draws the app from what these answer with, and a
+    /// grant nothing can release is held until the process ends.
+    #[test]
+    fn a_change_that_cannot_be_saved_is_put_back() {
+        let (dir, file) = fixture("unsavable");
+        // The store's directory is a file, so `save_to` fails on every call
+        // — as a data directory the app may not write into does.
+        let blocked = dir.join("blocked");
+        std::fs::write(&blocked, b"not a directory").unwrap();
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&blocked));
+
+        let root = s(&dir.join("data"));
+        assert!(access.add_root(&root).is_err());
+        assert!(access.roots().is_empty(), "a root the caller never got");
+        assert!(fake.active().is_empty(), "a grant with nothing left to release it");
+
+        assert!(access.remember_file(&file).is_err());
+        assert!(access.recent_files().is_empty());
+        assert!(fake.active().is_empty());
+
+        // What was recorded before a failed change is still what is
+        // recorded: a store that saved once and cannot save again.
+        let fake = FakeBookmarks::default();
+        let access = FileAccess::load(Box::new(fake.clone()), Some(&dir));
+        access.remember_file(&file).unwrap();
+        let store = dir.join("bookmarks.json");
+        std::fs::remove_file(&store).unwrap();
+        std::fs::create_dir(&store).unwrap();
+        std::fs::write(store.join("in the way"), b"").unwrap();
+
+        let second = second_file(&dir);
+        assert!(access.remember_file(&second).is_err());
+        assert_eq!(
+            access.recent_files().iter().map(|r| r.path.clone()).collect::<Vec<_>>(),
+            vec![file],
+            "the file that could not be recorded is listed all the same"
+        );
+        assert!(!fake.active().contains(&second));
     }
 
     #[test]

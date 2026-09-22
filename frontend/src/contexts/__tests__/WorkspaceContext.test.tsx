@@ -8,7 +8,7 @@ import { evictCacheQuietly, openParquetFile } from '../../features/file-viewer/a
 import { open } from '@tauri-apps/plugin-dialog';
 import { addWorkspaceRoot, listWorkspaceRoots, removeWorkspaceRoot, listSessionTabs, saveSession, takePendingFiles } from '../../features/workspace/api';
 import type { SessionTab } from '../../features/workspace/api';
-import { rememberFile, removeRecentFile, sampleFilePath } from '../../features/welcome/api';
+import { listRecentFiles, rememberFile, removeRecentFile, sampleFilePath } from '../../features/welcome/api';
 import { checkFileExists } from '../../features/file-viewer/api';
 import { useRecentFiles } from '../RecentFilesContext';
 import { saveSettings, defaultSettings } from '../../lib/settings-storage';
@@ -31,7 +31,14 @@ vi.mock('../../features/workspace/api', () => ({
 const license = vi.hoisted(() => ({ tabLimit: null as number | null, showUpgrade: vi.fn() }));
 vi.mock('../LicenseContext', () => ({ useLicense: () => license }));
 // SettingsProvider syncs the language into i18n, which the global setup does not provide.
-vi.mock('../../lib/i18n', () => ({ default: { language: 'en', changeLanguage: vi.fn() } }));
+vi.mock('../../lib/i18n', () => ({
+  default: {
+    language: 'en',
+    changeLanguage: vi.fn(),
+    // The key and the path it was given, so a test can read both.
+    t: (key: string, options?: { path?: string }) => `${key}: ${options?.path}`,
+  },
+}));
 // SettingsProvider follows the system theme through matchMedia, which jsdom lacks.
 window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   matches: false,
@@ -342,11 +349,12 @@ describe('WorkspaceProvider reopening closed tabs', () => {
 
     await act(() => result.current.reopenClosedTab());
 
-    expect(alerted).toHaveBeenCalledWith('File not found: /data/c.parquet');
+    expect(alerted).toHaveBeenCalledWith('common.fileUnreachable: /data/c.parquet');
     expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet']);
 
-    // The file is gone for good — Recent Files lost it too — so the next
-    // ⇧⌘T is the tab before it rather than the same alert again.
+    // The reopen history lets the entry go — the next ⇧⌘T is the tab
+    // before it rather than the same alert again. Recent Files keeps its
+    // own entry: it cannot tell a file that is gone from one out of reach.
     await act(() => result.current.reopenClosedTab());
 
     expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/b.parquet']);
@@ -435,17 +443,24 @@ describe('WorkspaceProvider recent files', () => {
     expect(result.current.recent.recentFiles).toEqual([]);
   });
 
-  it('drops a file that no longer exists from the list instead of opening it', async () => {
+  it('keeps a file that cannot be reached in the list, shown as unavailable, and says so', async () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     const { result } = renderBoth();
     await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
+    act(() => result.current.workspace.closeTab(result.current.workspace.tabs[0].id));
 
+    // Out of reach now — a drive unplugged, a file moved — which the check
+    // cannot tell from gone for good; the backend's listing marks it.
     vi.mocked(checkFileExists).mockResolvedValueOnce(false);
+    vi.mocked(listRecentFiles).mockResolvedValueOnce([
+      { path: '/data/a.parquet', name: 'a.parquet', size: 1, last_accessed: 0, available: false },
+    ]);
     await act(() => result.current.workspace.openParquetFile('/data/a.parquet'));
 
-    expect(removeRecentFile).toHaveBeenCalledWith('/data/a.parquet');
-    expect(result.current.recent.recentFiles).toEqual([]);
-    expect(window.alert).toHaveBeenCalledWith('File not found: /data/a.parquet');
+    expect(removeRecentFile).not.toHaveBeenCalled();
+    expect(result.current.workspace.tabs).toEqual([]);
+    expect(result.current.recent.recentFiles.map(f => [f.path, f.available])).toEqual([['/data/a.parquet', false]]);
+    expect(window.alert).toHaveBeenCalledWith('common.fileUnreachable: /data/a.parquet');
   });
 });
 
@@ -790,7 +805,7 @@ describe('WorkspaceProvider on the free tier', () => {
     vi.mocked(checkFileExists).mockResolvedValueOnce(false);
     await act(() => result.current.openParquetFile('/data/c.parquet'));
     expect(result.current.tabs).toHaveLength(2);
-    expect(alerted).toHaveBeenCalledWith('File not found: /data/c.parquet');
+    expect(alerted).toHaveBeenCalledWith('common.fileUnreachable: /data/c.parquet');
     await act(() => result.current.openParquetFile('/data/d.parquet'));
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet']);
     expect(license.showUpgrade).not.toHaveBeenCalled();

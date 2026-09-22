@@ -47,6 +47,21 @@ export function operatorCompares(operator: FilterOperator): boolean {
     return OPERATOR_FORM[operator] === 'compare';
 }
 
+const NULL_OPERATORS = FILTER_OPERATORS.filter(op => !operatorTakesValue(op));
+
+/**
+ * The operators worth offering for a column of this kind. A nested column —
+ * a list, a struct, a map — and one whose type this app has no handling for
+ * have no value form the planner will take: comparing one against a literal
+ * has no ordering to use, and `CAST(x AS TEXT)` for LIKE has no text form to
+ * cast to, so either way the filter comes back as a plan error rather than
+ * as rows. What is left is the null checks, which ask about the row and
+ * never about the value.
+ */
+export function operatorsForKind(kind: ColumnKind): readonly FilterOperator[] {
+    return kind === 'nested' || kind === 'other' ? NULL_OPERATORS : FILTER_OPERATORS;
+}
+
 
 /** How a value of a column's kind is written as a literal. */
 export type LiteralKind = 'text' | 'number' | 'boolean' | 'hex' | 'quoted';
@@ -75,7 +90,15 @@ export const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 export const isBooleanLiteral = (value: string) => /^(true|false)$/i.test(value);
-export const isNumericLiteral = (value: string) => value !== "" && Number.isFinite(Number(value));
+/**
+ * True when the value is written the way SQL writes a number, so it can go
+ * into the fragment bare. `Number()` is not that test: it also reads
+ * JavaScript's own spellings — `0x10` is 16, `0b11` is 3, `Infinity` is
+ * finite in nobody's arithmetic but passes for a literal — and none of them
+ * are numbers to the planner, which reads `0x10` as a hex *string* and
+ * answers a filter on an integer column with an error banner.
+ */
+export const isNumericLiteral = (value: string) => /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value);
 
 function formatLiteral(literal: LiteralKind, value: string): string {
     // A value that does not parse still goes in quoted, so the backend

@@ -3,6 +3,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { ROW_DENSITIES, TYPE_DISPLAYS } from '../../../lib/settings-storage';
+import { useEscapeLayer } from '../../../hooks/useEscapeLayer';
 
 interface ChoiceProps<T extends string> {
   label: string;
@@ -59,24 +60,14 @@ export function ViewOptions({ buttonClassName }: ViewOptionsProps) {
 
   // Close on a click anywhere else, and on Escape.
   const close = useCallback(() => setOpen(false), []);
+  useEscapeLayer(close, open);
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        close();
-      }
-    };
     document.addEventListener('mousedown', onPointerDown);
-    // Capture, so the viewer's own Escape handling (search) does not see it.
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown, true);
-    };
+    return () => document.removeEventListener('mousedown', onPointerDown);
   }, [open, close]);
 
   return (

@@ -251,7 +251,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // flight waits for the first and activates the tab it made.
     const openingFiles = useRef(new Map<string, Promise<OpenOutcome>>());
     const [isPending, startTransition] = useTransition();
-    const { upsertRecentFile, removeRecentFile } = useRecentFiles();
+    const { upsertRecentFile, refreshRecentFiles } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
     const { settings } = useSettings();
     // The free tier's tab limit (none once unlocked), read through a ref so
@@ -500,8 +500,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const opening = (async (): Promise<OpenOutcome> => {
             const fileExists = await checkFileExists(path);
             if (!fileExists) {
-                removeRecentFile(path);
-                alert(`File not found: ${path}`);
+                // The file stays in Recent Files. `check_file_exists` cannot
+                // tell a file that is gone from one that is out of reach for
+                // now — an external drive not plugged in, a share not
+                // mounted — and under the sandbox a dropped entry takes the
+                // bookmark with it, so the file could only come back through
+                // the open dialog. The list is asked for again so the entry
+                // shows as unavailable; each row has its own ✕ for the user
+                // who knows the file is gone for good.
+                refreshRecentFiles();
+                alert(i18n.t('common.fileUnreachable', { path }));
                 return 'missing';
             }
 
@@ -545,7 +553,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } finally {
             openingFiles.current.delete(path);
         }
-    }, [dispatch, upsertRecentFile, removeRecentFile, showUpgrade]);
+    }, [dispatch, upsertRecentFile, refreshRecentFiles, showUpgrade]);
 
     const openParquetFile = useCallback(async (path: string) => {
         await openFile(path, { remember: true });

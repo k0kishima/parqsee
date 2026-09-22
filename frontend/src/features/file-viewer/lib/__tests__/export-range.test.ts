@@ -33,4 +33,16 @@ describe('resolveExportRange', () => {
     expect(resolveExportRange('custom', ctx({ startInput: '10', endInput: '9' }))).toBeNull();
     expect(resolveExportRange('custom', ctx({ startInput: '1', endInput: '121' }))).toBeNull();
   });
+
+  it('rejects a bound that is not a whole row number rather than reading its first digits', () => {
+    expect(resolveExportRange('custom', ctx({ startInput: '2.5', endInput: '10' }))).toBeNull();
+    expect(resolveExportRange('custom', ctx({ startInput: '1', endInput: '9.9' }))).toBeNull();
+    expect(resolveExportRange('custom', ctx({ startInput: '1', endInput: '1e1' }))).toBeNull();
+    expect(resolveExportRange('custom', ctx({ startInput: '-1', endInput: '10' }))).toBeNull();
+    expect(resolveExportRange('custom', ctx({ startInput: '5rows', endInput: '10' }))).toBeNull();
+  });
+
+  it('forgives whitespace around a bound', () => {
+    expect(resolveExportRange('custom', ctx({ startInput: ' 3 ', endInput: ' 10 ' }))).toEqual({ offset: 2, limit: 8 });
+  });
 });

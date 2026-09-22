@@ -60,8 +60,12 @@ const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
  * rows of the last good load are still on screen. `dropped` is the first
  * load of a file that refused the filter or the sort it was asked for —
  * the plain page is on screen instead, so the banner has to name the
- * condition that is no longer applied; the filter bar cannot, having gone
- * back to an empty row with it.
+ * condition that is no longer applied.
+ *
+ * `filter` is the one the failed request carried. The bar is told it too,
+ * so the rows it was written in stay on screen as typed for the user to
+ * correct and apply again, while the grid, the footer and the export show
+ * the filter the viewer rolled back to.
  *
  * `condition` says whether the request that failed was a filter or a sort
  * the user had just asked for. Only then is a condition what could not be
@@ -71,7 +75,7 @@ const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
  * it.
  */
 type DataProblem =
-  | { kind: 'kept'; condition: boolean; message: string }
+  | { kind: 'kept'; condition: boolean; message: string; filter: string }
   | { kind: 'dropped'; message: string; filter: string };
 
 /** The line above the backend's own message in the banner. */
@@ -324,7 +328,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // The page alone moving is not a condition; the filter and the sort
       // are compared against the load that is still on screen.
       const condition = outcome.restore.filter !== activeFilter || outcome.restore.sort !== sort;
-      setDataError({ kind: 'kept', condition, message: toErrorMessage(err) });
+      setDataError({ kind: 'kept', condition, message: toErrorMessage(err), filter: activeFilter });
       if (outcome.rewinds) {
         skipReload.current = true;
         setActiveFilter(outcome.restore.filter);
@@ -616,6 +620,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           columns={metadata?.columns || []}
           onFilterChange={handleFilterChange}
           activeFilter={activeFilter}
+          rejectedFilter={dataError?.filter ?? null}
         />
       </div>
 

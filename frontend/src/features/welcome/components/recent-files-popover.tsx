@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, Search, X } from 'lucide-react';
 import { useRecentFiles } from '../../../contexts/RecentFilesContext';
-import { useGlobalKeydown } from '../../../hooks/useGlobalKeydown';
+import { useEscapeLayer } from '../../../hooks/useEscapeLayer';
 import { formatFileSize } from '../../../lib/format';
 import { matchesRecentFile, recentFileLabels } from '../lib/recent-file-labels';
 
@@ -45,12 +45,7 @@ export const RecentFilesPopover: React.FC<RecentFilesPopoverProps> = ({ onFileSe
         return () => document.removeEventListener('mousedown', handleMouseDown);
     }, [onClose]);
 
-    useGlobalKeydown(
-        useCallback((e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        }, [onClose]),
-        'document'
-    );
+    useEscapeLayer(onClose);
 
     const pick = (path: string) => {
         onFileSelect(path);

@@ -223,12 +223,15 @@ await scenario('S3-filter', async ({ page }) => {
   // Clear
   await act(page).locator('button[title="Clear"]').click(); await waitGrid(page);
   check('S3.clear', (await footer(page)).includes('100,000') && await row(0).locator('input[type=text]').inputValue() === '', await footer(page));
-  // Error path with nested column
+  // A nested column is offered the null checks and nothing else: a
+  // comparison or a LIKE on a struct came back as a plan error, and the
+  // bar no longer lets one be written. The comparison the row was
+  // carrying goes with them.
   await openFile(page, `${FIX}/nested.parquet`);
-  await setRow(0, 'st', '=', 'x'); await apply();
-  check('S3.nestedError', await dataError(page) && (await visibleGrid(page)).length === 3, `dataError=${await dataError(page)} rows=${(await visibleGrid(page)).length} text=${await act(page).locator('.font-mono.break-words').textContent().catch(() => '')}`);
-  await setRow(0, 'st', 'LIKE', '%x%'); await apply();
-  report('S3.nestedLike', 'OBSERVE', `LIKE on struct: dataError=${await dataError(page)} footer=${await footer(page)}`);
+  await setRow(0, 'id', '=', '1');
+  await row(0).locator('select').nth(0).selectOption('st');
+  const nestedOps = await row(0).locator('select').nth(1).locator('option').allTextContents();
+  check('S3.nestedOperators', nestedOps.join('|') === 'IS NULL|IS NOT NULL' && await row(0).locator('select').nth(1).inputValue() === 'IS NULL', `st offers ${nestedOps.join('|')}, picked ${await row(0).locator('select').nth(1).inputValue()}`);
   await setRow(0, 'li', 'IS NULL'); await apply();
   check('S3.isNull', (await footer(page)).includes('of 1 '), `IS NULL on list: ${await footer(page)} err=${await dataError(page)}`);
   // binary / temporal / boolean / decimal comparisons
@@ -250,8 +253,14 @@ await scenario('S3-filter', async ({ page }) => {
   check('S3.dateEq', (await footer(page)).includes('of 1 '), `d32 = '2024-02-29': ${await footer(page)}`);
   await setRow(0, 'd64', '=', '2024-02-29'); await apply();
   report('S3.date64Eq', (await footer(page)).includes('of 1 ') ? 'PASS' : 'FAIL', `d64 = '2024-02-29': ${await footer(page)} err=${await dataError(page)}`);
-  await setRow(0, 'dur', '>', '0'); await apply();
-  report('S3.duration', 'OBSERVE', `dur > 0: ${await footer(page)} err=${await dataError(page)}`);
+  // A duration column is reported as `other` — DataFusion reads it back as
+  // Duration(unit), which no bare literal compares with — so the bar offers
+  // it the null checks alone, like a nested column.
+  await row(0).locator('select').nth(0).selectOption('dur');
+  const durOps = await row(0).locator('select').nth(1).locator('option').allTextContents();
+  check('S3.durationOperators', durOps.join('|') === 'IS NULL|IS NOT NULL', `dur offers ${durOps.join('|')}`);
+  await setRow(0, 'dur', 'IS NOT NULL'); await apply();
+  report('S3.duration', 'OBSERVE', `dur IS NOT NULL: ${await footer(page)} err=${await dataError(page)}`);
   await openFile(page, `${FIX}/numeric.parquet`);
   await setRow(0, 'b', '=', 'true'); await apply();
   check('S3.bool', (await footer(page)).includes('of 1 '), `b = true: ${await footer(page)} err=${await dataError(page)}`);
@@ -540,7 +549,9 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await page.click('text=inner.parquet'); await page.waitForTimeout(500); await waitGrid(page);
   check('S7.recentClick', (await visibleGrid(page)).length === 3);
   await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
-  // A recent file that has since been deleted: greyed out on reload, an alert and gone on click.
+  // A recent file that has since been deleted: greyed out on reload, an
+  // alert on click, and still listed — the check cannot tell a deleted
+  // file from one on a drive that is not plugged in, so only ✕ forgets it.
   const goneDir = `${OUT}/gone`; fs.rmSync(goneDir, { recursive: true, force: true }); fs.mkdirSync(goneDir);
   fs.copyFileSync(`${FIX}/one_row.parquet`, `${goneDir}/missing.parquet`);
   await openFile(page, `${goneDir}/missing.parquet`);
@@ -548,10 +559,13 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   fs.rmSync(`${goneDir}/missing.parquet`);
   await page.reload(); await page.waitForSelector('text=missing.parquet');
   check('S7.unavailableRecent', await page.locator('text=No longer available').isVisible(), 'deleted file marked unavailable after reload');
-  await page.click('text=missing.parquet'); await page.waitForTimeout(500);
+  const missingRow = () => page.getByRole('button', { name: /missing\.parquet/ });
+  await missingRow().click(); await page.waitForTimeout(500);
   const al = await page.evaluate(() => window.__alerts.splice(0));
-  check('S7.missingRecent', al.length === 1 && al[0].includes('not found') && !(await page.locator('text=missing.parquet').isVisible()), `alerts=${al} stillListed=${await page.locator('text=missing.parquet').isVisible()}`);
-  check('S7.missingRecentForgotten', !(await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet'), 'removed from the store too');
+  check('S7.missingRecent', al.length === 1 && al[0].includes('Cannot open') && await missingRow().isVisible(), `alerts=${al} stillListed=${await missingRow().isVisible()}`);
+  check('S7.missingRecentKept', (await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet' && f.available === false), 'still in the store, marked unavailable');
+  await page.locator('button[title="Remove from recent files"]').first().click(); await page.waitForTimeout(300);
+  check('S7.missingRecentRemoved', !(await missingRow().isVisible()) && !(await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet'), 'gone from the list and the store on ✕');
   // drop non-parquet
   await page.evaluate(() => window.__emit('file-drop', ['/etc/hosts'])); await page.waitForTimeout(200);
   check('S7.dropOther', (await page.evaluate(() => window.__alerts.splice(0)))[0]?.includes('.parquet'), 'alert for non-parquet drop');

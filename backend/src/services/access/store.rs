@@ -11,6 +11,7 @@ use crate::models::SessionTabState;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::io::Write;
 use std::path::Path;
 
 /// How many recent files are kept, newest first. Under the sandbox an
@@ -144,6 +145,20 @@ impl BookmarkStore {
 
     /// Write the store atomically (temp file + rename), creating the
     /// directory if needed.
+    ///
+    /// The temp file's contents reach the disk before the rename does, and
+    /// the directory entry after it. A rename is atomic in the directory,
+    /// but not against the contents it points at: a plain write leaves the
+    /// bytes in the page cache, so a crash or a power cut between the two
+    /// can land the rename and lose the data, and the file left behind is
+    /// an empty or half-written one. `load_from` reads that as a store it
+    /// cannot parse and starts empty, and the next save overwrites it — so
+    /// every bookmark, the recent files and the session go, and under the
+    /// sandbox the files they named cannot be reopened at all.
+    ///
+    /// `sync_all` and no more: macOS honours it as a write barrier without
+    /// the seconds `F_FULLFSYNC` spends flushing the drive's own cache,
+    /// which is a trade a settings file can make and a database cannot.
     pub fn save_to(&self, path: &Path) -> Result<(), String> {
         let dir = path
             .parent()
@@ -152,10 +167,22 @@ impl BookmarkStore {
             .map_err(|e| format!("could not create {}: {}", dir.display(), e))?;
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, text)
+        let write_tmp = |text: &str| -> std::io::Result<()> {
+            let mut file = std::fs::File::create(&tmp)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()
+        };
+        write_tmp(&text)
             .map_err(|e| format!("could not write {}: {}", tmp.display(), e))?;
         std::fs::rename(&tmp, path)
-            .map_err(|e| format!("could not replace {}: {}", path.display(), e))
+            .map_err(|e| format!("could not replace {}: {}", path.display(), e))?;
+        // Best effort: the rename itself is durable on the filesystems macOS
+        // ships, and a store that is one power cut behind is a store that
+        // still parses.
+        if let Ok(dir) = std::fs::File::open(dir) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
     }
 
     /// The bookmark recorded for `path`, whether it is a root, a recent

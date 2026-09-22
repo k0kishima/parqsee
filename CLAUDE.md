@@ -63,7 +63,8 @@ parqsee/
 │   │   │                         # column-profile (the panel both grids open)
 │   │   ├── contexts/             # SettingsContext, RecentFilesContext, WorkspaceContext
 │   │   ├── features/             # Feature-based modules (see below)
-│   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown, useColumnVirtualizer)
+│   │   ├── hooks/                # Shared hooks (useDebounce, useGlobalKeydown, useColumnVirtualizer,
+│   │   │                         # useEscapeLayer: modals, popovers and menus stack, Escape closes the front one)
 │   │   ├── lib/                  # Shared helpers (path, format, tauri, i18n, settings-storage,
 │   │   │                         # column-widths, filter-sql)
 │   │   ├── locales/              # en.json, ja.json
@@ -134,7 +135,12 @@ Each folder under `frontend/src/features/` owns its own `components/`,
   no column picked — a dimmed placeholder, not the file's first column, so
   an untouched bar states no condition and a value alone applies nothing —
   while the operator starts at `=`; a row whose column the file loses goes
-  back to unpicked rather than to another column), export modal,
+  back to unpicked rather than to another column; a nested column, or one
+  of a kind the app has no handling for, is offered the null checks alone,
+  since a comparison or a LIKE on it fails to plan; a filter the backend
+  refuses keeps its rows in the bar as the draft to correct while the grid
+  shows the rollback — unless it was an opaque base predicate, which would
+  only go out again), export modal,
   the sort (a click on a sortable column's name in the header cycles
   ascending → descending → file order through `lib/sort.ts`'s `nextSort`;
   the header carries `aria-sort`; nested and unordered columns keep a
@@ -633,6 +639,10 @@ command's answer carries the higher `revision`, since the two can cross.
     Welcome screen shows the first five and folds the rest, the top row's
     panel shows them all with a search box, File › Open Recent the first
     ten — `services/recent_menu.rs` decides those, `menu.rs` draws them).
+    An entry whose file `check_file_exists` cannot reach stays in the
+    list, marked unavailable, with an alert: the check cannot tell a
+    deleted file from one on a drive that is not plugged in, and a
+    dropped entry takes its bookmark with it. Only ✕ forgets it.
     Clear all / Clear Menu ask no confirmation, on every surface alike:
     the files are untouched, only the way back to them goes.
     `bookmarks.json` also records the last export folder (`last_export`),

@@ -22,6 +22,27 @@ export function indexOfTerm(text: string, term: string): number {
   return text.toLowerCase().indexOf(term.toLowerCase());
 }
 
+/**
+ * The span of `text` to paint for `term`, or null when the term is not in
+ * it. Usually that is the match itself; when it cannot be placed, it is the
+ * whole value.
+ *
+ * The position comes from the lower-cased text, and lower-casing is not one
+ * character for one: `'İ'.toLowerCase()` is `'i'` plus a combining dot, so
+ * every position after an `İ` is off by one and the highlight lands beside
+ * the match instead of on it. Mapping the position back is not a matter of
+ * counting either — lower-casing reads its neighbours, which is why `'ΣΣ'`
+ * becomes `'σς'` — so where a length changed the whole value is painted.
+ * It is broader than the match and still true, and it only happens to the
+ * handful of characters that grow.
+ */
+export function highlightRange(text: string, term: string): { start: number; end: number } | null {
+  const index = indexOfTerm(text, term);
+  if (index === -1) return null;
+  const placeable = text.toLowerCase().length === text.length && term.toLowerCase().length === term.length;
+  return placeable ? { start: index, end: index + term.length } : { start: 0, end: text.length };
+}
+
 export function matchesTerm(text: string | null, term: string): boolean {
   return text !== null && indexOfTerm(text, term) !== -1;
 }
