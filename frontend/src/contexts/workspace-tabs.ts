@@ -186,23 +186,55 @@ export function nthTabId(state: WorkspaceTabs, n: number): string | null {
 }
 
 /**
- * Append the tabs of the last session, each with its saved state, and
- * activate the one at `activePath`. A file the user opened meanwhile (a
- * drop during the restore) keeps its tab and its state; with no active
- * path among the tabs, the current active tab stays, or the first restored
- * one when there is none. Tabs past `limit` are left out, in order.
+ * `restoreTabs` as a transition: the state the reducer will hold, and the
+ * restored tabs that found no seat under `limit`. The caller has to answer
+ * for those — they were opened in the backend before the room was gone, so
+ * their cache and access grant have to be dropped and they have to be named
+ * as capped, or they would sit there with no tab to close them.
+ *
+ * `activePath` is the tab the last session left active, and it only decides
+ * anything when the workspace was empty. A file opened while the session
+ * was still being read — a drop on the window, which the listener answers
+ * from the first render — is what the user is looking at, and the session
+ * does not take the window back from it.
  */
-export function restoreTabs(state: WorkspaceTabs, restored: readonly RestoredTab[], activePath: string | null, limit: TabLimit = null): WorkspaceTabs {
+export function restoreTabsTransition(
+  state: WorkspaceTabs,
+  restored: readonly RestoredTab[],
+  activePath: string | null,
+  limit: TabLimit = null,
+): { state: WorkspaceTabs; dropped: RestoredTab[] } {
+  const wasEmpty = state.tabs.length === 0;
   const tabs = [...state.tabs];
   const tabStates = { ...state.tabStates };
-  for (const { tab, state: tabState } of restored) {
+  const dropped: RestoredTab[] = [];
+  for (const entry of restored) {
+    const { tab, state: tabState } = entry;
+    // Already in a tab: nothing was opened twice, so there is nothing to
+    // hand back to the caller either.
     if (tabs.some(t => t.path === tab.path)) continue;
-    if (!hasRoomForTab(tabs.length, limit)) continue;
+    if (!hasRoomForTab(tabs.length, limit)) {
+      dropped.push(entry);
+      continue;
+    }
     tabs.push(tab);
     tabStates[tab.id] = tabState;
   }
-  const active = tabs.find(t => t.path === activePath)?.id ?? state.activeTabId ?? tabs[0]?.id ?? null;
-  return { tabs, activeTabId: active, tabStates };
+  const saved = wasEmpty ? tabs.find(t => t.path === activePath)?.id : undefined;
+  const active = saved ?? state.activeTabId ?? tabs[0]?.id ?? null;
+  return { state: { tabs, activeTabId: active, tabStates }, dropped };
+}
+
+/**
+ * Append the tabs of the last session, each with its saved state, and
+ * activate the one at `activePath` when the workspace was empty. A file the
+ * user opened meanwhile (a drop during the restore) keeps its tab, its
+ * state and the window. Tabs past `limit` are left out, in order — the
+ * caller learns which through `restoreTabsTransition`, which the reducer
+ * cannot report from inside a dispatch.
+ */
+export function restoreTabs(state: WorkspaceTabs, restored: readonly RestoredTab[], activePath: string | null, limit: TabLimit = null): WorkspaceTabs {
+  return restoreTabsTransition(state, restored, activePath, limit).state;
 }
 
 /** What of the workspace is written to the backend's session store. */

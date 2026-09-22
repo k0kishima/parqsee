@@ -36,6 +36,7 @@ import {
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
     closeTabs as closeTabsTransition,
+    restoreTabsTransition,
     activeTab as activeTabOf,
     adjacentTabId,
     nthTabId,
@@ -177,12 +178,17 @@ async function openRestoredTab(tab: SessionTab): Promise<RestoredTab | null> {
  * follows the free tier's limit lifting — and the free tier is why the
  * room is checked between the opens rather than before them: a file that
  * will not open any more must not spend a slot the next tab could have
- * had. The second restore passes no limit because by then there is none,
- * and its tabs were already found available by the first.
+ * had, and a file the user opens meanwhile takes one. `openCount` is read
+ * again before every open for that second reason: the drop listener is
+ * live from the first render, so tabs can appear while this runs, and
+ * counting only the tabs restored so far would open more files than the
+ * workspace can seat. The second restore passes no limit because by then
+ * there is none, and its tabs were already found available by the first.
  */
 async function replayTabs(
     tabs: readonly SessionTab[],
     limit: TabLimit,
+    openCount: () => number,
 ): Promise<{ restored: RestoredTab[]; skipped: string[]; capped: SessionTab[] }> {
     const restored: RestoredTab[] = [];
     const skipped: string[] = [];
@@ -192,7 +198,7 @@ async function replayTabs(
             skipped.push(tab.path);
             continue;
         }
-        if (!hasRoomForTab(restored.length, limit)) {
+        if (!hasRoomForTab(openCount() + restored.length, limit)) {
             capped.push(tab);
             continue;
         }
@@ -275,10 +281,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     // The tabs of the last session, each opened by `openRestoredTab`. A file
     // that is gone is skipped and named in the notice without being opened
-    // at all. On the free tier the first tabs up to the limit come back and
-    // the rest are named too (and never opened in the backend, so no grant
-    // or cache for them) — restoring them all would make "never close a tab"
-    // a way around the limit.
+    // at all. On the free tier the tabs that fit beside whatever is already
+    // open come back and the rest are named too (and never opened in the
+    // backend, so no grant or cache for them) — restoring them all would
+    // make "never close a tab" a way around the limit.
     useEffect(() => {
         if (!isTauri()) return;
         // StrictMode runs this effect twice in development; only the run
@@ -291,10 +297,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 try {
                     const session = await listSessionTabs();
                     const limit = tabLimitRef.current;
-                    const replayed = await replayTabs(session.tabs, limit);
+                    const openCount = () => workspaceTabsRef.current.tabs.length;
+                    const replayed = await replayTabs(session.tabs, limit, openCount);
                     ({ skipped, capped } = replayed);
                     if (cancelled) return;
+                    // A file opened between the last room check and here —
+                    // a drop lands in one tick, the open before it took
+                    // several — leaves a restored file with no seat. The
+                    // reducer cannot say which from inside a dispatch, so
+                    // the same transition is run over the state it will
+                    // act on: what it could not seat was opened in the
+                    // backend and is given back here, cache and grant and
+                    // all, and named with the rest of the capped tabs.
+                    const { dropped } = restoreTabsTransition(workspaceTabsRef.current, replayed.restored, session.active, limit);
                     dispatch({ type: 'restore', tabs: replayed.restored, activePath: session.active, limit });
+                    for (const { tab } of dropped) evictCacheQuietly(tab.path);
+                    if (dropped.length > 0) {
+                        // In the order the session had them, whichever end
+                        // of the restore left them out.
+                        const cappedPaths = new Set([...capped.map(t => t.path), ...dropped.map(d => d.tab.path)]);
+                        capped = session.tabs.filter(t => cappedPaths.has(t.path));
+                    }
                 } catch (error) {
                     console.error('Failed to restore the last session:', error);
                 }
@@ -319,7 +342,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let cancelled = false;
         (async () => {
             // No limit left to check: this effect only runs once it lifted.
-            const { restored, skipped } = await replayTabs(leftOut, null);
+            const { restored, skipped } = await replayTabs(leftOut, null, () => workspaceTabsRef.current.tabs.length);
             if (cancelled) return;
             dispatch({ type: 'restore', tabs: restored, activePath: null });
             setRestoreNotice(notice => {

@@ -916,6 +916,74 @@ describe('WorkspaceProvider on the free tier', () => {
     vi.useRealTimers();
   });
 
+  // The drop listener is live from the first render, so a file can arrive
+  // while the session is still being read. Its tab is a tab like any other:
+  // the restore has that much less room, and what it cannot seat is capped
+  // rather than opened in the backend and left without a tab.
+  it('counts a file opened during the restore against the limit and caps the rest', async () => {
+    vi.useFakeTimers();
+    let finishRestore!: (value: { tabs: SessionTab[]; active: string | null }) => void;
+    vi.mocked(listSessionTabs).mockReturnValue(new Promise(resolve => { finishRestore = resolve; }));
+    const { result } = renderWorkspace();
+    await settle();
+
+    await act(() => result.current.openParquetFile('/data/x.parquet'));
+    await act(async () => {
+      finishRestore({ tabs: ['a', 'b', 'c'].map(n => sessionTab(`/data/${n}.parquet`)), active: '/data/c.parquet' });
+    });
+    await settle();
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['x.parquet', 'a.parquet', 'b.parquet']);
+    // The file the user just dropped keeps the window; the session's own
+    // active tab does not take it back.
+    expect(result.current.activeTab?.path).toBe('/data/x.parquet');
+    expect(result.current.restoreNotice).toEqual({ skipped: [], capped: ['/data/c.parquet'] });
+    expect(openParquetFile).not.toHaveBeenCalledWith('/data/c.parquet');
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  // The same drop, one step later: the room was there when the last session
+  // tab started opening and gone by the time it landed. It has a cache and
+  // an access grant and no tab, so it is evicted and capped like the rest.
+  it('evicts and caps a restored file the drop left no room for', async () => {
+    vi.useFakeTimers();
+    const ok = { num_rows: 1, num_columns: 1, columns: [] } as never;
+    vi.mocked(listSessionTabs).mockResolvedValue({
+      tabs: ['a', 'b', 'c'].map(n => sessionTab(`/data/${n}.parquet`)),
+      active: '/data/c.parquet',
+    });
+    let finishC!: () => void;
+    vi.mocked(openParquetFile)
+      .mockImplementationOnce(async () => ok)
+      .mockImplementationOnce(async () => ok)
+      .mockImplementationOnce(() => new Promise(resolve => { finishC = () => resolve(ok); }));
+    const { result, rerender } = renderWorkspace();
+    await settle();
+
+    await act(() => result.current.openParquetFile('/data/x.parquet'));
+    await act(async () => { finishC(); });
+    await settle();
+
+    expect(result.current.tabs.map(t => t.name)).toEqual(['x.parquet', 'a.parquet', 'b.parquet']);
+    expect(result.current.activeTab?.path).toBe('/data/x.parquet');
+    expect(result.current.restoreNotice).toEqual({ skipped: [], capped: ['/data/c.parquet'] });
+    expect(evictCacheQuietly).toHaveBeenCalledTimes(1);
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/c.parquet');
+    expect(license.showUpgrade).not.toHaveBeenCalled();
+
+    // And it comes back with the other capped tabs when the limit lifts.
+    vi.mocked(openParquetFile).mockClear();
+    license.tabLimit = null;
+    rerender();
+    await settle();
+    expect(result.current.tabs.map(t => t.name)).toEqual(['x.parquet', 'a.parquet', 'b.parquet', 'c.parquet']);
+    expect(vi.mocked(openParquetFile).mock.calls.map(c => c[0])).toEqual(['/data/c.parquet']);
+    expect(result.current.restoreNotice).toBeNull();
+    vi.useRealTimers();
+  });
+
   it('names a capped tab that fails to open when it comes back, and leaves it out', async () => {
     vi.useFakeTimers();
     vi.mocked(listSessionTabs).mockResolvedValue({
