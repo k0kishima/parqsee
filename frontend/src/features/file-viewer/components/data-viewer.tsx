@@ -42,6 +42,15 @@ interface DataViewerProps {
    * `undefined` is no host at all, and they render in place.
    */
   toolbarSlot?: HTMLElement | null;
+  /**
+   * Called once after this viewer is unmounted, when the last backend call
+   * that was already in flight by then settles. A read cannot be taken
+   * back: it lands, and the backend re-creates the file's session and
+   * re-takes its access grant on the way. The tab that would have evicted
+   * them is gone, so whoever is handed this evicts them instead — unless
+   * the file has a tab again.
+   */
+  onAbandonedLoad?: () => void;
 }
 
 const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
@@ -71,7 +80,7 @@ function problemHeadline(problem: DataProblem): string {
   return problem.condition ? 'viewer.dataError' : 'viewer.loadError';
 }
 
-function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef, toolbarSlot }: DataViewerProps) {
+function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef, toolbarSlot, onAbandonedLoad }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
   const { t } = useTranslation();
 
@@ -89,6 +98,47 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   useEffect(() => {
     onStateChangeRef.current = onStateChange;
   }, [onStateChange]);
+
+  const onAbandonedLoadRef = useRef(onAbandonedLoad);
+  useEffect(() => {
+    onAbandonedLoadRef.current = onAbandonedLoad;
+  }, [onAbandonedLoad]);
+
+  /**
+   * True once this viewer is gone — the tab was closed, on its own or with
+   * a group. A call already sent cannot be cancelled, but the next call of
+   * the sequence can be left unsent, which is what keeps a closed tab from
+   * paging a file nothing shows. `loadSeq` does not answer this: nothing
+   * advances it on unmount, so a load in flight still looks like the
+   * newest one.
+   */
+  const unmounted = useRef(false);
+  /** Backend calls started here and not yet settled. */
+  const inFlight = useRef(0);
+  // Cleared on the way in as well as set on the way out: StrictMode mounts,
+  // unmounts and mounts again in development, and a flag that is only ever
+  // set left the remounted viewer believing it was closed — it dropped its
+  // own first load and the grid never left its spinner.
+  useEffect(() => {
+    unmounted.current = false;
+    return () => { unmounted.current = true; };
+  }, []);
+
+  /**
+   * Run one backend call, counting it so that an unmount can tell when the
+   * last call it could not cancel has settled — the moment the session and
+   * the access grant that call re-created are there with no tab left to
+   * evict them.
+   */
+  const track = useCallback(async <T,>(call: Promise<T>): Promise<T> => {
+    inFlight.current += 1;
+    try {
+      return await call;
+    } finally {
+      inFlight.current -= 1;
+      if (unmounted.current && inFlight.current === 0) onAbandonedLoadRef.current?.();
+    }
+  }, []);
 
   // Initialize state from props
   const [currentPage, setCurrentPage] = useState(initialState?.currentPage || 1);
@@ -171,7 +221,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setError(null);
       setDataError(null);
       lastGood.current = null;
-      const meta = await openParquetFile(filePath);
+      const meta = await track(openParquetFile(filePath));
+      if (unmounted.current) return;
       if (seq !== loadSeq.current) return;
       setMetadata(meta);
       setTotalRows(meta.num_rows);
@@ -185,11 +236,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // condition, reads the plain page instead and leaves the reason in a
       // banner — a rewritten file must not cost the tab.
     } catch (err) {
+      if (unmounted.current) return;
       if (seq !== loadSeq.current) return;
       setError(toErrorMessage(err));
       setLoading(false);
     }
-  }, [filePath]);
+  }, [filePath, track]);
 
   const loadData = useCallback(async () => {
     if (!metadata) return;
@@ -201,13 +253,18 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       keepBanner.current = false;
 
       const total = activeFilter
-        ? await countParquetData(filePath, activeFilter)
+        ? await track(countParquetData(filePath, activeFilter))
         : metadata.num_rows;
+      // The tab was closed while COUNT was running: the page it would read
+      // next is for no one, and reading it would leave the backend holding
+      // the file again.
+      if (unmounted.current) return;
       // A newer filter/Refresh may have finished while COUNT was running.
       // Do not start an expensive page sort for an obsolete request.
       if (seq !== loadSeq.current) return;
       const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
-      const rows = await readParquetData(filePath, offset, limit, activeFilter, sort);
+      const rows = await track(readParquetData(filePath, offset, limit, activeFilter, sort));
+      if (unmounted.current) return;
       // A newer load has taken over; its result describes the current state.
       if (seq !== loadSeq.current) return;
 
@@ -219,6 +276,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       lastGood.current = { page: currentPage, filter: activeFilter, sort, totalRows: total };
       setLoading(false);
     } catch (err) {
+      if (unmounted.current) return;
       if (seq !== loadSeq.current) return;
       const outcome = loadFailure(lastGood.current, { page: currentPage, filter: activeFilter, sort });
       if (outcome.kind === 'file') {
@@ -252,7 +310,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setTotalRows(outcome.restore.totalRows);
       setLoading(false);
     }
-  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort]);
+  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort, track]);
 
   // filePath is fixed for a mounted viewer (TabContent is keyed by tab), so
   // loadFile only ever changes with it and loadData with the page state the
@@ -329,7 +387,8 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setSearchTerm('');
     setIsSearchOpen(false);
     setMetadata(null);
-    await evictCacheQuietly(filePath);
+    await track(evictCacheQuietly(filePath));
+    if (unmounted.current) return;
     await loadFile();
   };
 

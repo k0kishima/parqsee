@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { StrictMode } from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { dispatchAppCommand } from '../../../../lib/app-commands';
 import userEvent from '@testing-library/user-event';
@@ -62,10 +63,21 @@ beforeEach(() => {
 });
 
 /** The viewer on screen with its first page loaded. */
-const renderViewer = async (initialState?: Parameters<typeof DataViewer>[0]['initialState']) => {
-  render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} initialState={initialState} />);
+const renderViewer = async (
+  initialState?: Parameters<typeof DataViewer>[0]['initialState'],
+  onAbandonedLoad?: () => void,
+) => {
+  const utils = render(
+    <DataViewer
+      filePath="/data/test.parquet"
+      onClose={vi.fn()}
+      initialState={initialState}
+      onAbandonedLoad={onAbandonedLoad}
+    />
+  );
   await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+  return utils;
 };
 
 describe('DataViewer failed-load rollback', () => {
@@ -207,6 +219,89 @@ describe('DataViewer failed-load rollback', () => {
     await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument();
     expect(screen.queryByText('viewer.error')).not.toBeInTheDocument();
+  });
+});
+
+// Closing a tab evicts the file's session and releases its sandbox grant at
+// once. A load already in flight cannot be taken back, so what it does on
+// its way out decides whether the backend is left holding a file no tab
+// shows.
+describe('DataViewer closed while a load is in flight', () => {
+  /** Apply a filter whose count never answers; hand back its resolver. */
+  const applyFilterWithPendingCount = async () => {
+    let finishCount!: (count: number) => void;
+    mockCountParquetData.mockReturnValueOnce(new Promise<number>(resolve => { finishCount = resolve; }));
+    await applyFilter('5');
+    await waitFor(() => expect(mockCountParquetData).toHaveBeenCalledWith('/data/test.parquet', '"id" = 5'));
+    return finishCount;
+  };
+
+  it('an unmounted viewer sends no further requests', async () => {
+    const { unmount } = await renderViewer();
+    const finishCount = await applyFilterWithPendingCount();
+
+    unmount();
+    await act(async () => { finishCount(5); });
+
+    // Only the first page's read. Had the count gone on to read a page,
+    // the backend would have re-created the session and re-taken the
+    // file's access grant for a tab that is gone.
+    expect(mockReadParquetData).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unmounted viewer reports the load it abandoned once it settles', async () => {
+    const onAbandonedLoad = vi.fn();
+    const { unmount } = await renderViewer(undefined, onAbandonedLoad);
+    const finishCount = await applyFilterWithPendingCount();
+
+    unmount();
+    // The call is still out; there is nothing to evict yet.
+    expect(onAbandonedLoad).not.toHaveBeenCalled();
+
+    await act(async () => { finishCount(5); });
+    expect(onAbandonedLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unmounted viewer with nothing in flight reports no abandoned load', async () => {
+    const onAbandonedLoad = vi.fn();
+    const { unmount } = await renderViewer(undefined, onAbandonedLoad);
+
+    unmount();
+    await act(async () => {});
+
+    expect(onAbandonedLoad).not.toHaveBeenCalled();
+  });
+
+  // StrictMode mounts, unmounts and mounts again in development, which is
+  // an unmount the viewer has to come back from.
+  it('loads its first page when React mounts it twice', async () => {
+    const onAbandonedLoad = vi.fn();
+    render(
+      <StrictMode>
+        <DataViewer filePath="/data/test.parquet" onClose={vi.fn()} onAbandonedLoad={onAbandonedLoad} />
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(mockReadParquetData).toHaveBeenCalled();
+    expect(onAbandonedLoad).not.toHaveBeenCalled();
+  });
+
+  it('a refresh interrupted by unmount reports the abandoned load', async () => {
+    const onAbandonedLoad = vi.fn();
+    const { unmount } = await renderViewer(undefined, onAbandonedLoad);
+    let finishOpen!: (meta: typeof metadata) => void;
+    mockOpenParquetFile.mockReturnValueOnce(new Promise(resolve => { finishOpen = resolve; }));
+
+    await userEvent.click(screen.getByText('viewer.refresh'));
+    await waitFor(() => expect(mockOpenParquetFile).toHaveBeenCalledTimes(2));
+
+    unmount();
+    await act(async () => { finishOpen(metadata); });
+
+    expect(onAbandonedLoad).toHaveBeenCalledTimes(1);
+    // The reopened file was not paged either.
+    expect(mockReadParquetData).toHaveBeenCalledTimes(1);
   });
 });
 
