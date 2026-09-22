@@ -194,7 +194,18 @@ async fn dispatch(
             json!(rows)
         }
         "export_default_dir" => json!(access.export_default_dir(&s(&args, "sourcePath")?)),
-        "execute_sql" => json!(run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?).await?),
+        "execute_sql" => json!(
+            requests
+                .run(
+                    opt_s(&args, "requestId"),
+                    run_query(cache, results, &s(&args, "filePath")?, &s(&args, "query")?),
+                )
+                .await?
+        ),
+        "cancel_query" => {
+            requests.cancel(&s(&args, "requestId")?);
+            Value::Null
+        }
         "profile_query_column_counts" => json!(
             requests
                 .run(

@@ -3,18 +3,25 @@ import { stubResizeObserver } from '../../../../test/resize-observer';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryView } from '../query-view';
+import { dispatchAppCommand } from '../../../../lib/app-commands';
 import type { ColumnCounts } from '../../../../bindings/ipc/ColumnCounts';
 import type { ProfileChart } from '../../../../bindings/ipc/ProfileChart';
 import type { QueryChartType, QueryResult } from '../../types';
 
 const mockExecuteSql = vi.fn();
+const mockCancel = vi.fn();
 const mockCounts = vi.fn();
 const mockChart = vi.fn();
 const mockFilter = vi.fn();
 const mockRelease = vi.fn();
-vi.mock('../../api/execute-sql', () => ({
-  executeSql: (...args: unknown[]) => mockExecuteSql(...args),
-}));
+vi.mock('../../api/execute-sql', () => {
+  let issued = 0;
+  return {
+    executeSql: (...args: unknown[]) => mockExecuteSql(...args),
+    cancelQuery: (...args: unknown[]) => mockCancel(...args),
+    nextQueryRequestId: () => `q-${++issued}`,
+  };
+});
 vi.mock('../../api/result-profile', () => ({
   profileQueryColumnCounts: (...args: unknown[]) => mockCounts(...args),
   profileQueryColumnChart: (...args: unknown[]) => mockChart(...args),
@@ -54,6 +61,9 @@ const run = async (sql: string) => {
   await userEvent.click(screen.getByRole('button', { name: /viewer\.query\.run/ }));
   await waitFor(() => expect(screen.queryByText('viewer.query.executing')).not.toBeInTheDocument());
 };
+const headers = () => screen.getAllByRole('columnheader').map(h => h.textContent);
+/** The id the n-th run was given, which is what its cancel is asked by. */
+const requestIdOfRun = (n: number) => mockExecuteSql.mock.calls[n][2];
 const modeButton = (mode: string) => screen.getByRole('group', { name: 'viewer.query.chart.resultView' }).querySelector(`button:nth-child(${mode === 'table' ? 1 : 2})`) as HTMLElement;
 const kindButton = (kind: string) => screen.getByRole('button', { name: `viewer.query.chart.${kind}` });
 
@@ -150,18 +160,76 @@ describe('QueryView result mode and chart kind', () => {
     expect(modeButton('chart')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('ignores the answer to a run the user has superseded', async () => {
-    let resolveFirst: (r: QueryResult) => void = () => {};
-    mockExecuteSql.mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }));
+  it('stops the run in flight for a re-run and ignores its answer', async () => {
+    const first = deferred<QueryResult>();
+    mockExecuteSql.mockImplementationOnce(() => first.promise);
     mockExecuteSql.mockResolvedValueOnce(byNumber);
     render(<QueryView filePath="/data/t.parquet" />);
     const runButton = screen.getByRole('button', { name: /viewer\.query\.run/ });
     await userEvent.click(runButton);
-    // The button is disabled while loading; ⌘↩ is too, so a second run
-    // means the first was let go of. Simulate by resolving out of order.
-    resolveFirst(byCategory);
+    await userEvent.click(runButton);
+
+    // Stopped in the backend by the id it was given, not only ignored here.
+    expect(mockExecuteSql).toHaveBeenCalledTimes(2);
+    expect(mockCancel).toHaveBeenCalledWith(requestIdOfRun(0));
+    expect(requestIdOfRun(1)).not.toBe(requestIdOfRun(0));
+
+    first.resolve(byCategory);
     await waitFor(() => expect(screen.queryByText('viewer.query.executing')).not.toBeInTheDocument());
-    expect(screen.getAllByRole('columnheader').map(h => h.textContent)).toContain('xUtf8');
+    expect(headers()).toContain('xInt64');
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs again on ⌘↩ during a run instead of dropping the key', async () => {
+    const first = deferred<QueryResult>();
+    mockExecuteSql.mockImplementationOnce(() => first.promise);
+    mockExecuteSql.mockResolvedValueOnce(byNumber);
+    render(<QueryView filePath="/data/t.parquet" />);
+    await userEvent.click(screen.getByRole('button', { name: /viewer\.query\.run/ }));
+
+    act(() => dispatchAppCommand('run-query'));
+    await waitFor(() => expect(mockExecuteSql).toHaveBeenCalledTimes(2));
+    expect(mockCancel).toHaveBeenCalledWith(requestIdOfRun(0));
+
+    first.resolve(byCategory);
+    await waitFor(() => expect(screen.queryByText('viewer.query.executing')).not.toBeInTheDocument());
+    expect(headers()).toContain('xInt64');
+  });
+
+  it('stops the run on Stop or ⌘. and keeps the result on screen', async () => {
+    render(<QueryView filePath="/data/t.parquet" />);
+    // Nothing to stop yet: the key does nothing, and the button is not there.
+    act(() => dispatchAppCommand('stop-query'));
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /viewer\.query\.stop/ })).not.toBeInTheDocument();
+    await run('SELECT x, y FROM t');
+
+    const pending = deferred<QueryResult>();
+    mockExecuteSql.mockImplementationOnce(() => pending.promise);
+    await userEvent.click(screen.getByRole('button', { name: /viewer\.query\.run/ }));
+    expect(screen.getByText('viewer.query.executing')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /viewer\.query\.stop/ }));
+
+    expect(mockCancel).toHaveBeenCalledWith(requestIdOfRun(1));
+    expect(screen.queryByText('viewer.query.executing')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /viewer\.query\.stop/ })).not.toBeInTheDocument();
+    expect(headers()).toContain('xUtf8');
+
+    // The backend answers a stopped run with a refusal; it is not an error
+    // the user wants to read, and the result before it stays.
+    pending.reject('The profile was superseded by a newer one');
+    await act(async () => {});
+    expect(screen.queryByText(/superseded/)).not.toBeInTheDocument();
+    expect(headers()).toContain('xUtf8');
+
+    // ⌘. does the same for a run the key started.
+    const again = deferred<QueryResult>();
+    mockExecuteSql.mockImplementationOnce(() => again.promise);
+    act(() => dispatchAppCommand('run-query'));
+    await waitFor(() => expect(screen.getByText('viewer.query.executing')).toBeInTheDocument());
+    act(() => dispatchAppCommand('stop-query'));
+    expect(mockCancel).toHaveBeenCalledWith(requestIdOfRun(2));
+    expect(screen.queryByText('viewer.query.executing')).not.toBeInTheDocument();
   });
 });
 

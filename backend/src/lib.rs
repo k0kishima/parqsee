@@ -142,7 +142,8 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     )?;
 
     let run_query = b.item("run-query", Some("CmdOrCtrl+Enter"))?;
-    let query = b.submenu("title.query", &[&run_query])?;
+    let stop_query = b.item("stop-query", Some("CmdOrCtrl+."))?;
+    let query = b.submenu("title.query", &[&run_query, &stop_query])?;
 
     let previous_tab = b.item("previous-tab", Some("CmdOrCtrl+Shift+["))?;
     let next_tab = b.item("next-tab", Some("CmdOrCtrl+Shift+]"))?;
@@ -306,6 +307,7 @@ pub fn run() {
             commands::data::export_default_dir,
             commands::data::evict_cache,
             commands::query::execute_sql,
+            commands::query::cancel_query,
             commands::query::release_query_result,
             commands::query::profile_query_column_counts,
             commands::query::profile_query_column_chart,

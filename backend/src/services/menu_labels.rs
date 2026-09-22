@@ -66,6 +66,7 @@ pub const KEYS: &[&str] = &[
     "fullscreen",
     // Query
     "run-query",
+    "stop-query",
     // Window
     "minimize",
     "zoom",
@@ -109,6 +110,7 @@ const EN: &[(&str, &str)] = &[
     ("switch-view", "Switch Content / Query"),
     ("fullscreen", "Toggle Full Screen"),
     ("run-query", "Run Query"),
+    ("stop-query", "Stop Query"),
     ("minimize", "Minimize"),
     ("zoom", "Zoom"),
     ("previous-tab", "Show Previous Tab"),
@@ -150,6 +152,7 @@ const JA: &[(&str, &str)] = &[
     ("switch-view", "コンテンツ / クエリを切り替え"),
     ("fullscreen", "フルスクリーンにする"),
     ("run-query", "クエリを実行"),
+    ("stop-query", "クエリを停止"),
     ("minimize", "しまう"),
     ("zoom", "拡大 / 縮小"),
     ("previous-tab", "前のタブを表示"),

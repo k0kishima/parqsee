@@ -17,15 +17,40 @@ use crate::services::query_results::{column_alias, QueryResults};
 /// asks the user to narrow the query instead.
 pub const MAX_QUERY_ROWS: usize = 10_000;
 
+/// Run `query` over the file. `request_id` is what `cancel_query` ends the
+/// run by — a re-run while one is in flight, or Stop. The run is dropped
+/// rather than flagged (`services::profile_requests`): dropping the future
+/// drops DataFusion's stream, and with it the session's one partition is
+/// free for the grid's own reads, which a query nobody will look at would
+/// otherwise hold until it finished.
 #[command]
 pub async fn execute_sql(
     cache: tauri::State<'_, ParquetCache>,
     results: tauri::State<'_, QueryResults>,
+    requests: tauri::State<'_, ProfileRequests>,
     file_path: String,
     query: String,
+    request_id: Option<String>,
 ) -> Result<QueryResult, String> {
     guarded("The query", async {
-        run_query(&cache, &results, &file_path, &query).await
+        requests
+            .run(request_id, run_query(&cache, &results, &file_path, &query))
+            .await
+    })
+    .await
+}
+
+/// Stop the run `request_id` names. An id that has already answered, or
+/// never ran, is nothing to report: the webview stops without waiting to
+/// see whether the run is still going.
+#[command]
+pub async fn cancel_query(
+    requests: tauri::State<'_, ProfileRequests>,
+    request_id: String,
+) -> Result<(), String> {
+    guarded("Cancelling the query", async {
+        requests.cancel(&request_id);
+        Ok(())
     })
     .await
 }

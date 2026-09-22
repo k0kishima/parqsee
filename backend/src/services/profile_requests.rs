@@ -19,6 +19,13 @@
 //! Cancelling is dropping the work: `select!` drops the losing future, which
 //! drops the DataFusion stream, which releases its reservation. There is no
 //! polling and no cancellation flag to check.
+//!
+//! The SQL view's runs are registered here as well (`execute_sql`,
+//! `cancel_query`), for a reason of the same shape: the session scans a
+//! single partition, so a query the user has re-run or stopped would
+//! otherwise hold the file's reads until it finished on its own. The ids
+//! are the webview's, prefixed by what they name (`profile-…`, `query-…`),
+//! so the two never collide in the one map.
 
 use std::collections::HashMap;
 use std::future::Future;

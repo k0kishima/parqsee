@@ -12,7 +12,11 @@ const mockCounts = vi.fn();
 const mockChart = vi.fn();
 const mockFilter = vi.fn();
 const mockRelease = vi.fn();
-vi.mock('../../api/execute-sql', () => ({ executeSql: (...args: unknown[]) => mockExecuteSql(...args) }));
+vi.mock('../../api/execute-sql', () => ({
+  executeSql: (...args: unknown[]) => mockExecuteSql(...args),
+  cancelQuery: async () => undefined,
+  nextQueryRequestId: () => 'q',
+}));
 vi.mock('../../api/result-profile', () => ({
   profileQueryColumnCounts: (...args: unknown[]) => mockCounts(...args),
   profileQueryColumnChart: (...args: unknown[]) => mockChart(...args),
