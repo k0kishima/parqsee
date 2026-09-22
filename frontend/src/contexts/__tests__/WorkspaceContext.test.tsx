@@ -681,7 +681,10 @@ describe('WorkspaceProvider session', () => {
     expect(saveSession).toHaveBeenCalledTimes(1);
   });
 
-  it('does not restore when the setting is off, and still saves from then on', async () => {
+  // Off means the stored session is neither restored nor touched: the
+  // tabs it holds are the ones that come back once the setting is on
+  // again, not the empty workspace this launch started with.
+  it('neither restores nor overwrites the saved session while the setting is off', async () => {
     saveSettings({ ...defaultSettings, restoreTabs: false });
     vi.mocked(listSessionTabs).mockResolvedValue({ tabs: [sessionTab('/data/a.parquet')], active: '/data/a.parquet' });
     const { result } = renderWorkspace();
@@ -691,10 +694,9 @@ describe('WorkspaceProvider session', () => {
     expect(result.current.tabs).toEqual([]);
     await act(() => result.current.openParquetFile('/data/b.parquet'));
     await settle();
-    expect(saveSession).toHaveBeenLastCalledWith(
-      [{ path: '/data/b.parquet', state: { view_mode: null, current_page: null, active_filter: null, sort: null } }],
-      '/data/b.parquet',
-    );
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    await settle();
+    expect(saveSession).not.toHaveBeenCalled();
   });
 });
 

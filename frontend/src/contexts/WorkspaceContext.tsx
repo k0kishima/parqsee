@@ -380,10 +380,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     const saver = saverRef.current;
     const flushSession = useCallback(() => saver.flush(), [saver]);
+    // The setting gates the save as well as the restore. Its first version
+    // gated the restore alone, and a launch with it off then wrote the
+    // empty workspace over the stored session within the second, so
+    // turning it back on restored nothing: the choice not to restore had
+    // quietly become the loss of what there was to restore. With the
+    // store left alone while the setting is off, the tabs it held come
+    // back the moment the setting does — the tabs of the last session
+    // the user asked to have kept, which is what the setting names.
+    // Read live, not once at launch like the restore: a save scheduled
+    // while it was on still goes out, and turning it on mid-session
+    // records the tabs open at that point.
     useEffect(() => {
-        if (!isTauri() || !sessionReady) return;
+        if (!isTauri() || !sessionReady || !settings.restoreTabs) return;
         saver.schedule(sessionSnapshot(workspaceTabs));
-    }, [workspaceTabs, sessionReady, saver]);
+    }, [workspaceTabs, sessionReady, saver, settings.restoreTabs]);
     // The window going away is the one change that cannot wait.
     useEffect(() => {
         window.addEventListener('pagehide', flushSession);
