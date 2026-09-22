@@ -269,13 +269,19 @@ async fn export_data_with(
 }
 
 /// A unique staging path in the temp directory for an export to `export_path`
-/// (`<name>.<pid>.<nanos>.partial`, so two exports of files with the same name
-/// cannot collide).
+/// (`<shortened-name>.<pid>.<nanos>.partial`). Leave room for the suffix:
+/// an otherwise valid destination name can already reach the filesystem's
+/// component limit, and Unicode names can take several bytes per character.
 fn staging_path_for(export_path: &str) -> PathBuf {
     let name = Path::new(export_path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "export".to_string());
+    let mut end = name.len().min(128);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    let name = &name[..end];
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -559,6 +565,28 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         test_support::temp_path("export", name)
+    }
+
+    #[test]
+    fn staging_names_leave_room_for_suffixes_even_for_long_unicode_names() {
+        for name in [format!("{}.csv", "x".repeat(240)), format!("{}.json", "表".repeat(80))] {
+            let path = staging_path_for(&name);
+            let file = path.file_name().unwrap().to_str().unwrap();
+            assert!(file.len() <= 255, "staging name is too long: {file}");
+            assert!(file.ends_with(".partial"));
+            assert_eq!(path.parent(), Some(std::env::temp_dir().as_path()));
+        }
+    }
+
+    #[tokio::test]
+    async fn export_accepts_a_long_destination_name() {
+        let src = write_fixture("long_export_name");
+        let out = temp_path(&format!("{}.csv", "x".repeat(240)));
+        let n = export(&ParquetCache::new(), &src, &out, "csv", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(std::fs::read(&out).unwrap(), expected_csv("long_export_name").await);
     }
 
     /// Staging and backup files for an export named `name` that are still in
