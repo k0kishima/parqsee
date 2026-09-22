@@ -531,12 +531,26 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 shadow-sm">
             <h2 className="text-red-800 font-semibold mb-2 text-lg">{t('viewer.error')}</h2>
             <p className="text-red-600 mb-4">{error}</p>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm"
-            >
-              {t('common.close')}
-            </button>
+            {/* A file that could not be opened is not always gone: a drive
+                unplugged or a share not mounted comes back, and the tab with
+                its saved page, filter and sort should not have to be closed
+                and found again in Recent Files to read it. Retry is the same
+                reload as Refresh — the cache entry dropped, the metadata read
+                again — so a file that is still missing lands back here. */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleRefresh}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm"
+              >
+                {t('common.retry')}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-white text-red-700 border border-red-300 rounded-md hover:bg-red-50 transition-colors shadow-sm dark:bg-gray-800 dark:hover:bg-gray-700"
+              >
+                {t('common.close')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
