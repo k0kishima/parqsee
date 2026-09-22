@@ -584,7 +584,7 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
   fs.rmSync(`${goneDir}/missing.parquet`);
   await page.reload(); await page.waitForSelector('text=missing.parquet');
-  check('S7.unavailableRecent', await page.locator('text=No longer available').isVisible(), 'deleted file marked unavailable after reload');
+  check('S7.unavailableRecent', await page.locator('text=Not available right now').isVisible(), 'deleted file marked unavailable after reload');
   const missingRow = () => page.getByRole('button', { name: /missing\.parquet/ });
   await missingRow().click(); await page.waitForTimeout(500);
   const al = await page.evaluate(() => window.__alerts.splice(0));

@@ -40,7 +40,7 @@
         "recentFiles": {
             "empty": "No recent files yet.",
             "remove": "Remove from recent files",
-            "unavailable": "No longer available",
+            "unavailable": "Not available right now",
             "clear": "Clear all",
             "search": "Search recent files",
             "noMatches": "No recent files match.",
