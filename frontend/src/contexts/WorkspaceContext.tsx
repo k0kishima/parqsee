@@ -548,7 +548,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             return await opening;
         } catch (error) {
             console.error("Failed to open parquet file:", error);
-            alert(`Failed to open file: ${error}`);
+            alert(i18n.t('common.openFailed', { reason: String(error) }));
             return 'failed';
         } finally {
             openingFiles.current.delete(path);
@@ -591,7 +591,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const openSampleFile = useCallback(async () => {
         if (!isTauri()) {
-            alert("The sample file is only available in the desktop app. Please drag and drop a file instead.");
+            alert(i18n.t('common.desktopOnly'));
             return;
         }
         // Locating the sample opens nothing; the limit is checked against
@@ -602,7 +602,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             path = await sampleFilePath();
         } catch (error) {
             console.error('Failed to locate the sample file:', error);
-            alert(`Failed to open the sample file: ${error}`);
+            alert(i18n.t('common.sampleFailed', { reason: String(error) }));
             return;
         }
         await openFile(path, { remember: false });
@@ -611,7 +611,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const openFileDialog = useCallback(async () => {
         try {
             if (!isTauri()) {
-                alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
+                alert(i18n.t('common.desktopOnly'));
                 return;
             }
             const selected = await open({
@@ -631,7 +631,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const openFolderDialog = useCallback(async () => {
         try {
             if (!isTauri()) {
-                alert("The folder browser is only available in the desktop app. Please drag and drop a file instead.");
+                alert(i18n.t('common.desktopOnly'));
                 return;
             }
             const selected = await open({ directory: true, multiple: false });
@@ -641,7 +641,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }
         } catch (error) {
             console.error("Failed to open folder:", error);
-            alert(`Failed to open folder: ${error}`);
+            alert(i18n.t('common.openFolderFailed', { reason: String(error) }));
         }
     }, []);
 
@@ -723,7 +723,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (paths.length === 0) return;
         const parquetFiles = paths.filter(isParquetPath);
         if (parquetFiles.length === 0) {
-            alert('Parqsee can only open .parquet files');
+            alert(i18n.t('common.notParquet'));
             return;
         }
         // Every file gets a tab; the last one opened is the active one.

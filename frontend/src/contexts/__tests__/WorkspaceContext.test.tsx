@@ -35,8 +35,8 @@ vi.mock('../../lib/i18n', () => ({
   default: {
     language: 'en',
     changeLanguage: vi.fn(),
-    // The key and the path it was given, so a test can read both.
-    t: (key: string, options?: { path?: string }) => `${key}: ${options?.path}`,
+    // The key and what it was given, so a test can read both.
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key}: ${Object.values(options).join(' ')}` : key),
   },
 }));
 // SettingsProvider follows the system theme through matchMedia, which jsdom lacks.
@@ -162,7 +162,7 @@ describe('WorkspaceProvider tabs', () => {
     expect(result.current.tabs).toEqual([]);
     // One failure, reported once by the request that made it.
     expect(alerted).toHaveBeenCalledTimes(1);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     alerted.mockRestore();
     logged.mockRestore();
   });
@@ -799,7 +799,7 @@ describe('WorkspaceProvider on the free tier', () => {
     vi.mocked(openParquetFile).mockRejectedValueOnce(new Error('corrupt'));
     await act(() => result.current.openParquetFile('/data/c.parquet'));
     expect(result.current.tabs).toHaveLength(2);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     await act(() => result.current.openParquetFile('/data/d.parquet'));
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet']);
     expect(license.showUpgrade).not.toHaveBeenCalled();
@@ -1091,7 +1091,7 @@ describe('WorkspaceProvider files dropped on the window', () => {
 
     await waitFor(() => expect(result.current.tabs.map(t => t.path)).toEqual(['/data/good.parquet']));
     expect(alerted).toHaveBeenCalledTimes(1);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     alerted.mockRestore();
     logged.mockRestore();
   });
@@ -1201,7 +1201,7 @@ describe('WorkspaceProvider files handed over at launch', () => {
 
     expect(result.current.tabs).toEqual([]);
     expect(openParquetFile).not.toHaveBeenCalled();
-    expect(window.alert).toHaveBeenCalledWith('Parqsee can only open .parquet files');
+    expect(window.alert).toHaveBeenCalledWith('common.notParquet');
   });
 
   it('does nothing, and never asks twice, when nothing was handed over', async () => {

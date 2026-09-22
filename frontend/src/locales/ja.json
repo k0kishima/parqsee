@@ -18,6 +18,12 @@
     "fileUnreachable": "{{path}} を開けません。ファイルが存在しないか、今はアクセスできません。",
     "addCondition": "条件を追加",
     "dismiss": "閉じる",
+    "openFailed": "ファイルを開けませんでした: {{reason}}",
+    "openFolderFailed": "フォルダを開けませんでした: {{reason}}",
+    "sampleFailed": "サンプルファイルを開けませんでした: {{reason}}",
+    "notParquet": "Parqsee で開けるのは .parquet ファイルだけです",
+    "desktopOnly": "この操作はデスクトップアプリでのみ使えます。代わりにファイルをドラッグ＆ドロップしてください。",
+    "retry": "再試行",
     "removeCondition": "条件を削除"
   },
   "tabs": {

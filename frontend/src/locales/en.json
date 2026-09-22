@@ -18,7 +18,13 @@
         "fileUnreachable": "Cannot open {{path}}: the file is missing or cannot be reached right now.",
         "addCondition": "Add Condition",
         "dismiss": "Dismiss",
-        "removeCondition": "Remove condition"
+        "removeCondition": "Remove condition",
+        "openFailed": "Failed to open file: {{reason}}",
+        "openFolderFailed": "Failed to open folder: {{reason}}",
+        "sampleFailed": "Failed to open the sample file: {{reason}}",
+        "notParquet": "Parqsee can only open .parquet files",
+        "desktopOnly": "This is only available in the desktop app. Please drag and drop a file instead.",
+        "retry": "Retry"
     },
     "tabs": {
         "contextMenu": {
@@ -87,7 +93,7 @@
         "error": "Error Loading File",
         "dataError": "The condition could not be run. The previous result is still shown.",
         "loadError": "The rows could not be loaded. The previous result is still shown.",
-    "filterDropped": "The condition could not be run. It was dropped, and the file is shown without it.",
+        "filterDropped": "The condition could not be run. It was dropped, and the file is shown without it.",
         "pagination": {
             "showing": "Showing {{start}} to {{end}} of {{total}} entries",
             "previous": "Previous",
