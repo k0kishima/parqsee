@@ -115,7 +115,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const unmounted = useRef(false);
   /** Backend calls started here and not yet settled. */
   const inFlight = useRef(0);
-  useEffect(() => () => { unmounted.current = true; }, []);
+  // Cleared on the way in as well as set on the way out: StrictMode mounts,
+  // unmounts and mounts again in development, and a flag that is only ever
+  // set left the remounted viewer believing it was closed — it dropped its
+  // own first load and the grid never left its spinner.
+  useEffect(() => {
+    unmounted.current = false;
+    return () => { unmounted.current = true; };
+  }, []);
 
   /**
    * Run one backend call, counting it so that an unmount can tell when the

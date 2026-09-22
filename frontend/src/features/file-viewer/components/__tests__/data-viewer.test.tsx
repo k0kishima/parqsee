@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { StrictMode } from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { dispatchAppCommand } from '../../../../lib/app-commands';
 import userEvent from '@testing-library/user-event';
@@ -268,6 +269,21 @@ describe('DataViewer closed while a load is in flight', () => {
     unmount();
     await act(async () => {});
 
+    expect(onAbandonedLoad).not.toHaveBeenCalled();
+  });
+
+  // StrictMode mounts, unmounts and mounts again in development, which is
+  // an unmount the viewer has to come back from.
+  it('loads its first page when React mounts it twice', async () => {
+    const onAbandonedLoad = vi.fn();
+    render(
+      <StrictMode>
+        <DataViewer filePath="/data/test.parquet" onClose={vi.fn()} onAbandonedLoad={onAbandonedLoad} />
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(mockReadParquetData).toHaveBeenCalled();
     expect(onAbandonedLoad).not.toHaveBeenCalled();
   });
 
