@@ -636,6 +636,15 @@ pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String
     SerializedFileReader::new(file).map_err(|e| e.to_string())
 }
 
+/// The same file opened for the Arrow reader instead: a page read by
+/// range and a sorted page's read by position both build on it, and both
+/// report a file they cannot open the same way.
+fn open_reader_builder(path: &str) -> Result<ParquetRecordBatchReaderBuilder<File>, String> {
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
+    ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))
+}
+
 /// A batch reader over `[offset, offset + limit)` of the file's rows, in file
 /// order. The range is pushed into the parquet reader, which skips whole row
 /// groups by their row counts instead of decoding everything before `offset`
@@ -649,9 +658,7 @@ pub fn range_reader(
     limit: Option<usize>,
     batch_size: usize,
 ) -> Result<ParquetRecordBatchReader, String> {
-    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+    let builder = open_reader_builder(path)?;
 
     let num_rows = builder.metadata().file_metadata().num_rows();
     let total_rows = usize::try_from(num_rows).map_err(|_| {
@@ -1771,9 +1778,7 @@ fn rows_at_positions(path: &str, positions: &[usize]) -> Result<RecordBatch, Str
     use arrow::array::UInt64Array;
     use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
 
-    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+    let builder = open_reader_builder(path)?;
     let total = usize::try_from(builder.metadata().file_metadata().num_rows()).unwrap_or(0);
     if positions.iter().any(|&p| p >= total) {
         return Err("The file changed while reading it. Refresh and try again.".into());
