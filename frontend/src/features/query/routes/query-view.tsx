@@ -69,6 +69,16 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         if (kept.current !== null && kept.current !== id) releaseQueryResult(kept.current);
         kept.current = id;
     }, []);
+    // Replacing or discarding a result also invalidates its profile and
+    // pending narrowing requests. Keep that transition in one place.
+    const replaceResult = (next: QueryResult | undefined) => {
+        keep(next);
+        setResult(next);
+        setProfileColumn(null);
+        setConditions([]);
+        setNarrowedRows(null);
+        narrowSeq.current += 1;
+    };
     // Nothing will render again: the kept result goes, and a run still in
     // flight must not take its place — with `kept` cleared it would
     // release the result twice and leave its own rows to the caps, so the
@@ -98,13 +108,8 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             }
             const sameSql = lastSql.current === query;
             lastSql.current = query;
-            keep(data);
-            setResult(data);
-            setProfileColumn(null);
-            setConditions([]);
-            setNarrowedRows(null);
+            replaceResult(data);
             setNarrowError(undefined);
-            narrowSeq.current += 1;
             setNotice(null);
             if (!sameSql) {
                 setChartOverride(null);
@@ -119,12 +124,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             if (run !== generation.current) return;
             console.error(err);
             setError(toErrorMessage(err));
-            keep(undefined);
-            setResult(undefined);
-            setProfileColumn(null);
-            setConditions([]);
-            setNarrowedRows(null);
-            narrowSeq.current += 1;
+            replaceResult(undefined);
         } finally {
             if (run === generation.current) {
                 inFlight.current = null;
