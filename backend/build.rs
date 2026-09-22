@@ -2,6 +2,9 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The static library `storekit/Package.swift` produces.
+const LIB_NAME: &str = "ParqseeStoreKit";
+
 fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_APP_STORE");
     if env::var_os("CARGO_FEATURE_APP_STORE").is_some() {
@@ -25,6 +28,7 @@ fn link_storekit() {
     println!("cargo:rerun-if-changed={}", package.join("Package.swift").display());
     println!("cargo:rerun-if-changed={}", package.join("Sources").display());
 
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let arch = match env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
         Ok("aarch64") => "arm64".to_string(),
         Ok(other) => other.to_string(),
@@ -41,15 +45,35 @@ fn link_storekit() {
     if !status.success() {
         panic!("`swift build` failed for {}", package.display());
     }
-    let bin_path = output(
-        Command::new("swift")
-            .args(swift_args)
-            .arg(&package)
-            .args(["--triple", &triple, "--show-bin-path"]),
-    );
+    // SwiftPM writes each triple's products into a directory of its own but
+    // reports the same `--show-bin-path` for all of them — one directory
+    // holding whatever it built last. A universal build runs this script
+    // once per architecture, so linking against that path gives whichever
+    // slice finished most recently: the x86_64 half of a universal build
+    // picked up an arm64 archive and the link failed on the missing
+    // `_sk_*` symbols. Take the library from the triple's own directory,
+    // and copy it under OUT_DIR, which belongs to this target alone, so a
+    // `swift build` for the other architecture cannot replace it midway.
+    let lib = format!("lib{LIB_NAME}.a");
+    let per_triple = package.join(".build").join(&triple).join("release").join(&lib);
+    let built = if per_triple.is_file() {
+        per_triple
+    } else {
+        let bin_path = output(
+            Command::new("swift")
+                .args(swift_args)
+                .arg(&package)
+                .args(["--triple", &triple, "--show-bin-path"]),
+        );
+        PathBuf::from(bin_path).join(&lib)
+    };
+    let lib_dir = out_dir.join("swift-lib");
+    std::fs::create_dir_all(&lib_dir).expect("create the swift-lib directory");
+    std::fs::copy(&built, lib_dir.join(&lib))
+        .unwrap_or_else(|e| panic!("copy {} into {}: {e}", built.display(), lib_dir.display()));
 
-    println!("cargo:rustc-link-search=native={bin_path}");
-    println!("cargo:rustc-link-lib=static=ParqseeStoreKit");
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    println!("cargo:rustc-link-lib=static={LIB_NAME}");
 
     let sdk = output(Command::new("xcrun").args(["--sdk", "macosx", "--show-sdk-path"]));
     println!("cargo:rustc-link-search=native={}", Path::new(&sdk).join("usr/lib/swift").display());
@@ -67,7 +91,7 @@ fn link_storekit() {
         .and_then(Path::parent)
         .map(|usr| usr.join("lib/swift/macosx"))
         .expect("the swift binary has no toolchain directory");
-    let compat_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("swift-compat");
+    let compat_dir = out_dir.join("swift-compat");
     std::fs::create_dir_all(&compat_dir).expect("create the swift-compat directory");
     for entry in std::fs::read_dir(&toolchain_lib).expect("read the toolchain's swift lib directory") {
         let path = entry.expect("toolchain entry").path();
