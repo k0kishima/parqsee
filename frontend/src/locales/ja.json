@@ -118,6 +118,7 @@
       "placeholder": "SQL クエリを入力...（例: SELECT * FROM t）",
       "result": {
         "narrowed": "{{total}} 行中 {{shown}} 行に絞り込み中",
+        "narrowing": "条件を適用中… 完了するまでは直前の結果を表示しています。",
         "removeCondition": "この条件を外す",
         "partialProfile": "返却された {{rows}} 行の分布です（クエリ全体の分布ではありません）。"
       },

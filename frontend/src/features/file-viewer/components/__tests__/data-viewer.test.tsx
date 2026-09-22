@@ -84,6 +84,30 @@ const renderViewer = async (
 };
 
 describe('DataViewer failed-load rollback', () => {
+  it('restores the page size after a failed change and lets the same size be retried', async () => {
+    await renderViewer();
+    const pageSize = () => screen.getAllByRole('combobox').find(el =>
+      el.querySelector('option[value="500"]')) as HTMLSelectElement;
+    expect(pageSize()).toHaveValue('50');
+    mockReadParquetData.mockRejectedValueOnce('boom: larger page');
+
+    await userEvent.selectOptions(pageSize(), '500');
+    expect(await screen.findByText('viewer.loadError')).toBeInTheDocument();
+    expect(pageSize()).toHaveValue('50');
+    expect(mockReadParquetData).toHaveBeenCalledTimes(2);
+
+    // The next page still uses the old window, so rows are not skipped.
+    await userEvent.click(screen.getByText('viewer.pagination.next'));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null));
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+
+    await userEvent.selectOptions(pageSize(), '500');
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 500, '', null));
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(pageSize()).toHaveValue('500');
+    expect(pageInput()).toHaveValue('1');
+  });
+
   it('rolls the filter back when the filtered load fails, without an echo reload', async () => {
     await renderViewer();
     mockCountParquetData.mockRejectedValueOnce('boom: bad filter');

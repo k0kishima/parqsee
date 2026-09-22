@@ -36,6 +36,7 @@ export interface ProfileControls {
     openColumn: number | null;
     onOpenColumn: (columnIndex: number | null) => void;
     conditions: AppliedCondition[];
+    isNarrowing?: boolean;
     onNarrow: (conditions: AppliedCondition[]) => void;
     onRemoveCondition: (index: number) => void;
     onClearConditions: () => void;
@@ -48,12 +49,13 @@ export interface ProfileControls {
 interface QueryResultsProps {
     result?: QueryResult;
     error?: string;
+    narrowError?: string;
     isLoading: boolean;
     chart?: ChartControls;
     profile?: ProfileControls;
 }
 
-export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading, chart, profile }) => {
+export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, narrowError, isLoading, chart, profile }) => {
     const { t } = useTranslation();
 
     if (isLoading) {
@@ -87,6 +89,11 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
+            {narrowError && (
+                <div role="alert" className="p-2 text-sm whitespace-pre-wrap text-red-600 dark:text-red-400">
+                    {narrowError}
+                </div>
+            )}
             <div className="p-2 border-b text-xs text-gray-500 flex justify-between gap-4 bg-gray-50 border-primary dark:bg-gray-800">
                 <span>
                     {t('viewer.query.rows', { count: result.rows.length })}
@@ -103,6 +110,16 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
             </div>
             {profile && profile.conditions.length > 0 && (
                 <NarrowedBy profile={profile} shown={result.rows.length} />
+            )}
+            {profile?.isNarrowing && (
+                <div className="px-2 py-1 border-b border-primary flex items-center gap-2 text-xs text-secondary">
+                    <span role="status">{t('viewer.query.result.narrowing')}</span>
+                    {profile.conditions.length === 0 && (
+                        <button type="button" onClick={profile.onClearConditions} className="px-1.5 py-0.5 rounded border border-primary hover:bg-tertiary">
+                            {t('common.clear')}
+                        </button>
+                    )}
+                </div>
             )}
             <div className="flex-1 flex overflow-hidden">
                 <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

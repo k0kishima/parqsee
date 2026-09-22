@@ -69,6 +69,32 @@ describe('FileExplorer', () => {
   });
 
   describe('workspace roots', () => {
+    it('keeps expanded descendants when their parent is reopened and refreshed', async () => {
+      const user = userEvent.setup();
+      render(<FileExplorer {...defaultProps} />);
+      await user.click(await screen.findByText('subdir'));
+      await screen.findByText('nested.parquet');
+      await user.click(screen.getByText('test'));
+      expect(screen.queryByText('nested.parquet')).not.toBeInTheDocument();
+      await user.click(screen.getByText('test'));
+      await waitFor(() => expect(mockListDirectory.mock.calls.filter(([path]) => path === '/test')).toHaveLength(2));
+      expect(await screen.findByText('nested.parquet')).toBeInTheDocument();
+    });
+
+    it('loads descendants and updates selection under the filesystem root', async () => {
+      listByPath({
+        '/': [{ path: '/test', name: 'test', is_directory: true, is_parquet: false }],
+        '/test': sampleEntries,
+      });
+      const roots = [{ path: '/', name: 'Filesystem' }];
+      const { rerender } = render(<FileExplorer {...defaultProps} roots={roots} />);
+      await userEvent.click(await screen.findByText('test'));
+      await screen.findByText('data.parquet');
+      rerender(<FileExplorer {...defaultProps} roots={roots} currentPath="/test/data.parquet" />);
+      await waitFor(() => expect(screen.getByText('data.parquet').parentElement).toHaveClass('bg-selected'));
+      expect(mockListDirectory).not.toHaveBeenCalledWith('');
+    });
+
     it('lists each root expanded, by name, and loads its entries', async () => {
       render(<FileExplorer {...defaultProps} />);
 

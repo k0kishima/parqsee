@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronRight, ChevronDown, Folder, FileText, File, X } from 'lucide-react';
 import { FileEntry } from '../api';
 import { formatFileSize } from '../../../lib/format';
+import { isWithin } from '../../../lib/path';
 
 interface ExplorerEntryProps {
   entry: FileEntry;
@@ -130,7 +131,7 @@ export const ExplorerEntry: React.FC<ExplorerEntryProps> = React.memo(function E
   if (prev.onRemoveRoot !== next.onRemoveRoot) return false;
   // Selection only matters to this row (and its subtree, when it has one).
   const selectionTouchesRow = (file: string | null) =>
-    file !== null && (file === prev.entry.path || (prev.entry.is_directory && file.startsWith(prev.entry.path + '/')));
+    file !== null && (file === prev.entry.path || (prev.entry.is_directory && isWithin(prev.entry.path, file)));
   if (prev.selectedFile !== next.selectedFile) {
     return !selectionTouchesRow(prev.selectedFile) && !selectionTouchesRow(next.selectedFile);
   }

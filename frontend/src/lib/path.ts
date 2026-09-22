@@ -34,10 +34,10 @@ export function isWithin(root: string, filePath: string): boolean {
 export function ancestorsWithin(root: string, dir: string): string[] {
   if (!isWithin(root, dir)) return [];
   const base = root.replace(/\/+$/, '');
-  if (dir === base || dir === root) return [base];
-  const chain = [base];
+  if (dir === base || dir === root) return [base || '/'];
+  const chain = [base || '/'];
   for (const segment of dir.substring(base.length + 1).split('/').filter(Boolean)) {
-    chain.push(`${chain[chain.length - 1]}/${segment}`);
+    chain.push(`${chain[chain.length - 1].replace(/\/+$/, '')}/${segment}`);
   }
   return chain;
 }

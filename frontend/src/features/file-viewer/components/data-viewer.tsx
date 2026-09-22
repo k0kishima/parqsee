@@ -179,7 +179,9 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setPageInput(String(currentPage));
   }
 
-  const rowsPerPage = settings.rowsPerPage;
+  // Each viewer may roll back a failed size change independently. Reverting
+  // the shared setting would reload other tabs, including ones that succeeded.
+  const [rowsPerPage, setRowsPerPage] = useState(settings.rowsPerPage);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   /**
    * How far right the grid was scrolled when the load started. The table is
@@ -302,12 +304,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // lands before a failing read must not update the page.
       setTotalRows(total);
       setData(rows);
-      lastGood.current = { page: currentPage, filter: activeFilter, sort, totalRows: total };
+      lastGood.current = { page: currentPage, rowsPerPage, filter: activeFilter, sort, totalRows: total };
       setLoading(false);
     } catch (err) {
       if (unmounted.current) return;
       if (seq !== loadSeq.current) return;
-      const outcome = loadFailure(lastGood.current, { page: currentPage, filter: activeFilter, sort });
+      const outcome = loadFailure(lastGood.current, { page: currentPage, rowsPerPage, filter: activeFilter, sort });
       if (outcome.kind === 'file') {
         setError(toErrorMessage(err));
         setLoading(false);
@@ -334,6 +336,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         skipReload.current = true;
         setActiveFilter(outcome.restore.filter);
         setCurrentPage(outcome.restore.page);
+        setRowsPerPage(outcome.restore.rowsPerPage);
         setSort(outcome.restore.sort);
       }
       setTotalRows(outcome.restore.totalRows);
@@ -384,9 +387,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   // so a restored page survives.
   // Adjusted during render, not in an effect
   // (react.dev/learn/you-might-not-need-an-effect).
-  const [loadedRowsPerPage, setLoadedRowsPerPage] = useState(rowsPerPage);
-  if (loadedRowsPerPage !== rowsPerPage) {
-    setLoadedRowsPerPage(rowsPerPage);
+  const [previousPageSizeSetting, setPreviousPageSizeSetting] = useState(settings.rowsPerPage);
+  if (previousPageSizeSetting !== settings.rowsPerPage) {
+    setPreviousPageSizeSetting(settings.rowsPerPage);
+    setRowsPerPage(settings.rowsPerPage);
     setCurrentPage(1);
   }
 
@@ -701,7 +705,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                       // Reset the page in the same event as the size change,
                       // so the grid loads once instead of the old page at the
                       // new size followed by the first page.
-                      setLoadedRowsPerPage(Number(e.target.value));
+                      setRowsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                       updateSettings({ rowsPerPage: Number(e.target.value) });
                     }}
