@@ -378,6 +378,25 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     [searchTerm, data, metadata]
   );
 
+  // The matches are the ones on the page, so a page, filter or sort change
+  // replaces the list under the walk: the sixth match of a page of seven has
+  // no counterpart on a page of three. The walk starts over at the first
+  // match of the rows that arrived. Adjusted during render from the rows the
+  // index was counted for, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const [matchedRows, setMatchedRows] = useState(data);
+  if (matchedRows !== data) {
+    setMatchedRows(data);
+    setCurrentMatchIndex(0);
+  }
+  /**
+   * The match the counter names and the grid highlights. Clamped rather than
+   * read straight out of the list: the index is only reset when the rows
+   * change, and a list that shrinks under the same rows would leave it past
+   * the end, with a count of nothing highlighted.
+   */
+  const activeMatchIndex = currentMatchIndex < searchMatches.length ? currentMatchIndex : 0;
+
   const handleNextMatch = useCallback(() => {
     if (searchMatches.length > 0) {
       setCurrentMatchIndex(i => (i + 1) % searchMatches.length);
@@ -529,7 +548,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           setCurrentMatchIndex(0);
           setIsSearching(false);
         }}
-        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+        currentMatch={searchMatches.length > 0 ? activeMatchIndex + 1 : 0}
         totalMatches={searchMatches.length}
         onNext={handleNextMatch}
         onPrevious={handlePreviousMatch}
@@ -634,7 +653,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 onSelectRow={setSelectedRow}
                 searchTerm={searchTerm}
                 searchMatches={searchMatches}
-                currentMatchIndex={currentMatchIndex}
+                currentMatchIndex={activeMatchIndex}
                 typeDisplay={settings.typeDisplay || 'logical'}
                 density={settings.rowDensity}
                 scrollerRef={tableContainerRef}

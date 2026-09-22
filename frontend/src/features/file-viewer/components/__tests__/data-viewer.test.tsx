@@ -321,6 +321,43 @@ describe('DataViewer search commands', () => {
   });
 });
 
+describe('DataViewer search matches across a page change', () => {
+  /** The cell of the match the counter is on. */
+  const activeCells = () => document.querySelectorAll('td.bg-orange-200');
+
+  beforeEach(() => {
+    // The grid scrolls the current match into view; jsdom has no scrolling.
+    Element.prototype.scrollTo = vi.fn();
+  });
+
+  it('walks the new page from its first match', async () => {
+    // Three matches on the first page, one on the second.
+    mockReadParquetData.mockImplementation((_path: string, offset: number) =>
+      Promise.resolve(offset === 0 ? [{ id: 11 }, { id: 12 }, { id: 13 }] : [{ id: 1 }])
+    );
+    await renderViewer();
+    const user = userEvent.setup();
+
+    act(() => dispatchAppCommand('find'));
+    await user.type(screen.getByPlaceholderText('viewer.searchPlaceholder'), '1');
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('1 / 3')).toBeInTheDocument();
+
+    act(() => dispatchAppCommand('find-next'));
+    act(() => dispatchAppCommand('find-next'));
+    expect(screen.getByText('3 / 3')).toBeInTheDocument();
+
+    await user.click(screen.getByText('viewer.pagination.next'));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null));
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+
+    // The third match of the old page does not exist on the new one: the
+    // walk starts over, and the first match is the one highlighted.
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    expect(activeCells()).toHaveLength(1);
+  });
+});
+
 describe('DataViewer column profile', () => {
   beforeEach(() => {
     mockProfileCounts.mockResolvedValue({
