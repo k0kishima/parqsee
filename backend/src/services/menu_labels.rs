@@ -61,6 +61,7 @@ pub const KEYS: &[&str] = &[
     "find-next",
     "find-previous",
     // View
+    "refresh",
     "toggle-sidebar",
     "switch-view",
     "fullscreen",
@@ -106,6 +107,7 @@ const EN: &[(&str, &str)] = &[
     ("find", "Find…"),
     ("find-next", "Find Next"),
     ("find-previous", "Find Previous"),
+    ("refresh", "Refresh"),
     ("toggle-sidebar", "Toggle Sidebar"),
     ("switch-view", "Switch Content / Query"),
     ("fullscreen", "Toggle Full Screen"),
@@ -148,6 +150,7 @@ const JA: &[(&str, &str)] = &[
     ("find", "検索…"),
     ("find-next", "次を検索"),
     ("find-previous", "前を検索"),
+    ("refresh", "更新"),
     ("toggle-sidebar", "サイドバーの表示 / 非表示"),
     ("switch-view", "コンテンツ / クエリを切り替え"),
     ("fullscreen", "フルスクリーンにする"),

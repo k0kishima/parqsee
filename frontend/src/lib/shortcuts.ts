@@ -28,6 +28,7 @@ export type ShortcutId =
     | 'go-to-tab'
     | 'toggle-sidebar'
     | 'switch-view'
+    | 'refresh'
     | 'shortcuts'
     | 'find'
     | 'find-next'
@@ -89,6 +90,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 
     { id: 'toggle-sidebar', section: 'view', keys: ['⌘B'], match: e => letter(e, 'b') },
     { id: 'switch-view', section: 'view', keys: ['⌘E'], match: e => letter(e, 'e') },
+    { id: 'refresh', section: 'view', keys: ['⌘R'], match: e => letter(e, 'r') },
     { id: 'shortcuts', section: 'view', keys: ['⌘/'], match: e => mod(e) && e.key === '/' },
 
     { id: 'find', section: 'search', keys: ['⌘F'], match: e => letter(e, 'f') },

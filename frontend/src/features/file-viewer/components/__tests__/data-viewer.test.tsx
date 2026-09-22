@@ -366,6 +366,25 @@ describe('DataViewer closed while a load is in flight', () => {
   });
 });
 
+describe('DataViewer refresh command', () => {
+  it('re-reads the file on ⌘R, only while it is the view on screen', async () => {
+    const isActiveRef = { current: false };
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} isActiveRef={isActiveRef} />);
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+    expect(mockOpenParquetFile).toHaveBeenCalledTimes(1);
+
+    act(() => dispatchAppCommand('refresh'));
+    expect(mockEvictCache).not.toHaveBeenCalled();
+
+    isActiveRef.current = true;
+    await act(async () => { dispatchAppCommand('refresh'); });
+
+    expect(mockEvictCache).toHaveBeenCalledWith('/data/test.parquet');
+    await waitFor(() => expect(mockOpenParquetFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(2));
+  });
+});
+
 describe('DataViewer search commands', () => {
   it('opens the search bar on the find command, only while it is the view on screen', async () => {
     const isActiveRef = { current: false };

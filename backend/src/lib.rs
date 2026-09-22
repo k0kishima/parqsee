@@ -128,12 +128,15 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
         ],
     )?;
 
+    let refresh = b.item("refresh", Some("CmdOrCtrl+R"))?;
     let toggle_sidebar = b.item("toggle-sidebar", Some("CmdOrCtrl+B"))?;
     let switch_view = b.item("switch-view", Some("CmdOrCtrl+E"))?;
     let fullscreen = b.predefined("fullscreen", PredefinedMenuItem::fullscreen)?;
     let view = b.submenu(
         "title.view",
         &[
+            &refresh,
+            &PredefinedMenuItem::separator(app)?,
             &toggle_sidebar,
             &switch_view,
             &PredefinedMenuItem::separator(app)?,

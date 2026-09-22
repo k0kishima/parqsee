@@ -1329,7 +1329,8 @@ describe('WorkspaceProvider shortcuts', () => {
     press({ metaKey: true, key: 'f' });
     press({ ctrlKey: true, key: 'Enter' });
     press({ metaKey: true, key: 'e' });
-    expect(heard.mock.calls.map(c => c[0])).toEqual(['find', 'run-query', 'switch-view']);
+    press({ metaKey: true, key: 'r' });
+    expect(heard.mock.calls.map(c => c[0])).toEqual(['find', 'run-query', 'switch-view', 'refresh']);
   });
 
   it('walks the tabs on ⇧⌘] and ⌘1…9, and answers the native menu by the same ids', async () => {
