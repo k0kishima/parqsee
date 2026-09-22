@@ -686,17 +686,33 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
     )
     .map_err(|e| e.to_string())?;
     for (column, field) in metadata.columns.iter_mut().zip(arrow_schema.fields()) {
-        if matches!(
-            field.data_type(),
+        let arrow_kind = match field.data_type() {
             DataType::Date32
-                | DataType::Date64
-                | DataType::Time32(_)
-                | DataType::Time64(_)
-                | DataType::Timestamp(_, _)
-        ) && column.kind != ColumnKind::Temporal
-        {
-            column.kind = ColumnKind::Temporal;
+            | DataType::Date64
+            | DataType::Time32(_)
+            | DataType::Time64(_)
+            | DataType::Timestamp(_, _) => ColumnKind::Temporal,
+            // A duration is stored as a bare integer, but Arrow and
+            // DataFusion read it back as Duration(unit), which no bare
+            // number compares to: reported as an integer, the filter bar
+            // would send `"dur" > 0` and the plan would fail on
+            // `Duration(ns) > Int64`. Reported as Other, the bar quotes
+            // what was typed and the header names the Arrow type, so the
+            // unit the values carry is on screen.
+            DataType::Duration(_) => ColumnKind::Other,
+            _ => continue,
+        };
+        if column.kind != arrow_kind {
+            column.kind = arrow_kind;
             column.column_type = format!("{:?}", field.data_type());
+            // A duration carries no parquet annotation, so the header —
+            // which names the logical type and falls back to the physical
+            // one — would call it INT64 while the bar quotes its literals.
+            // The Arrow type is the logical information the file lacks,
+            // and it is what says which unit the values are counted in.
+            if arrow_kind == ColumnKind::Other && column.logical_type.is_none() {
+                column.logical_type = Some(column.column_type.clone());
+            }
         }
     }
     Ok(metadata)
@@ -4098,6 +4114,51 @@ mod tests {
                 ColumnKind::Binary,
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_duration_column_is_reported_as_other_with_its_arrow_type() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "dur_ns",
+                DataType::Duration(arrow::datatypes::TimeUnit::Nanosecond),
+                true,
+            ),
+            Field::new(
+                "dur_ms",
+                DataType::Duration(arrow::datatypes::TimeUnit::Millisecond),
+                true,
+            ),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow::array::DurationNanosecondArray::from(vec![
+                    1_500_000_000i64,
+                ])) as ArrayRef,
+                Arc::new(arrow::array::DurationMillisecondArray::from(vec![1_500i64])),
+            ],
+        )
+        .unwrap();
+        let path = temp_path("duration.parquet");
+        write_parquet(&path, &batch, None);
+
+        let meta = ParquetCache::new()
+            .get_or_create_metadata(&path.to_string_lossy())
+            .await
+            .unwrap();
+
+        assert_eq!(meta.columns[0].kind, ColumnKind::Other);
+        assert_eq!(meta.columns[0].column_type, "Duration(Nanosecond)");
+        assert_eq!(meta.columns[1].kind, ColumnKind::Other);
+        assert_eq!(meta.columns[1].column_type, "Duration(Millisecond)");
+        // The header labels a column by its logical type, so the Arrow type
+        // has to land there too or it reads INT64.
+        assert_eq!(
+            meta.columns[0].logical_type.as_deref(),
+            Some("Duration(Nanosecond)")
+        );
+        assert_eq!(meta.columns[0].physical_type, "INT64");
     }
 
     #[tokio::test]
