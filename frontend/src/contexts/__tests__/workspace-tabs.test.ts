@@ -13,6 +13,7 @@ import {
   nthTabId,
   reduceWorkspaceTabs,
   restoreTabs,
+  restoreTabsTransition,
   sessionSnapshot,
   restoredTabState,
 } from '../workspace-tabs';
@@ -221,21 +222,42 @@ describe('restoreTabs', () => {
     expect(next.tabStates.a).toEqual({ currentPage: 2 });
     expect(next.tabStates.x).toBeUndefined();
   });
+
+  it('keeps the tab the user opened during the restore active', () => {
+    // A file dropped while the session was still being read is what the
+    // user is looking at; the tab the last session left active does not
+    // take the window back from it.
+    const next = restoreTabs({ ...three, activeTabId: 'c' }, restored, '/data/r2.parquet');
+    expect(next.activeTabId).toBe('c');
+  });
+
+  it('activates the saved tab when nothing was open', () => {
+    expect(restoreTabs(EMPTY_WORKSPACE_TABS, restored, '/data/r2.parquet').activeTabId).toBe('r2');
+  });
 });
 
-describe('restoreTabs under a limit', () => {
+describe('restoreTabsTransition under a limit', () => {
   const restored = ['r1', 'r2', 'r3', 'r4'].map(id => ({ tab: tab(id), state: {} }));
 
-  it('takes the first tabs up to the limit, in order', () => {
-    const next = restoreTabs(EMPTY_WORKSPACE_TABS, restored, '/data/r4.parquet', 3);
-    expect(next.tabs.map(t => t.id)).toEqual(['r1', 'r2', 'r3']);
+  it('seats the first tabs up to the limit, in order, and returns the rest', () => {
+    const { state, dropped } = restoreTabsTransition(EMPTY_WORKSPACE_TABS, restored, '/data/r4.parquet', 3);
+    expect(state.tabs.map(t => t.id)).toEqual(['r1', 'r2', 'r3']);
     // The named active tab was left out: the first restored one stands in.
-    expect(next.activeTabId).toBe('r1');
+    expect(state.activeTabId).toBe('r1');
+    expect(dropped.map(d => d.tab.id)).toEqual(['r4']);
   });
 
   it('counts the tabs already open, and a file open in both only once', () => {
-    const next = restoreTabs(three, [{ tab: tab('x', '/data/a.parquet'), state: {} }, ...restored], null, 4);
-    expect(next.tabs.map(t => t.id)).toEqual(['a', 'b', 'c', 'r1']);
+    const duplicate = { tab: tab('x', '/data/a.parquet'), state: {} };
+    const { state, dropped } = restoreTabsTransition(three, [duplicate, ...restored], null, 4);
+    expect(state.tabs.map(t => t.id)).toEqual(['a', 'b', 'c', 'r1']);
+    // The file is already in a tab: nothing was seated for it, and nothing
+    // is left over for the caller to clean up either.
+    expect(dropped.map(d => d.tab.id)).toEqual(['r2', 'r3', 'r4']);
+  });
+
+  it('drops nothing when every tab fits', () => {
+    expect(restoreTabsTransition(EMPTY_WORKSPACE_TABS, restored, null, null).dropped).toEqual([]);
   });
 });
 
@@ -294,6 +316,7 @@ describe('reduceWorkspaceTabs', () => {
     state = reduceWorkspaceTabs(state, { type: 'close', tabId: 'b' });
     state = reduceWorkspaceTabs(state, { type: 'closeMany', tabIds: ['c'] });
     state = reduceWorkspaceTabs(state, { type: 'restore', tabs: [{ tab: tab('r'), state: { viewMode: 'query' } }], activePath: '/data/r.parquet' });
-    expect(state).toEqual({ tabs: [tab('a'), tab('r')], activeTabId: 'r', tabStates: { a: { currentPage: 4 }, r: { viewMode: 'query' } } });
+    // A tab was already open, so the saved active path does not take over.
+    expect(state).toEqual({ tabs: [tab('a'), tab('r')], activeTabId: 'a', tabStates: { a: { currentPage: 4 }, r: { viewMode: 'query' } } });
   });
 });

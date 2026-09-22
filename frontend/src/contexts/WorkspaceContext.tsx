@@ -36,6 +36,7 @@ import {
     reduceWorkspaceTabs,
     closeTab as closeTabTransition,
     closeTabs as closeTabsTransition,
+    restoreTabsTransition,
     activeTab as activeTabOf,
     adjacentTabId,
     nthTabId,
@@ -58,6 +59,15 @@ export interface RestoreNotice {
      */
     capped: string[];
 }
+
+/**
+ * What became of a request to open a file. `activated` is a file that
+ * already had a tab, `refused` the free tier's limit turning it away, and
+ * `missing` a file that is not there any more — the two the caller has to
+ * tell apart when it holds something on the file's behalf, since a refusal
+ * is worth waiting out and a missing file is not.
+ */
+type OpenOutcome = 'opened' | 'activated' | 'refused' | 'missing' | 'failed';
 
 /**
  * How long a change to the session waits before it is written. Page
@@ -177,12 +187,17 @@ async function openRestoredTab(tab: SessionTab): Promise<RestoredTab | null> {
  * follows the free tier's limit lifting — and the free tier is why the
  * room is checked between the opens rather than before them: a file that
  * will not open any more must not spend a slot the next tab could have
- * had. The second restore passes no limit because by then there is none,
- * and its tabs were already found available by the first.
+ * had, and a file the user opens meanwhile takes one. `openCount` is read
+ * again before every open for that second reason: the drop listener is
+ * live from the first render, so tabs can appear while this runs, and
+ * counting only the tabs restored so far would open more files than the
+ * workspace can seat. The second restore passes no limit because by then
+ * there is none, and its tabs were already found available by the first.
  */
 async function replayTabs(
     tabs: readonly SessionTab[],
     limit: TabLimit,
+    openCount: () => number,
 ): Promise<{ restored: RestoredTab[]; skipped: string[]; capped: SessionTab[] }> {
     const restored: RestoredTab[] = [];
     const skipped: string[] = [];
@@ -192,7 +207,7 @@ async function replayTabs(
             skipped.push(tab.path);
             continue;
         }
-        if (!hasRoomForTab(restored.length, limit)) {
+        if (!hasRoomForTab(openCount() + restored.length, limit)) {
             capped.push(tab);
             continue;
         }
@@ -234,7 +249,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // files opened into one remaining slot cannot both pass the check and
     // both be opened in the backend (CT-04). A second request for a path in
     // flight waits for the first and activates the tab it made.
-    const openingFiles = useRef(new Map<string, Promise<void>>());
+    const openingFiles = useRef(new Map<string, Promise<OpenOutcome>>());
     const [isPending, startTransition] = useTransition();
     const { upsertRecentFile, removeRecentFile } = useRecentFiles();
     const [roots, setRoots] = useState<readonly WorkspaceRoot[]>([]);
@@ -275,10 +290,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     // The tabs of the last session, each opened by `openRestoredTab`. A file
     // that is gone is skipped and named in the notice without being opened
-    // at all. On the free tier the first tabs up to the limit come back and
-    // the rest are named too (and never opened in the backend, so no grant
-    // or cache for them) — restoring them all would make "never close a tab"
-    // a way around the limit.
+    // at all. On the free tier the tabs that fit beside whatever is already
+    // open come back and the rest are named too (and never opened in the
+    // backend, so no grant or cache for them) — restoring them all would
+    // make "never close a tab" a way around the limit.
     useEffect(() => {
         if (!isTauri()) return;
         // StrictMode runs this effect twice in development; only the run
@@ -291,10 +306,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 try {
                     const session = await listSessionTabs();
                     const limit = tabLimitRef.current;
-                    const replayed = await replayTabs(session.tabs, limit);
+                    const openCount = () => workspaceTabsRef.current.tabs.length;
+                    const replayed = await replayTabs(session.tabs, limit, openCount);
                     ({ skipped, capped } = replayed);
                     if (cancelled) return;
+                    // A file opened between the last room check and here —
+                    // a drop lands in one tick, the open before it took
+                    // several — leaves a restored file with no seat. The
+                    // reducer cannot say which from inside a dispatch, so
+                    // the same transition is run over the state it will
+                    // act on: what it could not seat was opened in the
+                    // backend and is given back here, cache and grant and
+                    // all, and named with the rest of the capped tabs.
+                    const { dropped } = restoreTabsTransition(workspaceTabsRef.current, replayed.restored, session.active, limit);
                     dispatch({ type: 'restore', tabs: replayed.restored, activePath: session.active, limit });
+                    for (const { tab } of dropped) evictCacheQuietly(tab.path);
+                    if (dropped.length > 0) {
+                        // In the order the session had them, whichever end
+                        // of the restore left them out.
+                        const cappedPaths = new Set([...capped.map(t => t.path), ...dropped.map(d => d.tab.path)]);
+                        capped = session.tabs.filter(t => cappedPaths.has(t.path));
+                    }
                 } catch (error) {
                     console.error('Failed to restore the last session:', error);
                 }
@@ -319,7 +351,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let cancelled = false;
         (async () => {
             // No limit left to check: this effect only runs once it lifted.
-            const { restored, skipped } = await replayTabs(leftOut, null);
+            const { restored, skipped } = await replayTabs(leftOut, null, () => workspaceTabsRef.current.tabs.length);
             if (cancelled) return;
             dispatch({ type: 'restore', tabs: restored, activePath: null });
             setRestoreNotice(notice => {
@@ -428,14 +460,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * first and activates the tab that made.
      *
      * It never rejects: a failure is reported to the user with an alert
-     * and the promise resolves, so a caller only has to wait for it. Its
-     * callers are event handlers and a loop over the files of a drop —
-     * none of them could do anything with the error, and an uncaught one
-     * would become an unhandled rejection or leave the files behind it
-     * unopened.
+     * and the promise resolves with what became of the request, so a
+     * caller only has to wait for it. Most of them ignore the answer —
+     * they are event handlers and a loop over the files of a drop, and an
+     * uncaught error would become an unhandled rejection or leave the
+     * files behind it unopened. ⇧⌘T is the one that reads it, to tell a
+     * refusal it should hold the tab for from a file that is gone.
      */
-    const openFile = useCallback(async (path: string, { remember, state }: { remember: boolean; state?: TabState }) => {
-        if (!isTauri()) return; // Browser fallback: there is no backend to open the file with.
+    const openFile = useCallback(async (path: string, { remember, state }: { remember: boolean; state?: TabState }): Promise<OpenOutcome> => {
+        if (!isTauri()) return 'failed'; // Browser fallback: there is no backend to open the file with.
 
         const inFlight = openingFiles.current.get(path);
         if (inFlight) {
@@ -445,8 +478,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             try { await inFlight; } catch { /* reported by the first request */ }
             const existing = workspaceTabsRef.current.tabs.find(t => t.path === path);
             // No tab: the first request failed and said so; nothing to add.
-            if (existing) dispatch({ type: 'select', tabId: existing.id });
-            return;
+            if (!existing) return 'failed';
+            dispatch({ type: 'select', tabId: existing.id });
+            return 'activated';
         }
 
         // The free tier's limit, before anything is asked of the backend:
@@ -459,16 +493,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const reserved = [...openingFiles.current.keys()].filter(p => !isOpen(p)).length;
             if (!hasRoomForTab(openTabs.length + reserved, tabLimitRef.current)) {
                 showUpgrade();
-                return;
+                return 'refused';
             }
         }
 
-        const opening = (async () => {
+        const opening = (async (): Promise<OpenOutcome> => {
             const fileExists = await checkFileExists(path);
             if (!fileExists) {
                 removeRecentFile(path);
                 alert(`File not found: ${path}`);
-                return;
+                return 'missing';
             }
 
             await apiOpenParquetFile(path);
@@ -497,20 +531,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (!workspaceTabsRef.current.tabs.some(t => t.path === path)) {
                 evictCacheQuietly(path);
                 showUpgrade();
+                return 'refused';
             }
+            return isOpen(path) ? 'activated' : 'opened';
         })();
         openingFiles.current.set(path, opening);
         try {
-            await opening;
+            return await opening;
         } catch (error) {
             console.error("Failed to open parquet file:", error);
             alert(`Failed to open file: ${error}`);
+            return 'failed';
         } finally {
             openingFiles.current.delete(path);
         }
     }, [dispatch, upsertRecentFile, removeRecentFile, showUpgrade]);
 
-    const openParquetFile = useCallback((path: string) => openFile(path, { remember: true }), [openFile]);
+    const openParquetFile = useCallback(async (path: string) => {
+        await openFile(path, { remember: true });
+    }, [openFile]);
 
     /**
      * Reopen the most recently closed tab, on the page and filter it was
@@ -520,6 +559,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * ordinary open, so a missing file and the free tier's limit are handled
      * as they are anywhere else, and Recent Files keeps its order (the file
      * was recorded when it was first opened).
+     *
+     * An entry is taken off the history before the open and put back when
+     * the free tier turned the file away: the prompt was the answer to this
+     * ⇧⌘T, and the tab is still the last one closed — it comes back on the
+     * next ⇧⌘T once a tab closes or the limit lifts. A file that is gone
+     * stays off: `openFile` dropped it from Recent Files and said so, and
+     * the next ⇧⌘T means the tab before it, not the same alert again.
      */
     const reopenClosedTab = useCallback(async () => {
         const openPaths = new Set(workspaceTabsRef.current.tabs.map(t => t.path));
@@ -530,7 +576,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         setClosedTabs(history);
         if (!entry) return;
-        await openFile(entry.path, { remember: false, state: entry.state });
+        const reopening = entry;
+        const outcome = await openFile(reopening.path, { remember: false, state: reopening.state });
+        if (outcome === 'refused') setClosedTabs(prev => [...prev, reopening]);
     }, [closedTabs, openFile]);
 
     const openSampleFile = useCallback(async () => {
