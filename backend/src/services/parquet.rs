@@ -705,6 +705,14 @@ fn compute_metadata(path: &str) -> Result<ParquetMetadata, String> {
         if column.kind != arrow_kind {
             column.kind = arrow_kind;
             column.column_type = format!("{:?}", field.data_type());
+            // A duration carries no parquet annotation, so the header —
+            // which names the logical type and falls back to the physical
+            // one — would call it INT64 while the bar quotes its literals.
+            // The Arrow type is the logical information the file lacks,
+            // and it is what says which unit the values are counted in.
+            if arrow_kind == ColumnKind::Other && column.logical_type.is_none() {
+                column.logical_type = Some(column.column_type.clone());
+            }
         }
     }
     Ok(metadata)
@@ -4144,6 +4152,13 @@ mod tests {
         assert_eq!(meta.columns[0].column_type, "Duration(Nanosecond)");
         assert_eq!(meta.columns[1].kind, ColumnKind::Other);
         assert_eq!(meta.columns[1].column_type, "Duration(Millisecond)");
+        // The header labels a column by its logical type, so the Arrow type
+        // has to land there too or it reads INT64.
+        assert_eq!(
+            meta.columns[0].logical_type.as_deref(),
+            Some("Duration(Nanosecond)")
+        );
+        assert_eq!(meta.columns[0].physical_type, "INT64");
     }
 
     #[tokio::test]
