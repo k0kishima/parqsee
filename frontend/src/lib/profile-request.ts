@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invokeBestEffort } from './tauri';
 
 /**
  * Naming a profile request, and ending one the panel has stopped waiting
@@ -27,11 +27,5 @@ export function nextProfileRequestId(): string {
  * answered is nothing to cancel, and a caller that is unmounting has
  * nowhere to report a failure to.
  */
-export async function cancelProfile(requestId: string): Promise<void> {
-  try {
-    await invoke('cancel_profile', { requestId });
-  } catch {
-    // The scan ends with the process at the latest; there is nothing the
-    // panel that asked could do about a refusal it can no longer show.
-  }
-}
+export const cancelProfile = (requestId: string): Promise<void> =>
+  invokeBestEffort('cancel_profile', { requestId });
