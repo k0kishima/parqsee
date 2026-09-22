@@ -367,10 +367,11 @@ Argument names are camelCase on the JS side.
 | `export_data` | `(sourcePath, exportPath, format, offset?, limit?, filter?, sort?)` → `number` | Export to `csv` or `json`, returning the row count. `offset`/`limit` address the filtered, sorted result — the sequence the grid paginates over. On success the destination folder is recorded as the last export folder |
 | `export_default_dir` | `(sourcePath)` → `string \| null` | Where the save panel for an export should start: the file's own folder when it lies inside an open workspace root, else the last export folder, else `null` |
 | `evict_cache` | `(path)` → `void` | Drop the cached session and metadata for a file |
-| `execute_sql` | `(filePath, query)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's. Columns that share a name — a self-join's `a.id` and `b.id` — are made unique before the rows are keyed by it, by their qualifier and otherwise by a number. The result carries a `result_id` while the backend is holding its rows for the profile, and none when it was too large to keep |
+| `execute_sql` | `(filePath, query, requestId?)` → `QueryResult` | Run a read-only SQL query; the file is registered as table `t`. `requestId` is what `cancel_query` ends the run by. DDL, DML, `SET` and `COPY` are refused. Results are capped at 10,000 rows (`truncated`/`max_rows` on the result). Each column carries `chart_type` (`QueryChartType`: integer / float / decimal / date / timestamp with its timezone / category / unsupported), decided from the planned schema in `commands/query.rs` — the webview cannot tell a CAST's or an aggregate's type from the file's `ColumnInfo`, and `data_type` is a display string. Dictionary columns are unsupported until their JSON rendering is proven to match a plain column's. Columns that share a name — a self-join's `a.id` and `b.id` — are made unique before the rows are keyed by it, by their qualifier and otherwise by a number. The result carries a `result_id` while the backend is holding its rows for the profile, and none when it was too large to keep |
 | `profile_query_column_counts` | `(resultId, columnIndex, filter?, requestId?)` → `ColumnCounts` | The counts of one column of a kept result, over the rows `filter` keeps. The column is named by position; the rows are the ones the webview was given, never the whole result of the query |
 | `profile_query_column_chart` | `(resultId, columnIndex, filter?, counts, requestId?)` → `ProfileChart` | That column's chart, the same way and for the same reason the file's is a second call |
 | `filter_query_result` | `(resultId, filter?)` → `Value[]` | The rows of a kept result that `filter` keeps, keyed as the grid renders them |
+| `cancel_query` | `(requestId)` → `void` | Stop the run `requestId` names: the SQL view cancels the run in flight when the user runs again over it (⌘↩ or Run during a run) or presses Stop (⌘., also in the Query menu), which keeps the previous result on screen. The same registry as the profiles' (`services::profile_requests`), because the reason has the same shape: the session scans a single partition, so a run nobody will look at would otherwise hold the file's reads until it finished |
 | `cancel_profile` | `(requestId)` → `void` | Stop a profile the panel has stopped waiting for — either panel's. A profile reserves its `COUNT(DISTINCT)` out of the file session's memory pool, so an abandoned scan can leave the profile on screen without the memory to finish; the panel names each request and cancels the ones it supersedes (`services::profile_requests`) |
 | `release_query_result` | `(resultId)` → `void` | Let go of a result: a re-run replaced it, a superseded run's answer arrived, or its tab closed |
 | `iap_status` | `()` → `IapStatus` | `{state: free \| unlocked, store_error?, revision}`, derived from the App Store entitlements on every call; waits for the launch-time read (20 s at most, then the free tier at revision 0 with the reason, and the read arrives as `iap-status` when it lands) |
@@ -385,13 +386,13 @@ handler, which is how a file opened from Finder, the Dock or `open -a`
 arrives — for a `menu` event carrying the id
 of the native menu item that was chosen (`open-file`, `open-folder`,
 `close-tab`, `reopen-tab`, `settings`, `find`, `find-next`,
-`find-previous`, `toggle-sidebar`, `switch-view`, `run-query`,
+`find-previous`, `toggle-sidebar`, `switch-view`, `run-query`, `stop-query`,
 `previous-tab`, `next-tab`, `shortcuts`, `help`) — `build_menu` in
 `lib.rs` owns their key equivalents, and
 `frontend/src/lib/shortcuts.ts` lists the same ids with the same keys
 (its test reads `lib.rs` and checks); `WorkspaceContext.runCommand`
 answers a `menu` event and a keydown alike by that id, handing what a
-view owns (`find*`, `run-query`, `switch-view`) to the active view over
+view owns (`find*`, `run-query`, `stop-query`, `switch-view`) to the active view over
 `lib/app-commands.ts` — for `recent-files-cleared`, sent when
 File › Open Recent › Clear Menu emptied the store (the `RecentFilesContext`
 mirror follows; the submenu itself is `menu.rs`: rebuilt from the store
