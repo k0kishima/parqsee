@@ -9,10 +9,9 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
  * labels from here, so a key is never written differently in two places.
  *
  * Keys are macOS glyphs in the menu bar's own order (⌃ ⌥ ⇧ ⌘), which is
- * what the menu shows next to the same item. The keydown fallbacks accept
- * Ctrl for ⌘ where there is no native menu (the e2e harness, other
- * platforms), but the labels are not translated for them: the app ships
- * on macOS.
+ * what the menu shows next to the same item. Off the Mac the keydown
+ * fallbacks accept Ctrl for ⌘, but the labels are not translated for them:
+ * the app ships on macOS.
  *
  * On macOS a native key equivalent wins over the webview's keydown, so a
  * shortcut that is in the menu reaches the webview as a `menu` event and
@@ -56,8 +55,21 @@ export interface Shortcut {
     match?: (event: KeyEvent) => boolean;
 }
 
-/** ⌘ on macOS, Ctrl elsewhere. */
-const mod = (e: KeyEvent) => e.metaKey || e.ctrlKey;
+/**
+ * Whether the webview is on a Mac, read per keydown so a test can stand
+ * on either side. WKWebView's user agent names the platform `Macintosh`;
+ * jsdom's names it `darwin`, and does not count.
+ */
+const onMac = () => /Macintosh/.test(navigator.userAgent);
+
+/**
+ * ⌘ on macOS, Ctrl elsewhere. On a Mac ⌃ is never a shortcut modifier:
+ * every text field answers the Emacs keys — ⌃E to the end of the line,
+ * ⌃B and ⌃F a character back and forward, ⌃O to open a line — and a
+ * ⌘ shortcut that also matched Ctrl swallowed them, so ⌃E in the SQL
+ * editor switched the view instead of moving the caret.
+ */
+const mod = (e: KeyEvent) => (onMac() ? e.metaKey && !e.ctrlKey : e.metaKey || e.ctrlKey);
 const letter = (e: KeyEvent, key: string, shift = false) =>
     mod(e) && e.shiftKey === shift && !e.altKey && e.key.toLowerCase() === key;
 

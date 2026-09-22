@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 type KeydownTarget = 'window' | 'document';
 
@@ -18,9 +17,4 @@ export function useGlobalKeydown(
     element.addEventListener('keydown', handler as EventListener);
     return () => element.removeEventListener('keydown', handler as EventListener);
   }, [handler, target]);
-}
-
-/** True for Cmd on macOS or Ctrl elsewhere. */
-export function isModifierPressed(event: KeyboardEvent | ReactKeyboardEvent): boolean {
-  return event.metaKey || event.ctrlKey;
 }

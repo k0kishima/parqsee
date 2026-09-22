@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -91,7 +91,7 @@ describe('the native menu', () => {
 });
 
 describe('matchShortcut', () => {
-  it('tells ⌘O from ⇧⌘O and accepts Ctrl for ⌘', () => {
+  it('tells ⌘O from ⇧⌘O and, off the Mac, accepts Ctrl for ⌘', () => {
     expect(matchShortcut(key({ metaKey: true, key: 'o' }))).toBe('open-file');
     expect(matchShortcut(key({ metaKey: true, shiftKey: true, key: 'O' }))).toBe('open-folder');
     expect(matchShortcut(key({ ctrlKey: true, key: 'f' }))).toBe('find');
@@ -108,5 +108,31 @@ describe('matchShortcut', () => {
     expect(matchGoToTab(key({ metaKey: true, key: '0' }))).toBeNull();
     expect(matchGoToTab(key({ metaKey: true, shiftKey: true, key: '3' }))).toBeNull();
     expect(matchGoToTab(key({ key: '3' }))).toBeNull();
+  });
+
+  describe('on a Mac', () => {
+    beforeEach(() => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+      );
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('leaves ⌃ to the text fields', () => {
+      // The Emacs keys every Mac text field answers, and the tab the
+      // SQL editor would otherwise lose to ⌃W.
+      for (const k of ['e', 'b', 'f', 'o', 'w']) {
+        expect(matchShortcut(key({ ctrlKey: true, key: k })), `⌃${k.toUpperCase()}`).toBeNull();
+      }
+      expect(matchShortcut(key({ ctrlKey: true, key: 'Enter' }))).toBeNull();
+      expect(matchGoToTab(key({ ctrlKey: true, key: '1' }))).toBeNull();
+      expect(matchShortcut(key({ metaKey: true, ctrlKey: true, key: 'e' }))).toBeNull();
+    });
+
+    it('still answers ⌘', () => {
+      expect(matchShortcut(key({ metaKey: true, key: 'e' }))).toBe('switch-view');
+      expect(matchShortcut(key({ metaKey: true, key: 'Enter' }))).toBe('run-query');
+      expect(matchGoToTab(key({ metaKey: true, key: '1' }))).toBe(1);
+    });
   });
 });
