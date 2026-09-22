@@ -17,6 +17,12 @@ interface RecentFilesContextType {
   upsertRecentFile: (file: RecentFile) => void;
   clearRecentFiles: () => void;
   removeRecentFile: (path: string) => void;
+  /**
+   * Ask the backend for the list again, so that `available` describes the
+   * files as they are now — after an open found one out of reach, the entry
+   * is kept and shown as unavailable rather than dropped.
+   */
+  refreshRecentFiles: () => void;
 }
 
 const [RecentFilesContext, useRecentFiles] = createRequiredContext<RecentFilesContextType>('RecentFiles');
@@ -137,8 +143,15 @@ export function RecentFilesProvider({ children }: { children: ReactNode }) {
     [trackWrite],
   );
 
+  const refreshRecentFiles = useCallback(() => {
+    if (!isTauri()) return;
+    adoptLatestListing(() => false).catch(error =>
+      console.error('Failed to list recent files:', error),
+    );
+  }, [adoptLatestListing]);
+
   return (
-    <RecentFilesContext.Provider value={{ recentFiles, upsertRecentFile, clearRecentFiles, removeRecentFile }}>
+    <RecentFilesContext.Provider value={{ recentFiles, upsertRecentFile, clearRecentFiles, removeRecentFile, refreshRecentFiles }}>
       {children}
     </RecentFilesContext.Provider>
   );
