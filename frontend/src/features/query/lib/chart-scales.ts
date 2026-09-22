@@ -96,10 +96,23 @@ export function niceStep(rough: number): number {
   return factor * power;
 }
 
-/** Kill the drift of repeated addition: 0.1 + 0.2 becomes 0.3 at the step's precision. */
+/**
+ * Kill the drift of repeated addition: 0.1 + 0.2 becomes 0.3 at the step's
+ * precision. The rounding is by significant digits rather than by decimal
+ * places, because `toFixed` takes at most 20 of them: a step of 1e-301 asks
+ * for 302, and every tick of such an axis came back as 0.00…0 — one axis
+ * labelled 0 all the way along.
+ *
+ * A tick is a multiple of the step, so the digits between the value's
+ * magnitude and the step's are the ones that carry it, plus one to absorb
+ * the drift. The tick that should be exactly 0 is the one value that is not
+ * a magnitude away from the step, and it arrives as a stray fraction of
+ * one; it is snapped back.
+ */
 function roundTo(value: number, step: number): number {
-  const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1);
-  return Number(value.toFixed(Math.min(decimals, 20)));
+  if (Math.abs(value) < step * 1e-6) return 0;
+  const digits = Math.floor(Math.log10(Math.abs(value))) - Math.floor(Math.log10(step)) + 2;
+  return Number(value.toPrecision(Math.min(21, Math.max(1, digits))));
 }
 
 const SUFFIXES: [number, string][] = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']];

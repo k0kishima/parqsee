@@ -54,6 +54,12 @@ describe('ticks', () => {
     expect(linearTicks({ min: -1e308, max: 1e308 }, 4)).toEqual([]);
   });
 
+  it('ticks a domain whose step is finer than a fixed-point rounding can write', () => {
+    // toFixed takes at most 20 decimal places, so a step of 1e-301 rounded
+    // every tick of this axis to 0.
+    expect(linearTicks({ min: 0, max: 2e-300 }, 4)).toEqual([0, 5e-301, 1e-300, 1.5e-300, 2e-300]);
+  });
+
   it('maps a domain onto an inverted pixel range', () => {
     const scale = linearScale({ min: 0, max: 100 }, [200, 0]);
     expect(scale(0)).toBe(200);
