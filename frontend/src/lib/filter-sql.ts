@@ -161,3 +161,31 @@ export function conditionSql({ column, operator, value, kind, explicitValue }: C
             return assertNever(form, 'operator form');
     }
 }
+
+/**
+ * The bound two upper-bound operators name. A histogram bucket's upper
+ * edge is written `<` or `<=` depending on whether the last representable
+ * instant of its range falls inside it, so the two spell one bound rather
+ * than two.
+ */
+const slotOperator = (operator: FilterOperator): FilterOperator =>
+    operator === '<=' ? '<' : operator;
+
+/**
+ * Whether two conditions occupy the same slot: the same column, and the
+ * same bound on it. A click in the column profile replaces what fills the
+ * slot it lands in instead of stacking on it — a drill-down into a
+ * narrower bucket would otherwise leave the wider one in force beside it,
+ * and the grid would answer with rows neither bucket was clicked for.
+ *
+ * Both filter surfaces ask, and they tell their columns apart differently
+ * — the browse bar by the file's column name, the SQL result's by
+ * position — so the column is compared as whatever the caller identifies
+ * it by.
+ */
+export function sameConditionSlot(
+    a: { column: string | number; operator: FilterOperator },
+    b: { column: string | number; operator: FilterOperator },
+): boolean {
+    return a.column === b.column && slotOperator(a.operator) === slotOperator(b.operator);
+}

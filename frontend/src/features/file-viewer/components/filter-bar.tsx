@@ -14,6 +14,7 @@ import {
     operatorsForKind,
     operatorTakesValue,
     quoteIdentifier,
+    sameConditionSlot,
     type FilterOperator,
 } from "../../../lib/filter-sql";
 
@@ -275,11 +276,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
 
     useImperativeHandle(ref, () => ({
         addConditions(conditions) {
-            const replaced = (row: FilterRow) =>
-                conditions.some(c => c.column === row.column && (
-                    c.operator === row.operator ||
-                    (['<', '<='].includes(c.operator) && ['<', '<='].includes(row.operator))
-                ));
+            const replaced = (row: FilterRow) => conditions.some(c => sameConditionSlot(c, row));
             const kept = filters.filter(row =>
                 conditionOf(row, kindOf(columns, row.column)) !== null && !replaced(row)
             );

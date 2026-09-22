@@ -1,4 +1,5 @@
 import type { ProfileCondition } from '../../../components/column-profile';
+import { sameConditionSlot } from '../../../lib/filter-sql';
 
 /**
  * How the backend addresses column `index` of a kept result. It matches
@@ -19,14 +20,9 @@ export interface AppliedCondition {
   sql: string;
 }
 
-/**
- * Which slot a condition occupies. `<` and `<=` share one: a bucket's
- * upper bound is written either way depending on whether the last
- * instant of a day falls inside it, and a drill-down into a narrower
- * bucket has to replace the wider one rather than stack on it.
- */
+/** How a result names the column a condition is on: by position, never by name. */
 const slotOf = (condition: AppliedCondition) =>
-  `${condition.columnIndex}:${condition.operator === '<=' ? '<' : condition.operator}`;
+  ({ column: condition.columnIndex, operator: condition.operator });
 
 /**
  * The conditions after a click in the profile: the new ones replace any
@@ -38,8 +34,9 @@ export function applyConditions(
   existing: readonly AppliedCondition[],
   incoming: readonly AppliedCondition[],
 ): AppliedCondition[] {
-  const taken = new Set(incoming.map(slotOf));
-  return [...existing.filter(condition => !taken.has(slotOf(condition))), ...incoming];
+  const taken = (condition: AppliedCondition) =>
+    incoming.some(other => sameConditionSlot(slotOf(other), slotOf(condition)));
+  return [...existing.filter(condition => !taken(condition)), ...incoming];
 }
 
 /** The `WHERE` fragment for every applied condition, or undefined for none. */
