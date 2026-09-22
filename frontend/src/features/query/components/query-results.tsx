@@ -36,6 +36,7 @@ export interface ProfileControls {
     openColumn: number | null;
     onOpenColumn: (columnIndex: number | null) => void;
     conditions: AppliedCondition[];
+    isNarrowing?: boolean;
     onNarrow: (conditions: AppliedCondition[]) => void;
     onRemoveCondition: (index: number) => void;
     onClearConditions: () => void;
@@ -109,6 +110,16 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, narro
             </div>
             {profile && profile.conditions.length > 0 && (
                 <NarrowedBy profile={profile} shown={result.rows.length} />
+            )}
+            {profile?.isNarrowing && (
+                <div className="px-2 py-1 border-b border-primary flex items-center gap-2 text-xs text-secondary">
+                    <span role="status">{t('viewer.query.result.narrowing')}</span>
+                    {profile.conditions.length === 0 && (
+                        <button type="button" onClick={profile.onClearConditions} className="px-1.5 py-0.5 rounded border border-primary hover:bg-tertiary">
+                            {t('common.clear')}
+                        </button>
+                    )}
+                </div>
             )}
             <div className="flex-1 flex overflow-hidden">
                 <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

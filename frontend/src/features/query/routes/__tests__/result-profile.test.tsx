@@ -113,7 +113,7 @@ describe('the profile of a query result', () => {
     expect(screen.getByText('b')).toBeInTheDocument();
   });
 
-  it('keeps the clear action usable when the backend has evicted the result', async () => {
+  it('does not label the original rows with a condition the backend rejected', async () => {
     mockFilter.mockRejectedValueOnce(new Error('Run the query again'));
     render(<QueryView filePath="/data/t.parquet" />);
     await run();
@@ -121,10 +121,30 @@ describe('the profile of a query result', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'a: 2' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Run the query again');
     expect(screen.getByText('b')).toBeInTheDocument();
+    expect(screen.queryByText('grp = a')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.result.narrowing')).not.toBeInTheDocument();
+  });
+
+  it('keeps the applied condition after a failure and clears it without the backend', async () => {
+    render(<QueryView filePath="/data/t.parquet" />);
+    await run();
+    await userEvent.click((await screen.findAllByRole('button', { name: 'viewer.profile.open' }))[0]);
+    await userEvent.click(await screen.findByRole('button', { name: 'a: 2' }));
+    await screen.findByText('grp = a');
+
+    mockFilter.mockRejectedValueOnce(new Error('Run the query again'));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'viewer.profile.open' }))[0]);
+    await userEvent.click(await screen.findByRole('button', { name: 'b: 1' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Run the query again');
+    expect(screen.getByText('grp = a')).toBeInTheDocument();
+    expect(screen.queryByText('grp = b')).not.toBeInTheDocument();
+    expect(screen.queryByText('b')).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByRole('button', { name: 'common.clear' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
-    expect(mockFilter).toHaveBeenCalledTimes(1);
+    expect(mockFilter).toHaveBeenCalledTimes(2);
     expect(screen.getByText('b')).toBeInTheDocument();
   });
 

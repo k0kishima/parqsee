@@ -52,8 +52,15 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     // conditions from the old one would name columns the new one may not
     // have, and would claim a row count nothing on screen produced.
     const [profileColumn, setProfileColumn] = useState<number | null>(null);
-    const [conditions, setConditions] = useState<AppliedCondition[]>([]);
-    const [narrowedRows, setNarrowedRows] = useState<Record<string, unknown>[] | null>(null);
+    // Conditions describe only rows that have arrived successfully. Keeping
+    // them together prevents a failed request from relabelling older rows.
+    const [narrowed, setNarrowed] = useState<{
+        conditions: AppliedCondition[];
+        rows: Record<string, unknown>[];
+    } | null>(null);
+    const conditions = narrowed?.conditions ?? [];
+    const requestedConditions = useRef<AppliedCondition[]>([]);
+    const [isNarrowing, setIsNarrowing] = useState(false);
     const [narrowError, setNarrowError] = useState<string | undefined>();
     // Answers to a narrow the user has since superseded are dropped, the
     // same way a superseded run's are.
@@ -75,8 +82,9 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         keep(next);
         setResult(next);
         setProfileColumn(null);
-        setConditions([]);
-        setNarrowedRows(null);
+        setNarrowed(null);
+        requestedConditions.current = [];
+        setIsNarrowing(false);
         setNarrowError(undefined);
         narrowSeq.current += 1;
     };
@@ -149,8 +157,8 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     // What is on screen: the rows the conditions keep, so the grid, the
     // chart and the row count all describe one set of rows.
     const shown = useMemo(
-        () => (result && narrowedRows ? { ...result, rows: narrowedRows } : result),
-        [result, narrowedRows],
+        () => (result && narrowed ? { ...result, rows: narrowed.rows } : result),
+        [result, narrowed],
     );
 
     /**
@@ -167,25 +175,30 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     const narrow = useCallback(async (next: AppliedCondition[], resultId: string) => {
         const seq = ++narrowSeq.current;
         const stale = () => seq !== narrowSeq.current || kept.current !== resultId;
-        setConditions(next);
+        requestedConditions.current = next;
         setNarrowError(undefined);
         // The original rows already live in the webview. Clearing must
         // still work after the backend evicts this result to meet its cap.
         if (next.length === 0) {
-            setNarrowedRows(null);
+            setNarrowed(null);
+            setIsNarrowing(false);
             return;
         }
+        setIsNarrowing(true);
         try {
             const rows = await filterQueryResult(resultId, filterSqlOf(next));
             if (stale()) return;
-            setNarrowedRows(rows);
+            setNarrowed({ conditions: next, rows });
             setNarrowError(undefined);
         } catch (err) {
             if (stale()) return;
             console.error(err);
+            requestedConditions.current = narrowed?.conditions ?? [];
             setNarrowError(toErrorMessage(err));
+        } finally {
+            if (!stale()) setIsNarrowing(false);
         }
-    }, []);
+    }, [narrowed]);
 
     const profile: ProfileControls | undefined = result?.result_id
         ? {
@@ -193,7 +206,8 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             openColumn: profileColumn,
             onOpenColumn: setProfileColumn,
             conditions,
-            onNarrow: next => { void narrow(applyConditions(conditions, next), result.result_id!); },
+            isNarrowing,
+            onNarrow: next => { void narrow(applyConditions(requestedConditions.current, next), result.result_id!); },
             onRemoveCondition: index => { void narrow(conditions.filter((_, i) => i !== index), result.result_id!); },
             onClearConditions: () => { void narrow([], result.result_id!); },
             totalRows: result.rows.length,

@@ -118,6 +118,7 @@
             "placeholder": "Write your SQL query here... (e.g., SELECT * FROM t)",
             "result": {
                 "narrowed": "Narrowed to {{shown}} of {{total}} rows",
+                "narrowing": "Applying conditions… Showing the previous result until complete.",
                 "removeCondition": "Remove this condition",
                 "partialProfile": "Of the {{rows}} rows returned, not of everything the query matches."
             },

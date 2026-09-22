@@ -332,6 +332,13 @@ describe('a narrow still in flight when a new run lands', () => {
     await run('SELECT x, y FROM t');
     mockFilter.mockReturnValueOnce(pending.promise);
     await clickBar('a', 1);
+    // Pending conditions must not describe the rows or drive their profile.
+    expect(screen.getByText('viewer.query.result.narrowing')).toBeInTheDocument();
+    expect(screen.queryByText('x = a')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
+    expect(screen.getByText('b')).toBeInTheDocument();
+    await userEvent.click((await screen.findAllByRole('button', { name: 'viewer.profile.open' }))[0]);
+    await waitFor(() => expect(mockCounts).toHaveBeenLastCalledWith('r1', 0, undefined, expect.any(String)));
     await userEvent.click(screen.getByRole('button', { name: 'common.clear' }));
     await act(async () => { pending.resolve([{ x: 'a', y: 111 }]); await pending.promise; });
     expect(screen.getByText('b')).toBeInTheDocument();
