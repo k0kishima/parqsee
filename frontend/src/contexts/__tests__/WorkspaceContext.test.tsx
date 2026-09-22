@@ -88,6 +88,14 @@ const sessionTab = (path: string, state: Partial<SessionTab['state']> = {}, avai
   available,
 });
 
+/**
+ * The launch listing answers with nothing saved. Every group that is not
+ * about the restore starts here, so that a session left behind by the
+ * group before it cannot reopen tabs under the test that follows.
+ */
+const noSavedSession = () =>
+  vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+
 /** Under fake timers: let the restore's awaits settle and the save delay elapse. */
 async function settle() {
   await act(async () => {
@@ -468,7 +476,7 @@ describe('WorkspaceProvider session', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
-    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    noSavedSession();
     vi.mocked(saveSession).mockClear();
     vi.mocked(openParquetFile).mockClear();
     vi.mocked(rememberFile).mockClear();
@@ -698,7 +706,7 @@ describe('WorkspaceProvider on the free tier', () => {
     localStorage.clear();
     license.tabLimit = 3;
     license.showUpgrade.mockClear();
-    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    noSavedSession();
     vi.mocked(saveSession).mockClear();
     vi.mocked(openParquetFile).mockClear();
     vi.mocked(rememberFile).mockClear();
@@ -1060,7 +1068,7 @@ describe('WorkspaceProvider files dropped on the window', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(listen).mockClear();
-    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    noSavedSession();
     vi.mocked(openParquetFile).mockClear();
     vi.mocked(evictCacheQuietly).mockClear();
   });
@@ -1131,7 +1139,7 @@ describe('WorkspaceProvider files handed over at launch', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
-    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    noSavedSession();
     vi.mocked(takePendingFiles).mockReset().mockResolvedValue([]);
     vi.mocked(openParquetFile).mockClear();
     vi.mocked(rememberFile).mockClear();
