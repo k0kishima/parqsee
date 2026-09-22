@@ -113,7 +113,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       try {
         const result = await listDirectory(parentPath);
         setTree(prev => updateEntry(prev, parentPath, entry => ({
-          ...entry, children: mergeListing(entry.children, result), loadError: undefined,
+          ...entry, children: mergeListing(entry.children ?? [], result), loadError: undefined,
         })));
       } catch (error) {
         console.error('Failed to load directory:', error);
