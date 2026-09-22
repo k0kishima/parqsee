@@ -122,6 +122,36 @@ describe('WorkspaceProvider tabs', () => {
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet']);
   });
 
+  // A file the app cannot read, asked for twice before the first answer
+  // arrives — the explorer opens on a single click, so a double click on a
+  // broken file is two requests. The second waits for the first and must
+  // not hand its failure on: no caller of openParquetFile catches one.
+  it('resolves a second request for a file whose open fails', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    let fail!: (error: unknown) => void;
+    vi.mocked(openParquetFile).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+
+    let settled!: Promise<string[]>;
+    await act(async () => {
+      const requests = [result.current.openParquetFile('/data/a.parquet'), result.current.openParquetFile('/data/a.parquet')];
+      // Held from the moment they exist: an unhandled rejection takes the
+      // whole run down instead of failing this test.
+      settled = Promise.all(requests.map(request => request.then(() => 'resolved', error => `rejected: ${error}`)));
+      await Promise.resolve();
+    });
+    await act(async () => { fail(new Error('corrupt')); });
+
+    expect(await settled).toEqual(['resolved', 'resolved']);
+    expect(result.current.tabs).toEqual([]);
+    // One failure, reported once by the request that made it.
+    expect(alerted).toHaveBeenCalledTimes(1);
+    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    alerted.mockRestore();
+    logged.mockRestore();
+  });
+
   it('closing a tab through a stale closeTab keeps the other tabs\' state', async () => {
     const result = await openTabs('/data/a.parquet', '/data/b.parquet');
     const [a, b] = result.current.tabs;
@@ -904,6 +934,81 @@ describe('WorkspaceProvider on the free tier', () => {
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'c.parquet', 'd.parquet']);
     expect(result.current.restoreNotice).toEqual({ skipped: ['/data/e.parquet'], capped: [] });
     vi.useRealTimers();
+  });
+});
+
+// Files dropped on the window, and the ones Finder hands over while the app
+// runs: both arrive as one `file-drop` event carrying every path.
+describe('WorkspaceProvider files dropped on the window', () => {
+  const ok = { num_rows: 1, num_columns: 1, columns: [] };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(listen).mockClear();
+    vi.mocked(listSessionTabs).mockReset().mockResolvedValue({ tabs: [], active: null });
+    vi.mocked(openParquetFile).mockClear();
+    vi.mocked(evictCacheQuietly).mockClear();
+  });
+
+  /** Hand the provider's `file-drop` listener a drop, as the backend does. */
+  async function drop(paths: string[]) {
+    const listener = vi.mocked(listen).mock.calls.find(([name]) => name === 'file-drop');
+    await act(async () => {
+      (listener![1] as (event: unknown) => void)({ event: 'file-drop', id: 1, payload: paths });
+    });
+  }
+
+  it('opens the rest when the first file fails', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    vi.mocked(openParquetFile).mockRejectedValueOnce(new Error('corrupt'));
+
+    await drop(['/data/bad.parquet', '/data/good.parquet']);
+
+    await waitFor(() => expect(result.current.tabs.map(t => t.path)).toEqual(['/data/good.parquet']));
+    expect(alerted).toHaveBeenCalledTimes(1);
+    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    alerted.mockRestore();
+    logged.mockRestore();
+  });
+
+  it('keeps the tab of the first file when a later one fails', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    vi.mocked(openParquetFile)
+      .mockImplementationOnce(async () => ok as never)
+      .mockRejectedValueOnce(new Error('corrupt'));
+
+    await drop(['/data/good.parquet', '/data/bad.parquet']);
+
+    await waitFor(() => expect(result.current.tabs.map(t => t.path)).toEqual(['/data/good.parquet']));
+    expect(alerted).toHaveBeenCalledTimes(1);
+    alerted.mockRestore();
+    logged.mockRestore();
+  });
+
+  // The same file dropped again while the first drop is still opening it,
+  // and failing: the waiting request must not carry the failure into the
+  // loop, or the files dropped behind it never open.
+  it('opens the files behind one the previous drop is still opening', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderWorkspace();
+    let fail!: (error: unknown) => void;
+    vi.mocked(openParquetFile).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+
+    await drop(['/data/a.parquet']);
+    await drop(['/data/a.parquet', '/data/b.parquet']);
+    await act(async () => { fail(new Error('corrupt')); });
+
+    await waitFor(() => expect(result.current.tabs.map(t => t.path)).toEqual(['/data/b.parquet']));
+    // One open, one failure: the second request only waited for the first.
+    expect(vi.mocked(openParquetFile).mock.calls.filter(c => c[0] === '/data/a.parquet')).toHaveLength(1);
+    expect(alerted).toHaveBeenCalledTimes(1);
+    alerted.mockRestore();
+    logged.mockRestore();
   });
 });
 
