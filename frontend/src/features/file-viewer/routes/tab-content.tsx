@@ -13,6 +13,12 @@ interface TabContentProps {
   onClose: () => void;
   savedState?: TabState;
   onStateChange?: (state: TabState) => void;
+  /**
+   * Handed to the grid: it calls this once when a read that was in flight
+   * when this tab closed finally lands, so that the session and the access
+   * grant the read re-created are evicted with no tab left to do it.
+   */
+  onAbandonedLoad?: () => void;
 }
 
 /** What a tab shows: the browse grid or the SQL view. */
@@ -35,7 +41,8 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   isActive,
   onClose,
   savedState,
-  onStateChange
+  onStateChange,
+  onAbandonedLoad
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,9 +54,11 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // outgoing and the incoming tab.
   const onCloseRef = useRef(onClose);
   const onStateChangeRef = useRef(onStateChange);
+  const onAbandonedLoadRef = useRef(onAbandonedLoad);
   useEffect(() => {
     onCloseRef.current = onClose;
     onStateChangeRef.current = onStateChange;
+    onAbandonedLoadRef.current = onAbandonedLoad;
   });
   // The viewer only reads its initial state on mount.
   const [viewerInitialState] = useState(() => savedState);
@@ -58,6 +67,11 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
   // and never carry a stale copy of the view mode with them.
   const handleViewerStateChange = useCallback((state: TabState) => {
     onStateChangeRef.current?.(state);
+  }, []);
+  // Called after this tab is gone, so the ref is the only way through: the
+  // props of the last render are what is left of it.
+  const handleAbandonedLoad = useCallback(() => {
+    onAbandonedLoadRef.current?.();
   }, []);
 
   // Local state if onStateChange is not provided (though it should be)
@@ -176,6 +190,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
             onStateChange={handleViewerStateChange}
             isActiveRef={browseIsActiveRef}
             toolbarSlot={toolbarSlot}
+            onAbandonedLoad={handleAbandonedLoad}
           />
         </div>
         <div

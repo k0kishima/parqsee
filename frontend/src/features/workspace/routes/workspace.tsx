@@ -19,6 +19,7 @@ export const Workspace = () => {
         openSampleFile,
         closeTab,
         closeTabs,
+        evictIfClosed,
         reopenClosedTab,
         canReopenClosedTab,
         selectTab,
@@ -103,6 +104,7 @@ export const Workspace = () => {
                                     onStateChange={(state) => {
                                         setTabState(tab.id, state);
                                     }}
+                                    onAbandonedLoad={() => evictIfClosed(tab.path)}
                                 />
                             ))}
                             {/* Loading indicator for tab transitions */}

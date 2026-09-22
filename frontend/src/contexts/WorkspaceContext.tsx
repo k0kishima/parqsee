@@ -93,6 +93,15 @@ interface WorkspaceContextType {
     closeTab: (tabId: string) => void;
     /** Close every tab in `tabIds` at once; ids that are not open are ignored. */
     closeTabs: (tabIds: readonly string[]) => void;
+    /**
+     * Evict what the backend holds for `path` unless a tab shows it. For a
+     * viewer whose read landed after its tab was closed: the read could not
+     * be taken back, and it re-created the file's session and re-took its
+     * access grant on the way out. This is the close those missed, after
+     * the fact. A file that has a tab again is left alone — that tab's own
+     * close will evict it.
+     */
+    evictIfClosed: (path: string) => void;
     /** Reopen the last closed tab with the state it was closed on (⇧⌘T). */
     reopenClosedTab: () => Promise<void>;
     /** False when the reopen history holds nothing that is not open again. */
@@ -396,6 +405,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             evictCacheQuietly(path);
         }
     }, [dispatch, rememberClosedTabs]);
+
+    const evictIfClosed = useCallback((path: string) => {
+        if (!workspaceTabsRef.current.tabs.some(t => t.path === path)) evictCacheQuietly(path);
+    }, []);
 
     /**
      * Open `path` in a tab: the free tier's limit first, then the backend.
@@ -701,6 +714,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         removeWorkspaceRoot,
         closeTab: handleTabClose,
         closeTabs: handleTabsClose,
+        evictIfClosed,
         reopenClosedTab,
         canReopenClosedTab,
         selectTab: handleTabSelect,

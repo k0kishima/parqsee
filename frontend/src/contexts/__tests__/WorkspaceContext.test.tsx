@@ -173,6 +173,30 @@ describe('WorkspaceProvider tabs', () => {
     expect(result.current.tabs).toHaveLength(0);
     expect(result.current.currentFile).toBeNull();
   });
+
+  it('an abandoned load of a closed tab evicts the cache', async () => {
+    const result = await openTabs('/data/a.parquet');
+    act(() => result.current.closeTab(result.current.tabs[0].id));
+    vi.mocked(evictCacheQuietly).mockClear();
+
+    // The viewer's read landed after the close and re-filled what the
+    // close had just evicted.
+    act(() => result.current.evictIfClosed('/data/a.parquet'));
+
+    expect(evictCacheQuietly).toHaveBeenCalledWith('/data/a.parquet');
+  });
+
+  it('an abandoned load of a file opened again leaves the cache alone', async () => {
+    const result = await openTabs('/data/a.parquet');
+    act(() => result.current.closeTab(result.current.tabs[0].id));
+    await act(() => result.current.openParquetFile('/data/a.parquet'));
+    vi.mocked(evictCacheQuietly).mockClear();
+
+    act(() => result.current.evictIfClosed('/data/a.parquet'));
+
+    // The new tab reads the same session; its own close will evict it.
+    expect(evictCacheQuietly).not.toHaveBeenCalled();
+  });
 });
 
 describe('WorkspaceProvider reopening closed tabs', () => {
