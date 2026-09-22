@@ -56,6 +56,11 @@ describe('isWithin', () => {
 });
 
 describe('ancestorsWithin', () => {
+  it('keeps the filesystem root as a real path', () => {
+    expect(ancestorsWithin('/', '/')).toEqual(['/']);
+    expect(ancestorsWithin('/', '/data/nested')).toEqual(['/', '/data', '/data/nested']);
+  });
+
   it('lists the folders from the root down to the directory', () => {
     expect(ancestorsWithin('/r', '/r/a/b')).toEqual(['/r', '/r/a', '/r/a/b']);
     expect(ancestorsWithin('/r', '/r')).toEqual(['/r']);

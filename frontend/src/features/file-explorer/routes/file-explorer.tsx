@@ -43,7 +43,7 @@ function findEntry(entries: readonly FileEntry[], path: string): FileEntry | und
 function updateEntry(entries: FileEntry[], path: string, update: (entry: FileEntry) => FileEntry): FileEntry[] {
   return entries.map(entry => {
     if (entry.path === path) return update(entry);
-    if (entry.children && path.startsWith(entry.path + '/')) {
+    if (entry.children && isWithin(entry.path, path)) {
       return { ...entry, children: updateEntry(entry.children, path, update) };
     }
     return entry;
@@ -70,6 +70,17 @@ const rootEntry = (root: WorkspaceRoot): FileEntry => ({
   is_directory: true,
   is_parquet: false,
 });
+
+/** Refresh immediate entries without discarding the loaded, still-expanded subtrees. */
+function mergeListing(previous: FileEntry[] = [], listing: FileEntry[]): FileEntry[] {
+  const byPath = new Map(previous.map(entry => [entry.path, entry]));
+  return listing.map(entry => {
+    const old = byPath.get(entry.path);
+    return entry.is_directory && old?.is_directory
+      ? { ...entry, children: old.children, loadError: old.loadError }
+      : entry;
+  });
+}
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({
   roots,
@@ -101,7 +112,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     const task = (async () => {
       try {
         const result = await listDirectory(parentPath);
-        setTree(prev => updateEntry(prev, parentPath, entry => ({ ...entry, children: result, loadError: undefined })));
+        setTree(prev => updateEntry(prev, parentPath, entry => ({
+          ...entry, children: mergeListing(entry.children, result), loadError: undefined,
+        })));
       } catch (error) {
         console.error('Failed to load directory:', error);
         // Leave the folder expanded with the reason where its children would
