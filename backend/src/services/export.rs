@@ -277,20 +277,37 @@ impl FinalizeFs for RealFs {
 
 const COPY_BUFFER_SIZE: usize = 1 << 20;
 
+/// Why a copy failed: before the destination was opened, so nothing was
+/// touched, or after it was, so it may hold part of the source.
+enum CopyError {
+    Create(io::Error),
+    Write(io::Error),
+}
+
+impl From<CopyError> for io::Error {
+    fn from(err: CopyError) -> Self {
+        match err {
+            CopyError::Create(e) | CopyError::Write(e) => e,
+        }
+    }
+}
+
 /// Stream `from` into `to`, created or truncated. `from` is opened before
-/// `to` is created, so an unreadable source leaves `to` untouched.
-fn copy_bytes(fs: &dyn FinalizeFs, from: &Path, to: &Path) -> io::Result<()> {
-    let mut reader = fs.open(from)?;
-    let mut writer = fs.create(to)?;
+/// `to` is created, so an unreadable source leaves `to` untouched — as does
+/// a destination that cannot be created, which is why the two are told
+/// apart from a write that failed once `to` was open and truncated.
+fn copy_bytes(fs: &dyn FinalizeFs, from: &Path, to: &Path) -> Result<(), CopyError> {
+    let mut reader = fs.open(from).map_err(CopyError::Create)?;
+    let mut writer = fs.create(to).map_err(CopyError::Create)?;
     let mut buf = vec![0u8; COPY_BUFFER_SIZE];
     loop {
-        let n = reader.read(&mut buf)?;
+        let n = reader.read(&mut buf).map_err(CopyError::Write)?;
         if n == 0 {
             break;
         }
-        writer.write_all(&buf[..n])?;
+        writer.write_all(&buf[..n]).map_err(CopyError::Write)?;
     }
-    writer.flush()
+    writer.flush().map_err(CopyError::Write)
 }
 
 /// Move the finished staging file to `export_path`. A `rename` is atomic and
@@ -303,8 +320,14 @@ fn copy_bytes(fs: &dyn FinalizeFs, from: &Path, to: &Path) -> io::Result<()> {
 /// written. So the previous contents are copied to a backup in the temp
 /// directory first, and a copy that fails partway — the volume filled up, an
 /// I/O error — puts them back before the error is returned; a destination
-/// that did not exist is removed again. When the backup itself cannot be
-/// made, the destination is not touched at all. Only a restore that fails
+/// that did not exist is removed again. A copy that could not open the
+/// destination at all — the folder refuses the write, so `File::create`
+/// fails before a byte is written — has damaged nothing, so the backup and
+/// the staging file are cleaned up and the error says the file was left as
+/// it was; putting contents back that were never taken away would only
+/// fail the same way and report damage that did not happen. When the backup
+/// itself cannot be made, the destination is not touched at all. Only a
+/// restore that fails
 /// too leaves the destination damaged; the backup and the complete export
 /// are then kept in the temp directory and named in the error, so nothing
 /// is lost. The staging file is consumed on success and removed on every
@@ -318,8 +341,9 @@ fn move_into_place(fs: &dyn FinalizeFs, staging: &Path, export_path: &Path) -> R
 
     let previous = match copy_bytes(fs, export_path, &backup) {
         Ok(()) => true,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+        Err(CopyError::Create(e)) if e.kind() == io::ErrorKind::NotFound => false,
         Err(e) => {
+            let e = io::Error::from(e);
             let _ = fs.remove_file(&backup);
             let _ = fs.remove_file(staging);
             return Err(format!(
@@ -335,11 +359,19 @@ fn move_into_place(fs: &dyn FinalizeFs, staging: &Path, export_path: &Path) -> R
             let _ = fs.remove_file(&backup);
             return Ok(());
         }
-        Err(e) => e,
+        // The destination was never opened, so it holds whatever it held.
+        Err(CopyError::Create(e)) => {
+            let _ = fs.remove_file(staging);
+            let _ = fs.remove_file(&backup);
+            return Err(format!(
+                "Failed to move the export into place at {dest}: {e}; the file was left as it was"
+            ));
+        }
+        Err(CopyError::Write(e)) => e,
     };
 
     let restored = if previous {
-        copy_bytes(fs, &backup, export_path)
+        copy_bytes(fs, &backup, export_path).map_err(io::Error::from)
     } else {
         match fs.remove_file(export_path) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
@@ -545,9 +577,10 @@ mod tests {
 
     /// The real filesystem, except that the rename is refused — which is what
     /// another volume or the sandbox does, and the only way onto the copy
-    /// fallback — and that reads or writes of chosen paths fail partway. The
-    /// files themselves are real, so a failed write really does leave the
-    /// destination truncated and half written, as `File::create` would.
+    /// fallback — and that chosen paths cannot be opened or created at all,
+    /// or fail partway through a read or a write. The files themselves are
+    /// real, so a failed write really does leave the destination truncated
+    /// and half written, as `File::create` would.
     #[derive(Default)]
     struct ScriptedFs {
         /// Opening this path fails as an unreadable file would.
@@ -555,6 +588,9 @@ mod tests {
         /// Reads of the staging file (`.partial`; its name is minted inside
         /// the export) fail after this many bytes.
         staging_read_limit: Option<usize>,
+        /// Creating this path fails before a byte is written, the way a
+        /// folder the app may not write into refuses `File::create`.
+        refuse_create: Option<PathBuf>,
         /// Each successive create of this path fails after that many bytes
         /// written; once the list is used up, creates are unlimited.
         write_limits: Option<(PathBuf, Mutex<VecDeque<usize>>)>,
@@ -583,6 +619,12 @@ mod tests {
             })
         }
         fn create(&self, path: &Path) -> io::Result<Box<dyn Write>> {
+            if self.refuse_create.as_deref() == Some(path) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "injected refused create",
+                ));
+            }
             let limit = match &self.write_limits {
                 Some((limited, limits)) if limited == path => limits.lock().unwrap().pop_front(),
                 _ => None,
@@ -1060,6 +1102,46 @@ mod tests {
         );
         assert_eq!(std::fs::read(&out).unwrap(), PREVIOUS);
         assert!(staging_leftovers("unbackable.csv").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_destination_that_cannot_be_created_is_left_as_it_was_and_nothing_is_kept() {
+        // A folder the app may not write into: the rename is refused and so is
+        // the copy's `File::create`, before a byte of the destination is
+        // touched — so there is nothing to put back and nothing to keep.
+        let out = temp_path("uncreatable.csv");
+        std::fs::write(&out, PREVIOUS).unwrap();
+
+        let fs = ScriptedFs {
+            refuse_create: Some(out.clone()),
+            ..ScriptedFs::default()
+        };
+        let err = export_over(&fs, "uncreatable", &out).await.unwrap_err();
+        assert!(
+            err.contains("injected refused create") && err.ends_with("the file was left as it was"),
+            "unexpected error: {err}"
+        );
+        assert!(!err.contains("could not be put back"), "nothing was damaged: {err}");
+        assert_eq!(std::fs::read(&out).unwrap(), PREVIOUS);
+        assert!(staging_leftovers("uncreatable.csv").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_new_destination_that_cannot_be_created_leaves_nothing_behind() {
+        let out = temp_path("uncreatable_new.csv");
+        let _ = std::fs::remove_file(&out);
+
+        let fs = ScriptedFs {
+            refuse_create: Some(out.clone()),
+            ..ScriptedFs::default()
+        };
+        let err = export_over(&fs, "uncreatable_new", &out).await.unwrap_err();
+        assert!(
+            err.contains("injected refused create") && err.ends_with("the file was left as it was"),
+            "unexpected error: {err}"
+        );
+        assert!(!out.exists(), "nothing may be created where the create was refused");
+        assert!(staging_leftovers("uncreatable_new.csv").is_empty());
     }
 
     #[tokio::test]
