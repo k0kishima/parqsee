@@ -107,7 +107,7 @@
     },
     "query": {
       "run": "実行",
-      "running": "実行中...",
+      "stop": "停止",
       "rows": "{{count}} 件",
       "duration": "処理時間: {{ms}}ms",
       "truncated": "先頭 {{max}} 件のみ表示しています（LIMIT 句で絞り込んでください）",
@@ -327,6 +327,7 @@
     "find-next": "次の一致へ",
     "find-previous": "前の一致へ",
     "close-search": "検索バーやダイアログを閉じる",
-    "run-query": "クエリを実行"
+    "run-query": "クエリを実行",
+    "stop-query": "実行中のクエリを停止"
   }
 }

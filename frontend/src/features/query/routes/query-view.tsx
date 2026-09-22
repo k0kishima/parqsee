@@ -1,6 +1,6 @@
 import React, { RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { executeSql } from '../api/execute-sql';
+import { cancelQuery, executeSql, nextQueryRequestId } from '../api/execute-sql';
 import { filterQueryResult, releaseQueryResult } from '../api/result-profile';
 import { QueryEditor } from '../components/query-editor';
 import { QueryResults, type ChartControls, type ProfileControls, type ResultMode } from '../components/query-results';
@@ -41,6 +41,11 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     const lastSql = useRef<string | null>(null);
     // Answers to a run the user has since superseded are dropped.
     const generation = useRef(0);
+    // The run the backend is on, by the id it can be stopped by. A run the
+    // user supersedes or stops is cancelled there and not only ignored
+    // here: the session scans a single partition, so until it ended it
+    // would hold the file's reads for an answer nobody will look at.
+    const inFlight = useRef<string | null>(null);
 
     // The profile beside the result, and what it narrowed the result to.
     // A new result is a new set of rows, so both start again with it:
@@ -72,14 +77,19 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         generation.current += 1;
         if (kept.current !== null) releaseQueryResult(kept.current);
         kept.current = null;
+        if (inFlight.current !== null) void cancelQuery(inFlight.current);
+        inFlight.current = null;
     }, []);
 
     const handleExecute = async (query: string) => {
         const run = ++generation.current;
+        if (inFlight.current !== null) void cancelQuery(inFlight.current);
+        const requestId = nextQueryRequestId();
+        inFlight.current = requestId;
         setIsLoading(true);
         setError(undefined);
         try {
-            const data = await executeSql(filePath, query);
+            const data = await executeSql(filePath, query, requestId);
             if (run !== generation.current) {
                 // A run the user superseded: its rows are held by the
                 // backend and nothing will ask about them again.
@@ -116,8 +126,24 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             setNarrowedRows(null);
             narrowSeq.current += 1;
         } finally {
-            if (run === generation.current) setIsLoading(false);
+            if (run === generation.current) {
+                inFlight.current = null;
+                setIsLoading(false);
+            }
         }
+    };
+
+    /**
+     * Stop the run in flight. What is on screen stays: the result of the
+     * run before it was never replaced, and an error the stopped run would
+     * have shown is not one the user wants to read.
+     */
+    const handleStop = () => {
+        if (inFlight.current === null) return;
+        generation.current += 1;
+        void cancelQuery(inFlight.current);
+        inFlight.current = null;
+        setIsLoading(false);
     };
 
     // What is on screen: the rows the conditions keep, so the grid, the
@@ -184,7 +210,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
     return (
         <div className="flex flex-col h-full bg-slate-50 dark:bg-gray-900">
             <div className="h-1/3 min-h-[150px] border-b border-primary relative z-10">
-                <QueryEditor onExecute={handleExecute} isLoading={isLoading} isActiveRef={isActiveRef} />
+                <QueryEditor onExecute={handleExecute} onStop={handleStop} isLoading={isLoading} isActiveRef={isActiveRef} />
             </div>
             <div className="flex-1 overflow-hidden relative z-0 flex flex-col">
                 <QueryResults result={shown} error={error ?? narrowError} isLoading={isLoading} chart={chart} profile={profile} />

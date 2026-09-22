@@ -107,7 +107,7 @@
         },
         "query": {
             "run": "Run",
-            "running": "Running...",
+            "stop": "Stop",
             "rows": "{{count}} rows",
             "duration": "Duration: {{ms}}ms",
             "truncated": "Showing the first {{max}} rows — add a LIMIT clause to narrow the result",
@@ -327,6 +327,7 @@
         "find-next": "Next match",
         "find-previous": "Previous match",
         "close-search": "Close the search bar or a dialog",
-        "run-query": "Run the query"
+        "run-query": "Run the query",
+        "stop-query": "Stop the running query"
     }
 }

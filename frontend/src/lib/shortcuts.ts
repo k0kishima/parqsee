@@ -34,7 +34,8 @@ export type ShortcutId =
     | 'find-next'
     | 'find-previous'
     | 'close-search'
-    | 'run-query';
+    | 'run-query'
+    | 'stop-query';
 
 export type ShortcutSection = 'files' | 'tabs' | 'view' | 'search' | 'query';
 
@@ -84,6 +85,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     { id: 'close-search', section: 'search', keys: ['Esc'] },
 
     { id: 'run-query', section: 'query', keys: ['⌘↩'], match: e => mod(e) && e.key === 'Enter' },
+    { id: 'stop-query', section: 'query', keys: ['⌘.'], match: e => mod(e) && e.key === '.' },
 ];
 
 const byId = new Map(SHORTCUTS.map(shortcut => [shortcut.id, shortcut]));
