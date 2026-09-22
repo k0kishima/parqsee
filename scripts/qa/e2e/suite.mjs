@@ -328,7 +328,7 @@ await scenario('S4-search', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------- S5 SQL view
-await scenario('S5-sql', async ({ page }) => {
+await scenario('S5-sql', async ({ page, bridge }) => {
   const mr = `${FIX}/multi_rowgroup.parquet`;
   await openFile(page, mr);
   await act(page).locator('button:has-text("Query")').click();
@@ -387,6 +387,32 @@ await scenario('S5-sql', async ({ page }) => {
   const seen = new Set();
   for (let i = 0; i < 4; i++) { await pageInput.fill('1234'); await pageInput.press('Enter'); await waitGrid(page); seen.add((await visibleGrid(page))[0][0]); await pageInput.fill('1'); await pageInput.press('Enter'); await waitGrid(page); }
   report('S5.setPartitions', seen.size === 1 ? 'OBSERVE' : 'FAIL', `after SET target_partitions=8, page 1234 first ids over 4 loads: ${[...seen]}`);
+
+  // A run still going is stopped in the backend by the id it was given —
+  // by a re-run over it, and by Stop — rather than only ignored: the
+  // session scans a single partition, so a run nobody will look at would
+  // hold the file's reads until it finished. The harness delays the call
+  // before the bridge runs it, so what is checked is the cancel and what
+  // the view shows, not the backend cutting the scan short.
+  await act(page).locator('button:has-text("Query")').click();
+  const executing = () => act(page).locator('span', { hasText: 'Executing query...' }).count();
+  const runOf = (sql) => bridge.log.filter(l => l.cmd === 'execute_sql' && l.args.query === sql).at(-1)?.args.requestId;
+  const stopped = () => bridge.log.filter(l => l.cmd === 'cancel_query').map(l => l.args.requestId);
+  await page.evaluate(() => { window.__delays.execute_sql = 1500; });
+  await ta.fill('SELECT 1 AS slow'); await act(page).locator('button:has-text("Run")').click(); await page.waitForTimeout(150);
+  await ta.fill('SELECT 2 AS fast'); await act(page).locator('button:has-text("Run")').click(); await page.waitForTimeout(150);
+  check('S5.rerunStopsTheFirst', !!runOf('SELECT 1 AS slow') && stopped().includes(runOf('SELECT 1 AS slow')) && !stopped().includes(runOf('SELECT 2 AS fast')), `slow=${runOf('SELECT 1 AS slow')} fast=${runOf('SELECT 2 AS fast')} stopped=${JSON.stringify(stopped())}`);
+  await page.waitForFunction(() => ![...document.querySelectorAll('span')].some(s => s.textContent === 'Executing query...'), null, { timeout: 8000 });
+  await page.waitForTimeout(200);
+  check('S5.rerunShowsTheSecond', (await visibleHeader(page)).some(h => h.startsWith('fast')), `header=${(await visibleHeader(page)).join('|')}`);
+  await ta.fill('SELECT 3 AS stopped'); await act(page).locator('button:has-text("Run")').click(); await page.waitForTimeout(150);
+  check('S5.stopOffered', (await executing()) > 0 && await act(page).locator('button:has-text("Stop")').isVisible(), 'Stop beside Run while the query runs');
+  await act(page).locator('button:has-text("Stop")').click(); await page.waitForTimeout(150);
+  check('S5.stopKeepsTheResult', stopped().includes(runOf('SELECT 3 AS stopped')) && (await executing()) === 0 && (await visibleHeader(page)).some(h => h.startsWith('fast')) && !(await act(page).locator('button:has-text("Stop")').isVisible()), `stopped=${JSON.stringify(stopped())} header=${(await visibleHeader(page)).join('|')} executing=${await executing()}`);
+  // The delayed calls drain before the scenario ends.
+  await page.evaluate(() => { window.__delays.execute_sql = 0; });
+  await page.waitForTimeout(1800);
+  check('S5.stoppedAnswerIgnored', (await visibleHeader(page)).some(h => h.startsWith('fast')) && !(await qerr())?.includes('superseded'), `header=${(await visibleHeader(page)).join('|')} err=${await qerr()}`);
 });
 
 // ---------------------------------------------------------------- S6 export
