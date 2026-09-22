@@ -545,6 +545,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         totalMatches={searchMatches.length}
         onNext={handleNextMatch}
         onPrevious={handlePreviousMatch}
+        // A reopened tab comes back with its search running (the counter and
+        // the highlights are on screen), so the box has to hold the term it
+        // is running on: an Enter on an empty box would clear it.
+        initialValue={searchTerm}
         focusTrigger={searchFocusTrigger}
       />
       <ViewOptions buttonClassName={`${actionButton} px-2`} />

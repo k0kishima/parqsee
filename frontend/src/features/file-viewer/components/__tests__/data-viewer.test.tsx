@@ -384,6 +384,18 @@ describe('DataViewer search closed right after it was submitted', () => {
   });
 });
 
+describe('DataViewer reopened with its search', () => {
+  it('puts the restored term back in the box', async () => {
+    await renderViewer({ isSearchOpen: true, searchTerm: '1' });
+
+    // Reopening a closed tab hands the whole tab state back, search
+    // included; an empty box over a live search cannot be corrected, since
+    // an Enter on it would clear the search it appears to describe.
+    expect(screen.getByPlaceholderText('viewer.searchPlaceholder')).toHaveValue('1');
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+  });
+});
+
 describe('DataViewer column profile', () => {
   beforeEach(() => {
     mockProfileCounts.mockResolvedValue({
