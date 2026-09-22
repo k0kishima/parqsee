@@ -3379,20 +3379,22 @@ mod tests {
         assert_eq!((fake.starts(), fake.stops()), (2, 2));
     }
 
-    /// Both halves fill under separate gates, so one can fail while the
-    /// other is still creating its entry. The failure must leave the grant
-    /// to the fill in flight, whichever side it is on.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_fill_failing_beside_an_in_flight_fill_leaves_the_grant_to_it() {
-        // The session fill fails while the metadata fill is still computing.
-        let path = corrupt_recorded_file("session-fails-first.parquet");
-        let (cache, fake) = cache_over_recorded_file(&path);
-        let cache = Arc::new(cache);
+    /// A metadata fill that has started and is waiting to be let go. It
+    /// returns once the fill is under way, so the caller acts on a fill
+    /// that is genuinely in flight rather than racing the spawn, and the
+    /// sender decides whether it then succeeds or fails.
+    fn spawn_gated_metadata_fill(
+        cache: &Arc<ParquetCache>,
+        path: &str,
+    ) -> (
+        tokio::task::JoinHandle<Result<ParquetMetadata, String>>,
+        mpsc::Sender<Result<(), String>>,
+    ) {
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel::<Result<(), String>>();
         let creation = {
-            let cache = Arc::clone(&cache);
-            let path = path.clone();
+            let cache = Arc::clone(cache);
+            let path = path.to_string();
             tokio::spawn(async move {
                 cache
                     .get_or_create_metadata_with(&path, move || {
@@ -3410,6 +3412,19 @@ mod tests {
         started_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("metadata creation must begin");
+        (creation, release_tx)
+    }
+
+    /// Both halves fill under separate gates, so one can fail while the
+    /// other is still creating its entry. The failure must leave the grant
+    /// to the fill in flight, whichever side it is on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_fill_failing_beside_an_in_flight_fill_leaves_the_grant_to_it() {
+        // The session fill fails while the metadata fill is still computing.
+        let path = corrupt_recorded_file("session-fails-first.parquet");
+        let (cache, fake) = cache_over_recorded_file(&path);
+        let cache = Arc::new(cache);
+        let (creation, release_tx) = spawn_gated_metadata_fill(&cache, &path);
         assert_eq!(
             fake.active(),
             std::slice::from_ref(&path),
@@ -3442,28 +3457,7 @@ mod tests {
         let path = path.to_string_lossy().into_owned();
         let (cache, fake) = cache_over_recorded_file(&path);
         let cache = Arc::new(cache);
-        let (started_tx, started_rx) = mpsc::channel();
-        let (release_tx, release_rx) = mpsc::channel::<Result<(), String>>();
-        let creation = {
-            let cache = Arc::clone(&cache);
-            let path = path.clone();
-            tokio::spawn(async move {
-                cache
-                    .get_or_create_metadata_with(&path, move || {
-                        started_tx.send(()).unwrap();
-                        release_rx.recv().unwrap()?;
-                        Ok(ParquetMetadata {
-                            num_rows: 0,
-                            num_columns: 0,
-                            columns: vec![],
-                        })
-                    })
-                    .await
-            })
-        };
-        started_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("metadata creation must begin");
+        let (creation, release_tx) = spawn_gated_metadata_fill(&cache, &path);
         cache.get_or_create_session(&path).await.unwrap();
         assert_eq!(fake.active(), std::slice::from_ref(&path));
 
