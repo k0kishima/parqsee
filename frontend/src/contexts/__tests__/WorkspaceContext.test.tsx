@@ -308,9 +308,10 @@ describe('WorkspaceProvider reopening closed tabs', () => {
     expect(result.current.tabs).toHaveLength(1);
   });
 
-  it('refuses to reopen past the free tier\'s limit, with the upgrade prompt', async () => {
+  it('refuses to reopen past the free tier\'s limit, and keeps the tab for when it lifts', async () => {
     license.tabLimit = 2;
-    const result = await openTabs('/data/a.parquet', '/data/b.parquet');
+    const { result, rerender } = renderWorkspace();
+    for (const n of ['a', 'b']) await act(() => result.current.openParquetFile(`/data/${n}.parquet`));
     const [, b] = result.current.tabs;
     act(() => result.current.closeTab(b.id));
     await act(() => result.current.openParquetFile('/data/c.parquet'));
@@ -320,6 +321,37 @@ describe('WorkspaceProvider reopening closed tabs', () => {
 
     expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/c.parquet']);
     expect(license.showUpgrade).toHaveBeenCalled();
+    // The prompt was the answer to this ⇧⌘T, not the end of the entry.
+    expect(result.current.canReopenClosedTab).toBe(true);
+
+    license.tabLimit = null;
+    rerender();
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/c.parquet', '/data/b.parquet']);
+    expect(result.current.canReopenClosedTab).toBe(false);
+  });
+
+  it('drops a closed tab whose file is gone from the history', async () => {
+    const alerted = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const result = await openTabs('/data/a.parquet', '/data/b.parquet', '/data/c.parquet');
+    const [, b, c] = result.current.tabs;
+    act(() => result.current.closeTab(b.id));
+    act(() => result.current.closeTab(c.id));
+    vi.mocked(checkFileExists).mockResolvedValueOnce(false);
+
+    await act(() => result.current.reopenClosedTab());
+
+    expect(alerted).toHaveBeenCalledWith('File not found: /data/c.parquet');
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet']);
+
+    // The file is gone for good — Recent Files lost it too — so the next
+    // ⇧⌘T is the tab before it rather than the same alert again.
+    await act(() => result.current.reopenClosedTab());
+
+    expect(result.current.tabs.map(t => t.path)).toEqual(['/data/a.parquet', '/data/b.parquet']);
+    expect(result.current.canReopenClosedTab).toBe(false);
+    alerted.mockRestore();
   });
 });
 
