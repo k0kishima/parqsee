@@ -1,16 +1,14 @@
 import type { SortSpec } from '../api';
 
 /** The request state the rows on screen were successfully loaded for. */
-export interface LoadedState {
-  page: number;
-  filter: string;
-  sort: SortSpec | null;
+export interface LoadedState extends RequestedState {
   totalRows: number;
 }
 
 /** The request state a load was attempted for. */
 export interface RequestedState {
   page: number;
+  rowsPerPage: number;
   filter: string;
   sort: SortSpec | null;
 }
@@ -59,6 +57,7 @@ export function loadFailure(lastGood: LoadedState | null, requested: RequestedSt
   const rewinds =
     lastGood.filter !== requested.filter ||
     lastGood.page !== requested.page ||
+    lastGood.rowsPerPage !== requested.rowsPerPage ||
     lastGood.sort !== requested.sort;
   return { kind: 'banner', restore: lastGood, rewinds };
 }
