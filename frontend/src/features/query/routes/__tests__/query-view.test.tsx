@@ -325,6 +325,20 @@ describe('a narrow still in flight when a new run lands', () => {
     expect(screen.getByText('222')).toBeInTheDocument();
     expect(screen.queryByText('111')).not.toBeInTheDocument();
   });
+
+  it('ignores a pending narrow after conditions are cleared locally', async () => {
+    const pending = deferred<Record<string, unknown>[]>();
+    render(<QueryView filePath="/data/t.parquet" />);
+    await run('SELECT x, y FROM t');
+    mockFilter.mockReturnValueOnce(pending.promise);
+    await clickBar('a', 1);
+    await userEvent.click(screen.getByRole('button', { name: 'common.clear' }));
+    await act(async () => { pending.resolve([{ x: 'a', y: 111 }]); await pending.promise; });
+    expect(screen.getByText('b')).toBeInTheDocument();
+    expect(screen.queryByText('111')).not.toBeInTheDocument();
+    expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
+    expect(mockFilter).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('release accounting when the tab closes mid-run', () => {

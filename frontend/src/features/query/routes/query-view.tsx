@@ -77,6 +77,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         setProfileColumn(null);
         setConditions([]);
         setNarrowedRows(null);
+        setNarrowError(undefined);
         narrowSeq.current += 1;
     };
     // Nothing will render again: the kept result goes, and a run still in
@@ -109,7 +110,6 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
             const sameSql = lastSql.current === query;
             lastSql.current = query;
             replaceResult(data);
-            setNarrowError(undefined);
             setNotice(null);
             if (!sameSql) {
                 setChartOverride(null);
@@ -168,10 +168,17 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         const seq = ++narrowSeq.current;
         const stale = () => seq !== narrowSeq.current || kept.current !== resultId;
         setConditions(next);
+        setNarrowError(undefined);
+        // The original rows already live in the webview. Clearing must
+        // still work after the backend evicts this result to meet its cap.
+        if (next.length === 0) {
+            setNarrowedRows(null);
+            return;
+        }
         try {
             const rows = await filterQueryResult(resultId, filterSqlOf(next));
             if (stale()) return;
-            setNarrowedRows(next.length === 0 ? null : rows);
+            setNarrowedRows(rows);
             setNarrowError(undefined);
         } catch (err) {
             if (stale()) return;
@@ -213,7 +220,7 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
                 <QueryEditor onExecute={handleExecute} onStop={handleStop} isLoading={isLoading} isActiveRef={isActiveRef} />
             </div>
             <div className="flex-1 overflow-hidden relative z-0 flex flex-col">
-                <QueryResults result={shown} error={error ?? narrowError} isLoading={isLoading} chart={chart} profile={profile} />
+                <QueryResults result={shown} error={error} narrowError={narrowError} isLoading={isLoading} chart={chart} profile={profile} />
             </div>
         </div>
     );

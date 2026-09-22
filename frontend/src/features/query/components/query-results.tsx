@@ -48,12 +48,13 @@ export interface ProfileControls {
 interface QueryResultsProps {
     result?: QueryResult;
     error?: string;
+    narrowError?: string;
     isLoading: boolean;
     chart?: ChartControls;
     profile?: ProfileControls;
 }
 
-export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoading, chart, profile }) => {
+export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, narrowError, isLoading, chart, profile }) => {
     const { t } = useTranslation();
 
     if (isLoading) {
@@ -87,6 +88,11 @@ export const QueryResults: React.FC<QueryResultsProps> = ({ result, error, isLoa
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
+            {narrowError && (
+                <div role="alert" className="p-2 text-sm whitespace-pre-wrap text-red-600 dark:text-red-400">
+                    {narrowError}
+                </div>
+            )}
             <div className="p-2 border-b text-xs text-gray-500 flex justify-between gap-4 bg-gray-50 border-primary dark:bg-gray-800">
                 <span>
                     {t('viewer.query.rows', { count: result.rows.length })}
