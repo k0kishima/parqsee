@@ -80,6 +80,37 @@ const renderViewer = async (
   return utils;
 };
 
+describe('DataViewer file-level error', () => {
+  // The file was out of reach when the tab opened — a drive not plugged
+  // in — and is back now: Retry reads it again without closing the tab.
+  it('offers Retry on the error screen, which opens the file again', async () => {
+    const onClose = vi.fn();
+    mockOpenParquetFile.mockRejectedValueOnce('Cannot open /data/test.parquet: No such file or directory');
+    render(<DataViewer filePath="/data/test.parquet" onClose={onClose} />);
+    expect(await screen.findByText('viewer.error')).toBeInTheDocument();
+    expect(screen.getByText('Cannot open /data/test.parquet: No such file or directory')).toBeInTheDocument();
+    expect(mockReadParquetData).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByText('common.retry'));
+
+    await waitFor(() => expect(screen.queryByText('viewer.error')).not.toBeInTheDocument());
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenCalledTimes(1));
+    expect(mockOpenParquetFile).toHaveBeenCalledTimes(2);
+    // The stale cache entry is dropped before the second read, as Refresh does.
+    expect(mockEvictCache).toHaveBeenCalledWith('/data/test.parquet');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps the error screen when the retry fails too', async () => {
+    mockOpenParquetFile.mockRejectedValueOnce('first').mockRejectedValueOnce('second');
+    render(<DataViewer filePath="/data/test.parquet" onClose={vi.fn()} />);
+    expect(await screen.findByText('first')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('common.retry'));
+    expect(await screen.findByText('second')).toBeInTheDocument();
+    expect(screen.getByText('common.retry')).toBeInTheDocument();
+  });
+});
+
 describe('DataViewer failed-load rollback', () => {
   it('restores the page size after a failed change and lets the same size be retried', async () => {
     await renderViewer();

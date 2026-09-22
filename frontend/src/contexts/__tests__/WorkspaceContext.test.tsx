@@ -35,8 +35,8 @@ vi.mock('../../lib/i18n', () => ({
   default: {
     language: 'en',
     changeLanguage: vi.fn(),
-    // The key and the path it was given, so a test can read both.
-    t: (key: string, options?: { path?: string }) => `${key}: ${options?.path}`,
+    // The key and what it was given, so a test can read both.
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key}: ${Object.values(options).join(' ')}` : key),
   },
 }));
 // SettingsProvider follows the system theme through matchMedia, which jsdom lacks.
@@ -162,7 +162,7 @@ describe('WorkspaceProvider tabs', () => {
     expect(result.current.tabs).toEqual([]);
     // One failure, reported once by the request that made it.
     expect(alerted).toHaveBeenCalledTimes(1);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     alerted.mockRestore();
     logged.mockRestore();
   });
@@ -681,7 +681,10 @@ describe('WorkspaceProvider session', () => {
     expect(saveSession).toHaveBeenCalledTimes(1);
   });
 
-  it('does not restore when the setting is off, and still saves from then on', async () => {
+  // Off means the stored session is neither restored nor touched: the
+  // tabs it holds are the ones that come back once the setting is on
+  // again, not the empty workspace this launch started with.
+  it('neither restores nor overwrites the saved session while the setting is off', async () => {
     saveSettings({ ...defaultSettings, restoreTabs: false });
     vi.mocked(listSessionTabs).mockResolvedValue({ tabs: [sessionTab('/data/a.parquet')], active: '/data/a.parquet' });
     const { result } = renderWorkspace();
@@ -691,10 +694,9 @@ describe('WorkspaceProvider session', () => {
     expect(result.current.tabs).toEqual([]);
     await act(() => result.current.openParquetFile('/data/b.parquet'));
     await settle();
-    expect(saveSession).toHaveBeenLastCalledWith(
-      [{ path: '/data/b.parquet', state: { view_mode: null, current_page: null, active_filter: null, sort: null } }],
-      '/data/b.parquet',
-    );
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    await settle();
+    expect(saveSession).not.toHaveBeenCalled();
   });
 });
 
@@ -799,7 +801,7 @@ describe('WorkspaceProvider on the free tier', () => {
     vi.mocked(openParquetFile).mockRejectedValueOnce(new Error('corrupt'));
     await act(() => result.current.openParquetFile('/data/c.parquet'));
     expect(result.current.tabs).toHaveLength(2);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     await act(() => result.current.openParquetFile('/data/d.parquet'));
     expect(result.current.tabs.map(t => t.name)).toEqual(['a.parquet', 'b.parquet', 'd.parquet']);
     expect(license.showUpgrade).not.toHaveBeenCalled();
@@ -1091,7 +1093,7 @@ describe('WorkspaceProvider files dropped on the window', () => {
 
     await waitFor(() => expect(result.current.tabs.map(t => t.path)).toEqual(['/data/good.parquet']));
     expect(alerted).toHaveBeenCalledTimes(1);
-    expect(alerted).toHaveBeenCalledWith('Failed to open file: Error: corrupt');
+    expect(alerted).toHaveBeenCalledWith('common.openFailed: Error: corrupt');
     alerted.mockRestore();
     logged.mockRestore();
   });
@@ -1201,7 +1203,7 @@ describe('WorkspaceProvider files handed over at launch', () => {
 
     expect(result.current.tabs).toEqual([]);
     expect(openParquetFile).not.toHaveBeenCalled();
-    expect(window.alert).toHaveBeenCalledWith('Parqsee can only open .parquet files');
+    expect(window.alert).toHaveBeenCalledWith('common.notParquet');
   });
 
   it('does nothing, and never asks twice, when nothing was handed over', async () => {

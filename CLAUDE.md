@@ -670,8 +670,12 @@ command's answer carries the higher `revision`, since the two can cross.
     webview saves 250 ms after a change to what the session keeps (not on
     search, selection or scroll), flushes on `pagehide`, and writes nothing
     before the restore has finished so the empty first render cannot erase
-    the store. The `restoreTabs` setting (localStorage, default on) only
-    gates the restore.
+    the store. The `restoreTabs` setting (localStorage, default on) gates
+    the restore and the save alike: while it is off the stored session is
+    neither read nor written, so the tabs it holds come back the moment
+    the setting does. Gating the restore alone let a launch with it off
+    write the empty workspace over the store within the second, and
+    turning it back on then restored nothing.
 12. The free tier and the purchase (`services/store`, issue #22, which
     replaced the 14-day trial of #15 before anything existed in App Store
     Connect; decisions in #5). The store build is free and always usable:

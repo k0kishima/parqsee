@@ -380,10 +380,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     const saver = saverRef.current;
     const flushSession = useCallback(() => saver.flush(), [saver]);
+    // The setting gates the save as well as the restore. Its first version
+    // gated the restore alone, and a launch with it off then wrote the
+    // empty workspace over the stored session within the second, so
+    // turning it back on restored nothing: the choice not to restore had
+    // quietly become the loss of what there was to restore. With the
+    // store left alone while the setting is off, the tabs it held come
+    // back the moment the setting does — the tabs of the last session
+    // the user asked to have kept, which is what the setting names.
+    // Read live, not once at launch like the restore: a save scheduled
+    // while it was on still goes out, and turning it on mid-session
+    // records the tabs open at that point.
     useEffect(() => {
-        if (!isTauri() || !sessionReady) return;
+        if (!isTauri() || !sessionReady || !settings.restoreTabs) return;
         saver.schedule(sessionSnapshot(workspaceTabs));
-    }, [workspaceTabs, sessionReady, saver]);
+    }, [workspaceTabs, sessionReady, saver, settings.restoreTabs]);
     // The window going away is the one change that cannot wait.
     useEffect(() => {
         window.addEventListener('pagehide', flushSession);
@@ -548,7 +559,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             return await opening;
         } catch (error) {
             console.error("Failed to open parquet file:", error);
-            alert(`Failed to open file: ${error}`);
+            alert(i18n.t('common.openFailed', { reason: String(error) }));
             return 'failed';
         } finally {
             openingFiles.current.delete(path);
@@ -591,7 +602,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const openSampleFile = useCallback(async () => {
         if (!isTauri()) {
-            alert("The sample file is only available in the desktop app. Please drag and drop a file instead.");
+            alert(i18n.t('common.desktopOnly'));
             return;
         }
         // Locating the sample opens nothing; the limit is checked against
@@ -602,7 +613,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             path = await sampleFilePath();
         } catch (error) {
             console.error('Failed to locate the sample file:', error);
-            alert(`Failed to open the sample file: ${error}`);
+            alert(i18n.t('common.sampleFailed', { reason: String(error) }));
             return;
         }
         await openFile(path, { remember: false });
@@ -611,7 +622,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const openFileDialog = useCallback(async () => {
         try {
             if (!isTauri()) {
-                alert("File browser is only available in the desktop app. Please drag and drop a file instead.");
+                alert(i18n.t('common.desktopOnly'));
                 return;
             }
             const selected = await open({
@@ -631,7 +642,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const openFolderDialog = useCallback(async () => {
         try {
             if (!isTauri()) {
-                alert("The folder browser is only available in the desktop app. Please drag and drop a file instead.");
+                alert(i18n.t('common.desktopOnly'));
                 return;
             }
             const selected = await open({ directory: true, multiple: false });
@@ -641,7 +652,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }
         } catch (error) {
             console.error("Failed to open folder:", error);
-            alert(`Failed to open folder: ${error}`);
+            alert(i18n.t('common.openFolderFailed', { reason: String(error) }));
         }
     }, []);
 
@@ -723,7 +734,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (paths.length === 0) return;
         const parquetFiles = paths.filter(isParquetPath);
         if (parquetFiles.length === 0) {
-            alert('Parqsee can only open .parquet files');
+            alert(i18n.t('common.notParquet'));
             return;
         }
         // Every file gets a tab; the last one opened is the active one.

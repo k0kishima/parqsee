@@ -1024,7 +1024,22 @@ await scenario('S11-session-off', async ({ page, bridge }) => {
   await page.waitForTimeout(800);
   check('S11o.welcome', await page.locator('text=Drop your Parquet file here').isVisible() && (await tabNames(page)).length === 0, 'the welcome screen, no tabs');
   check('S11o.notAsked', !bridge.log.some(l => l.cmd === 'list_session_tabs'), `commands: ${[...new Set(bridge.log.map(l => l.cmd))]}`);
+  // Nor written: the empty workspace must not replace the tabs on disk,
+  // which are what the next launch with the setting on restores.
+  await openFile(page, `${FIX}/one_row.parquet`);
+  await page.waitForTimeout(600);
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await page.waitForTimeout(300);
+  check('S11o.notSaved', !bridge.log.some(l => l.cmd === 'save_session'), `commands: ${[...new Set(bridge.log.map(l => l.cmd))]}`);
+  check('S11o.storeKept', (await bridge.call('list_session_tabs')).tabs.length > 0, `tabs on disk: ${(await bridge.call('list_session_tabs')).tabs.map(t => base(t.path))}`);
 }, { dataDir: S11_DATA, localStorage: { 'parqsee-settings': JSON.stringify({ restoreTabs: false }) } });
+
+// The setting back on: the tabs the store kept through the launch above.
+await scenario('S11-session-on-again', async ({ page, bridge }) => {
+  const stored = (await bridge.call('list_session_tabs')).tabs.map(t => base(t.path));
+  await page.waitForFunction((n) => document.querySelectorAll('[title^="Close tab"]').length === n, stored.length, { timeout: 15000 }).catch(() => {});
+  check('S11a.restored', stored.length > 0 && (await tabNames(page)).join(',') === stored.join(','), `tabs=${await tabNames(page)} stored=${stored}`);
+}, { dataDir: S11_DATA });
 
 // ---------------------------------------------------------------- S12 opening from Finder
 // Double-click / Dock drop / `open -a` reach the webview as the same
