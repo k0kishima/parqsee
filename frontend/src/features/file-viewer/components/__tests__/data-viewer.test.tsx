@@ -97,6 +97,9 @@ describe('DataViewer failed-load rollback', () => {
     expect(screen.getByText('boom: bad filter')).toBeInTheDocument();
     expect(screen.queryByTitle('common.clear')).not.toBeInTheDocument();
     expect(mockReadParquetData).toHaveBeenCalledTimes(1);
+    // The rows stay as typed, the draft to correct: the grid shows the
+    // rollback, the bar the attempt.
+    expect(screen.getByPlaceholderText('viewer.filterValuePlaceholder')).toHaveValue('5');
 
     // A corrected filter recovers: banner clears and the filter applies.
     await applyFilter('7');
@@ -173,6 +176,9 @@ describe('DataViewer failed-load rollback', () => {
     expect(screen.getByText('boom: No field named gone')).toBeInTheDocument();
     expect(screen.getByText('"gone" = 1')).toBeInTheDocument();
     expect(screen.getByText('common.apply')).toBeInTheDocument();
+    // The bar could only carry that filter as an opaque base predicate,
+    // and does not keep it: kept, the next Apply would send it out again.
+    expect(screen.queryByText('viewer.restoredFilter')).not.toBeInTheDocument();
   });
 
   it('drops a filter the file no longer has on Refresh and keeps the tab', async () => {

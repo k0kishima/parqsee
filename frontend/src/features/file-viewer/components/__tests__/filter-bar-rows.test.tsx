@@ -89,6 +89,29 @@ describe('FilterBar rows', () => {
     expect(operatorOptions(0)).toEqual(['=', 'IS NULL', 'IS NOT NULL']);
   });
 
+  it('keeps the rows of a submission the backend refused, and restores any other change', () => {
+    const onFilterChange = vi.fn();
+    const { rerender } = render(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter="" />);
+    fireEvent.change(columnSelects()[0], { target: { value: 'id' } });
+    fireEvent.change(valueInputs()[0], { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 5');
+
+    // The viewer rolls back to the filter in force before — none — and
+    // names the refused one: the draft stays for the user to correct.
+    rerender(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter="" rejectedFilter={'"id" = 5'} />);
+    expect(valueInputs()[0]).toHaveValue('5');
+    expect(columnSelects()[0]).toHaveValue('id');
+    fireEvent.change(valueInputs()[0], { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.apply' }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('"id" = 7');
+
+    // A filter arriving from outside, with nothing refused, is restored
+    // into rows as before.
+    rerender(<FilterBar columns={columns} onFilterChange={onFilterChange} activeFilter={'"id" = 9'} rejectedFilter={null} />);
+    expect(valueInputs()[0]).toHaveValue('9');
+  });
+
   it('removes only the row whose − was pressed', () => {
     renderBar();
     fireEvent.click(addButton());

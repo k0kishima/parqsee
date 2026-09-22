@@ -21,6 +21,16 @@ interface FilterBarProps {
     columns: ColumnInfo[];
     onFilterChange: (filter: string) => void;
     activeFilter: string;
+    /**
+     * The filter the viewer's last load failed with, while its banner is
+     * up; null otherwise. The viewer rolls `activeFilter` back to the one
+     * in force before it, and this is what tells the bar that the change
+     * is a rollback of its own submission rather than a filter arriving
+     * from outside — so the rows stay as typed, unapplied, for the user to
+     * correct and apply again instead of vanishing with the banner's SQL
+     * as the only trace of them.
+     */
+    rejectedFilter?: string | null;
 }
 
 /** A condition another part of the viewer asks the bar to add. */
@@ -211,7 +221,7 @@ function withBase(base: string, expression: string): string {
 }
 
 export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function FilterBar(
-    { columns, onFilterChange, activeFilter },
+    { columns, onFilterChange, activeFilter, rejectedFilter = null },
     ref
 ) {
     const { t } = useTranslation();
@@ -225,9 +235,16 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
     const [previousActive, setPreviousActive] = useState(activeFilter);
     if (previousActive !== activeFilter) {
         setPreviousActive(activeFilter);
-        // Our own submission already has editable rows. External changes,
-        // including rollback after a failed query, must restore their rows.
-        if (activeFilter !== submitted.current) {
+        // Our own submission already has editable rows, and so does one the
+        // backend refused: the viewer rolls the filter back and names the
+        // refused one, and the rows are the draft to correct. Not when the
+        // refused filter carried a base predicate — SQL the bar could only
+        // show, not edit, restored with the tab onto a file that no longer
+        // takes it: kept, it would go back out with the next Apply and be
+        // refused again, with no ✕ to clear it while no filter is in force.
+        // Any other change from outside must restore its rows.
+        const rolledBack = rejectedFilter !== null && rejectedFilter === submitted.current && !baseFilter;
+        if (activeFilter !== submitted.current && !rolledBack) {
             const restored = restoreFilter(activeFilter, columns);
             setFilters(restored.filters);
             setBaseFilter(restored.base);
