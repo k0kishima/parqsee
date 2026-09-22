@@ -273,6 +273,19 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       // A newer filter/Refresh may have finished while COUNT was running.
       // Do not start an expensive page sort for an obsolete request.
       if (seq !== loadSeq.current) return;
+      // The page can lie past the end of the result: a restored session
+      // names a page of a file that has since been rewritten shorter, and a
+      // restored filter's count can have shrunk the same way (a filter
+      // applied here resets the page, the restore does not). Reading that
+      // page returns nothing, under a footer and a page number describing a
+      // result the grid is not showing. The last page is where the user was
+      // closest to, so the page is moved there and the effect reads it.
+      const lastPage = Math.max(1, Math.ceil(total / rowsPerPage));
+      if (currentPage > lastPage) {
+        setCurrentPage(lastPage);
+        setLoading(false);
+        return;
+      }
       const { offset, limit } = pageWindow(currentPage, rowsPerPage, total);
       const rows = await track(readParquetData(filePath, offset, limit, activeFilter, sort));
       if (unmounted.current) return;

@@ -566,3 +566,30 @@ describe('DataViewer horizontal scroll', () => {
     expect(scroller().scrollLeft).toBe(500);
   });
 });
+
+describe('DataViewer restored page past the end', () => {
+  it('lands on the last page when the file shrank', async () => {
+    // Page 7 of 50 rows was saved over a file that now has 100 rows.
+    await renderViewer({ currentPage: 7 });
+
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null);
+    expect(pageInput().value).toBe('2');
+    expect(screen.getByText('Showing 51 to 100 of 100 entries')).toBeInTheDocument();
+  });
+
+  it('lands on the last page of a restored filter whose count shrank', async () => {
+    mockCountParquetData.mockResolvedValue(20);
+
+    await renderViewer({ currentPage: 5, activeFilter: '"id" = 1' });
+
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 1', null);
+    expect(pageInput().value).toBe('1');
+  });
+
+  it('reads a restored page within range as it was saved', async () => {
+    await renderViewer({ currentPage: 2 });
+
+    expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null);
+    expect(pageInput().value).toBe('2');
+  });
+});

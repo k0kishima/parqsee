@@ -34,6 +34,9 @@ vi.mock('react-i18next', () => ({
         'tabs.contextMenu.reopenClosed': 'Reopen Closed Tab',
         // Interpolated, so a test can tell an estimate from a count.
         'viewer.profile.distinctApproximate': '≈ {{value}}',
+        // Interpolated, so a test can read which rows the footer claims are
+        // on screen — the bounds are the point of it.
+        'viewer.pagination.showing': 'Showing {{start}} to {{end}} of {{total}} entries',
       };
       const text = translations[key] ?? key;
       return text.replace(/\{\{(\w+)\}\}/g, (_, name) => String(options?.[name] ?? ''));
