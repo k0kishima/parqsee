@@ -426,13 +426,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
      * leaving them where nothing could close them. A request for a file
      * whose open is in flight is the same request twice: it waits for the
      * first and activates the tab that made.
+     *
+     * It never rejects: a failure is reported to the user with an alert
+     * and the promise resolves, so a caller only has to wait for it. Its
+     * callers are event handlers and a loop over the files of a drop —
+     * none of them could do anything with the error, and an uncaught one
+     * would become an unhandled rejection or leave the files behind it
+     * unopened.
      */
     const openFile = useCallback(async (path: string, { remember, state }: { remember: boolean; state?: TabState }) => {
         if (!isTauri()) return; // Browser fallback: there is no backend to open the file with.
 
         const inFlight = openingFiles.current.get(path);
         if (inFlight) {
-            await inFlight;
+            // Only waiting: the request that started the open reports its
+            // own failure, and handing it on here would break this promise
+            // too — no caller of an open catches one.
+            try { await inFlight; } catch { /* reported by the first request */ }
             const existing = workspaceTabsRef.current.tabs.find(t => t.path === path);
             // No tab: the first request failed and said so; nothing to add.
             if (existing) dispatch({ type: 'select', tabId: existing.id });
@@ -661,8 +671,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             return;
         }
         // Every file gets a tab; the last one opened is the active one.
+        // `openParquetFile` reports its own failures and resolves; the
+        // catch is the belt to that contract's braces, so that one file
+        // can never keep the ones after it from opening.
         for (const file of parquetFiles) {
-            await openParquetFile(file);
+            await openParquetFile(file).catch(error => console.error('Failed to open', file, error));
         }
     }, [openParquetFile]);
     // Drops and files opened from Finder while the app runs.
