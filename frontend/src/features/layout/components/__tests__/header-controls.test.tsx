@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { HeaderActions } from '../header-controls';
 import { LicenseProvider } from '../../../../contexts/LicenseContext';
 import { makeRecentFile } from '../../../../test/factories';
+import { setRecentFiles } from '../../../../test/recent-files-context-mock';
 
-let files = [makeRecentFile({ name: 'a.parquet' })];
-vi.mock('../../../../contexts/RecentFilesContext', () => ({
-  useRecentFiles: () => ({ recentFiles: files, removeRecentFile: vi.fn(), clearRecentFiles: vi.fn() }),
-}));
+vi.mock('../../../../contexts/RecentFilesContext', () => import('../../../../test/recent-files-context-mock'));
+
+setRecentFiles([makeRecentFile({ name: 'a.parquet' })]);
 
 const handlers = {
   onOpenFile: vi.fn(),

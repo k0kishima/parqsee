@@ -2,15 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentFilesPopover } from '../recent-files-popover';
-import type { RecentFile } from '../../../../bindings/ipc/RecentFile';
 import { makeRecentFile } from '../../../../test/factories';
+import { setRecentFiles, clearRecentFiles as mockClear, removeRecentFile as mockRemove } from '../../../../test/recent-files-context-mock';
 
-const mockClear = vi.fn();
-const mockRemove = vi.fn();
-let files: RecentFile[] = [];
-vi.mock('../../../../contexts/RecentFilesContext', () => ({
-  useRecentFiles: () => ({ recentFiles: files, removeRecentFile: mockRemove, clearRecentFiles: mockClear }),
-}));
+vi.mock('../../../../contexts/RecentFilesContext', () => import('../../../../test/recent-files-context-mock'));
 
 const file = (name: string, available = true) =>
   makeRecentFile({ name, size: 2048, last_accessed: 1_757_116_800_000, available });
@@ -32,7 +27,7 @@ const renderPopover = (onFileSelect = vi.fn(), onClose = vi.fn()) => {
 describe('RecentFilesPopover', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    files = [file('a.parquet'), file('b.parquet')];
+    setRecentFiles([file('a.parquet'), file('b.parquet')]);
   });
 
   it('lists the recent files, newest first as given', () => {
@@ -67,7 +62,7 @@ describe('RecentFilesPopover', () => {
   });
 
   it('marks a file that is no longer available instead of showing its path', () => {
-    files = [file('gone.parquet', false)];
+    setRecentFiles([file('gone.parquet', false)]);
     renderPopover();
 
     expect(screen.getByText('welcome.recentFiles.unavailable')).toBeInTheDocument();
@@ -86,7 +81,7 @@ describe('RecentFilesPopover', () => {
   });
 
   it('offers nothing to clear when the list is empty', () => {
-    files = [];
+    setRecentFiles([]);
     renderPopover();
 
     expect(screen.getByText('welcome.recentFiles.empty')).toBeInTheDocument();
@@ -95,7 +90,7 @@ describe('RecentFilesPopover', () => {
 
   it('filters by name or path as the search box is typed in, and says when nothing matches', async () => {
     const user = userEvent.setup();
-    files = [file('sales.parquet'), file('invoices.parquet'), { ...file('notes.parquet'), path: '/archive/sales/notes.parquet' }];
+    setRecentFiles([file('sales.parquet'), file('invoices.parquet'), { ...file('notes.parquet'), path: '/archive/sales/notes.parquet' }]);
     renderPopover();
     const search = screen.getByRole('searchbox', { name: 'welcome.recentFiles.search' });
     expect(search).toHaveFocus();
@@ -131,11 +126,11 @@ describe('RecentFilesPopover', () => {
   });
 
   it('adds the parent folder to entries that share a file name', () => {
-    files = [
+    setRecentFiles([
       { ...file('data.parquet'), path: '/exports/2024q1/data.parquet' },
       { ...file('data.parquet'), path: '/exports/2024q2/data.parquet' },
       file('other.parquet'),
-    ];
+    ]);
     renderPopover();
 
     const names = screen.getAllByRole('listitem').map(li => li.querySelector('span span')!.textContent);
@@ -143,7 +138,7 @@ describe('RecentFilesPopover', () => {
   });
 
   it('shows no search box while the list is empty', () => {
-    files = [];
+    setRecentFiles([]);
     renderPopover();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
   });
