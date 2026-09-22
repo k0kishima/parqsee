@@ -7,7 +7,7 @@ import { ROW_DENSITY_CLASSES, type RowDensity, type TypeDisplay } from '../../..
 import { centerOffset, useColumnVirtualizer } from '../../../hooks/useVirtualRange';
 import { cellOverflows, measureCharWidth, measureColumnWidths, MAX_COLUMN_WIDTH } from '../../../lib/column-widths';
 import { formatCellValue } from '../../../lib/format';
-import { SearchMatch, indexOfTerm } from '../lib/search';
+import { SearchMatch, highlightRange, indexOfTerm } from '../lib/search';
 import type { RowData } from '../../../lib/row';
 
 interface DataTableProps {
@@ -71,15 +71,15 @@ export function formatTypeLabel(col: ColumnInfo, typeDisplay: TypeDisplay): stri
 
 /** Wrap the first case-insensitive occurrence of the search term in a highlight. */
 function highlight(text: string, searchTerm: string): React.ReactNode {
-  const index = indexOfTerm(text, searchTerm);
-  if (index === -1) return text;
+  const range = highlightRange(text, searchTerm);
+  if (!range) return text;
   return (
     <>
-      {text.slice(0, index)}
+      {text.slice(0, range.start)}
       <span className="bg-yellow-300 text-slate-900 font-semibold">
-        {text.slice(index, index + searchTerm.length)}
+        {text.slice(range.start, range.end)}
       </span>
-      {text.slice(index + searchTerm.length)}
+      {text.slice(range.end)}
     </>
   );
 }

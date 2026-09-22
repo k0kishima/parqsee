@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSearchMatches, indexOfTerm, matchesTerm } from '../search';
+import { findSearchMatches, highlightRange, indexOfTerm, matchesTerm } from '../search';
 
 const columns = [{ name: 'id' }, { name: 'Name' }, { name: 'meta' }];
 const rows = [
@@ -19,6 +19,20 @@ describe('indexOfTerm / matchesTerm', () => {
     expect(indexOfTerm('Alice', '')).toBe(-1);
     expect(indexOfTerm('', 'a')).toBe(-1);
     expect(matchesTerm(null, 'a')).toBe(false);
+  });
+});
+
+describe('highlightRange', () => {
+  it('spans the match', () => {
+    expect(highlightRange('Alice', 'LIC')).toEqual({ start: 1, end: 4 });
+    expect(highlightRange('Alice', 'x')).toBeNull();
+  });
+
+  it('paints the whole value when lower-casing moved the positions', () => {
+    // 'İstanbul'.toLowerCase() is nine characters to the original's eight,
+    // so an index taken from it would sit one place to the right.
+    expect(highlightRange('İstanbul', 'stan')).toEqual({ start: 0, end: 8 });
+    expect(highlightRange('İstanbul', 'x')).toBeNull();
   });
 });
 
