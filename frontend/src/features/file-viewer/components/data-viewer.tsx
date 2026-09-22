@@ -53,10 +53,23 @@ const EMPTY_COLUMNS: ParquetMetadata['columns'] = [];
  * the plain page is on screen instead, so the banner has to name the
  * condition that is no longer applied; the filter bar cannot, having gone
  * back to an empty row with it.
+ *
+ * `condition` says whether the request that failed was a filter or a sort
+ * the user had just asked for. Only then is a condition what could not be
+ * run: a page move, and a read the backend refused because the file was
+ * replaced under the tab, carry no condition at all, and heading those
+ * with one sends the reader to a filter bar that has nothing wrong with
+ * it.
  */
 type DataProblem =
-  | { kind: 'kept'; message: string }
+  | { kind: 'kept'; condition: boolean; message: string }
   | { kind: 'dropped'; message: string; filter: string };
+
+/** The line above the backend's own message in the banner. */
+function problemHeadline(problem: DataProblem): string {
+  if (problem.kind === 'dropped') return 'viewer.filterDropped';
+  return problem.condition ? 'viewer.dataError' : 'viewer.loadError';
+}
 
 function DataViewerComponent({ filePath, onClose, initialState, onStateChange, isActiveRef, toolbarSlot }: DataViewerProps) {
   const { settings, updateSettings } = useSettings();
@@ -226,7 +239,10 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
         setLoading(false);
         return;
       }
-      setDataError({ kind: 'kept', message: toErrorMessage(err) });
+      // The page alone moving is not a condition; the filter and the sort
+      // are compared against the load that is still on screen.
+      const condition = outcome.restore.filter !== activeFilter || outcome.restore.sort !== sort;
+      setDataError({ kind: 'kept', condition, message: toErrorMessage(err) });
       if (outcome.rewinds) {
         skipReload.current = true;
         setActiveFilter(outcome.restore.filter);
@@ -493,7 +509,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           <div className="px-6 py-2 flex items-start gap-3 border-b bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                {t(dataError.kind === 'dropped' ? 'viewer.filterDropped' : 'viewer.dataError')}
+                {t(problemHeadline(dataError))}
               </p>
               <p className="text-xs font-mono break-words text-red-600 dark:text-red-400">{dataError.message}</p>
               {dataError.kind === 'dropped' && dataError.filter && (

@@ -98,10 +98,29 @@ describe('DataViewer failed-load rollback', () => {
 
     await userEvent.click(screen.getByText('viewer.pagination.next'));
 
-    expect(await screen.findByText('viewer.dataError')).toBeInTheDocument();
+    // Nothing was asked of the file but another page, so the banner says the
+    // rows could not be loaded — not that a condition could not be run.
+    expect(await screen.findByText('viewer.loadError')).toBeInTheDocument();
+    expect(screen.queryByText('viewer.dataError')).not.toBeInTheDocument();
     await waitFor(() => expect(pageInput().value).toBe('1'));
     // offset 0 (initial) + offset 50 (failed) — no echo reload of page 1.
     expect(mockReadParquetData).toHaveBeenCalledTimes(2);
+  });
+
+  // A file replaced under the tab: the backend refuses every read of it,
+  // while the filter on screen is perfectly good.
+  it('does not blame the filter when the file itself was refused', async () => {
+    mockCountParquetData.mockResolvedValue(500);
+    await renderViewer();
+    await applyFilter('5');
+    await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 5', null));
+
+    mockReadParquetData.mockRejectedValueOnce('The file changed while reading it. Refresh and try again.');
+    await userEvent.click(screen.getByText('viewer.pagination.next'));
+
+    expect(await screen.findByText('viewer.loadError')).toBeInTheDocument();
+    expect(screen.queryByText('viewer.dataError')).not.toBeInTheDocument();
+    expect(screen.getByText('The file changed while reading it. Refresh and try again.')).toBeInTheDocument();
   });
 
   it('does not start a page read when an older filter count finishes last', async () => {
