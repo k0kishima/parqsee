@@ -145,7 +145,11 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
         display: isActive ? 'flex' : 'none',
       }}
     >
-      {/* View Switcher Toolbar */}
+      {/* View Switcher Toolbar. The two labels never break: a flex item's
+          minimum is its min-content width, and Japanese breaks between any
+          two characters, so a narrow window wrapped 内容 and クエリ one
+          character per line long before the English labels gave way. The
+          slot below is the one that gives (min-w-0). */}
       <div className={`flex items-center gap-1 p-1 border-b ${toolbarBg}`}>
         <button
           onClick={() => handleViewModeChange('browse')}
@@ -155,7 +159,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
                 `}
         >
           <Table size={14} />
-          <span>{t('viewer.tabs.content')}</span>
+          <span className="whitespace-nowrap">{t('viewer.tabs.content')}</span>
         </button>
         <button
           onClick={() => handleViewModeChange('query')}
@@ -165,7 +169,7 @@ export const TabContent: React.FC<TabContentProps> = React.memo(({
                 `}
         >
           <Database size={14} />
-          <span>{t('viewer.tabs.query')}</span>
+          <span className="whitespace-nowrap">{t('viewer.tabs.query')}</span>
         </button>
         {/* The browse view's row count, search, refresh and export land
             here, on the same row as the switch. Hidden with the browse view

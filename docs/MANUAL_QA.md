@@ -167,7 +167,7 @@ around ten items or nobody will run it.
 |---|---|
 | Fixture | any file |
 | Steps | Shrink the window to its minimum size. Enter and leave full screen. Toggle System Settings › Appearance between Light and Dark with the app in the foreground (Settings › Theme set to *System*). |
-| Expected | Sidebar and header controls remain usable at minimum size; the layout survives full screen; the theme follows the system immediately. |
+| Expected | The window stops at 640 × 480 of content and cannot be dragged narrower or shorter (`minWidth` / `minHeight` in `tauri.conf.json`). At that size the view switcher's two labels stay on one line each — the row count, search and export beside them give way first — and the sidebar and header controls remain usable; the layout survives full screen; the theme follows the system immediately. |
 | Why manual | Window management and the appearance change are delivered by the OS. |
 
 ### MQ-8 · Sandbox: folders, recent files and tabs survive a restart
