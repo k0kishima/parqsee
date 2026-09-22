@@ -24,10 +24,7 @@ vi.mock('../../api', () => ({
     mockEvictCache(...args).catch((err: unknown) => console.error('Failed to evict cache:', err)),
 }));
 
-vi.mock('../../../../contexts/SettingsContext', async () => {
-  const { TEST_SETTINGS } = await import('../../../../test/settings');
-  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: vi.fn() }) };
-});
+vi.mock('../../../../contexts/SettingsContext', () => import('../../../../test/settings-context-mock'));
 
 const metadata = {
   num_rows: 100,
