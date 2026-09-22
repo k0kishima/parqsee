@@ -147,7 +147,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const [isSearchOpen, setIsSearchOpen] = useState(initialState?.isSearchOpen || false);
   const [searchTerm, setSearchTerm] = useState(initialState?.searchTerm || "");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const [isSearching, setIsSearching] = useState(false);
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
@@ -378,6 +377,25 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     [searchTerm, data, metadata]
   );
 
+  // The matches are the ones on the page, so a page, filter or sort change
+  // replaces the list under the walk: the sixth match of a page of seven has
+  // no counterpart on a page of three. The walk starts over at the first
+  // match of the rows that arrived. Adjusted during render from the rows the
+  // index was counted for, not in an effect
+  // (react.dev/learn/you-might-not-need-an-effect).
+  const [matchedRows, setMatchedRows] = useState(data);
+  if (matchedRows !== data) {
+    setMatchedRows(data);
+    setCurrentMatchIndex(0);
+  }
+  /**
+   * The match the counter names and the grid highlights. Clamped rather than
+   * read straight out of the list: the index is only reset when the rows
+   * change, and a list that shrinks under the same rows would leave it past
+   * the end, with a count of nothing highlighted.
+   */
+  const activeMatchIndex = currentMatchIndex < searchMatches.length ? currentMatchIndex : 0;
+
   const handleNextMatch = useCallback(() => {
     if (searchMatches.length > 0) {
       setCurrentMatchIndex(i => (i + 1) % searchMatches.length);
@@ -473,20 +491,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [pageInput, totalPages, currentPage]);
 
+  // Applied in the same event as the Enter that asked for it. The search is
+  // a pass over the rows already on screen, so the 50 ms delay this used to
+  // take bought nothing and outlived the bar: an Escape within it closed the
+  // search and cleared the term, and the term then came back with no bar
+  // left to clear it again — the highlights stayed, and the tab was saved
+  // with a closed search still holding a term.
   const handleSearchSubmit = useCallback((value: string) => {
-    const trimmedValue = value.trim();
-    if (trimmedValue) {
-      setIsSearching(true);
-      setTimeout(() => {
-        setSearchTerm(trimmedValue);
-        setCurrentMatchIndex(0);
-        setIsSearching(false);
-      }, 50);
-    } else {
-      setSearchTerm("");
-      setCurrentMatchIndex(0);
-      setIsSearching(false);
-    }
+    setSearchTerm(value.trim());
+    setCurrentMatchIndex(0);
   }, []);
 
   if (error) {
@@ -527,13 +540,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           setIsSearchOpen(false);
           setSearchTerm("");
           setCurrentMatchIndex(0);
-          setIsSearching(false);
         }}
-        currentMatch={searchMatches.length > 0 ? currentMatchIndex + 1 : 0}
+        currentMatch={searchMatches.length > 0 ? activeMatchIndex + 1 : 0}
         totalMatches={searchMatches.length}
         onNext={handleNextMatch}
         onPrevious={handlePreviousMatch}
-        isSearching={isSearching}
+        // A reopened tab comes back with its search running (the counter and
+        // the highlights are on screen), so the box has to hold the term it
+        // is running on: an Enter on an empty box would clear it.
+        initialValue={searchTerm}
         focusTrigger={searchFocusTrigger}
       />
       <ViewOptions buttonClassName={`${actionButton} px-2`} />
@@ -634,7 +649,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
                 onSelectRow={setSelectedRow}
                 searchTerm={searchTerm}
                 searchMatches={searchMatches}
-                currentMatchIndex={currentMatchIndex}
+                currentMatchIndex={activeMatchIndex}
                 typeDisplay={settings.typeDisplay || 'logical'}
                 density={settings.rowDensity}
                 scrollerRef={tableContainerRef}

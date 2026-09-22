@@ -11,7 +11,6 @@ interface SearchBarProps {
   totalMatches: number;
   onNext: () => void;
   onPrevious: () => void;
-  isSearching?: boolean;
   focusTrigger?: number;
   initialValue?: string;
 }
@@ -25,7 +24,6 @@ export function SearchBar({
   totalMatches,
   onNext,
   onPrevious,
-  isSearching = false,
   focusTrigger = 0,
   initialValue = "",
 }: SearchBarProps) {
@@ -55,8 +53,10 @@ export function SearchBar({
       onClose();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (!searchTerm || searchTerm !== localInputValue) {
-        // If no search has been performed yet or input changed, perform search
+      // The term in force was trimmed on its way in, so the box is compared
+      // trimmed as well: " foo " otherwise read as a new term at every
+      // Enter, searching again from the first match instead of walking on.
+      if (!searchTerm || searchTerm !== localInputValue.trim()) {
         onSearchSubmit(localInputValue);
       } else if (e.shiftKey) {
         // Navigate to previous match
@@ -135,7 +135,7 @@ export function SearchBar({
         )}
       </div>
 
-      {searchTerm && !isSearching && totalMatches > 0 && (
+      {searchTerm && totalMatches > 0 && (
         <div className="flex items-center space-x-2 text-sm text-slate-600 dark:text-gray-300">
           <span className="whitespace-nowrap">
             {currentMatch} / {totalMatches}
@@ -185,14 +185,7 @@ export function SearchBar({
         </div>
       )}
 
-      {isSearching && (
-        <div className="flex items-center space-x-2">
-          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-600 dark:border-gray-300"></div>
-          <span className="text-sm text-slate-500 dark:text-gray-400">{t('viewer.searching')}</span>
-        </div>
-      )}
-
-      {searchTerm && !isSearching && totalMatches === 0 && (
+      {searchTerm && totalMatches === 0 && (
         <span className="text-sm text-slate-500 dark:text-gray-400">{t('viewer.noMatches')}</span>
       )}
 
