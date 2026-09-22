@@ -53,6 +53,13 @@ describe('buildFilterExpression', () => {
     expect(buildFilterExpression([row('id', '=', 'abc')], columns)).toBe("\"id\" = 'abc'");
   });
 
+  it("quotes JavaScript's own number spellings, which SQL does not share", () => {
+    expect(buildFilterExpression([row('id', '=', '0x10')], columns)).toBe("\"id\" = '0x10'");
+    expect(buildFilterExpression([row('id', '=', '0b11')], columns)).toBe("\"id\" = '0b11'");
+    expect(buildFilterExpression([row('id', '=', '0o17')], columns)).toBe("\"id\" = '0o17'");
+    expect(buildFilterExpression([row('id', '=', '1_000')], columns)).toBe("\"id\" = '1_000'");
+  });
+
   it('quotes identifiers, which DataFusion would otherwise lower-case', () => {
     expect(buildFilterExpression([row('MixedCase', '=', '7')], columns)).toBe('"MixedCase" = 7');
   });
@@ -127,6 +134,13 @@ describe('findInvalidFilterValue', () => {
     expect(findInvalidFilterValue([row('id', 'LIKE', 'abc')], columns)).toBeNull();
     expect(findInvalidFilterValue([row('id', 'IS NULL', 'abc')], columns)).toBeNull();
     expect(findInvalidFilterValue([row('id', '=', '')], columns)).toBeNull();
+  });
+
+  it("rejects JavaScript's own number spellings on a numeric column", () => {
+    expect(findInvalidFilterValue([row('id', '=', '0x10')], columns))
+      .toEqual({ column: 'id', value: '0x10', expects: 'number' });
+    expect(findInvalidFilterValue([row('id', '=', '0b11')], columns))
+      .toEqual({ column: 'id', value: '0b11', expects: 'number' });
   });
 });
 

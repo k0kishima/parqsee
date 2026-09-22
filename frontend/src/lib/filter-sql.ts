@@ -75,7 +75,15 @@ export const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 export const isBooleanLiteral = (value: string) => /^(true|false)$/i.test(value);
-export const isNumericLiteral = (value: string) => value !== "" && Number.isFinite(Number(value));
+/**
+ * True when the value is written the way SQL writes a number, so it can go
+ * into the fragment bare. `Number()` is not that test: it also reads
+ * JavaScript's own spellings — `0x10` is 16, `0b11` is 3, `Infinity` is
+ * finite in nobody's arithmetic but passes for a literal — and none of them
+ * are numbers to the planner, which reads `0x10` as a hex *string* and
+ * answers a filter on an integer column with an error banner.
+ */
+export const isNumericLiteral = (value: string) => /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value);
 
 function formatLiteral(literal: LiteralKind, value: string): string {
     // A value that does not parse still goes in quoted, so the backend
