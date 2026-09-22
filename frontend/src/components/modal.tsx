@@ -1,7 +1,7 @@
-import { useCallback, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useGlobalKeydown } from '../hooks/useGlobalKeydown';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
 
 interface ModalProps {
   /** Called on Escape, on a click on the backdrop and by `ModalCloseButton`. */
@@ -21,10 +21,12 @@ interface ModalProps {
  * whole window, a rounded panel, and the three ways out — Escape, a click
  * on the backdrop, and `ModalCloseButton` in the header. A click inside
  * the panel stays inside. Mount it only while the dialog is open: the
- * Escape listener lives as long as the component does.
+ * Escape layer lives as long as the component does, and the layer on top
+ * is the one Escape closes.
  *
  * Popovers and context menus are not modals and do not use this: they sit
- * under their button, take Escape from `document`, and have no backdrop.
+ * under their button and have no backdrop. They are layers all the same,
+ * so Escape reaches whichever of them is in front.
  */
 export function Modal({
   onClose,
@@ -34,12 +36,7 @@ export function Modal({
   testId,
   children,
 }: ModalProps) {
-  useGlobalKeydown(useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-    }
-  }, [onClose]));
+  useEscapeLayer(onClose);
 
   return (
     <div
