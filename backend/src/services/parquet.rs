@@ -1555,22 +1555,48 @@ fn reusable_plan(plan: &datafusion::logical_expr::LogicalPlan) -> Result<bool, S
     Ok(reusable)
 }
 
+/// The protocol every cached browse read follows: open the session, take
+/// the file's version, answer from the cache if it holds this query's
+/// rows, and otherwise compute them — then check the version again
+/// before storing. That second check is the load-bearing step: the file
+/// can be rewritten while the rows are being read, and rows from the old
+/// one stored under the new version would be served as the new file's
+/// until something else evicted them. `compute` returns the rows and
+/// whether the plan that made them may be reused (`reusable_plan`).
+///
 /// Bounded LRU of Arrow batches. Session identity prevents an in-flight read
 /// from repopulating the cache after Refresh/close evicts that session.
+async fn cached_or_compute<F, Fut>(
+    cache: &ParquetCache,
+    path: &str,
+    query: &str,
+    policy: ResultCachePolicy,
+    compute: F,
+) -> Result<Vec<RecordBatch>, String>
+where
+    F: FnOnce(datafusion::execution::context::SessionContext) -> Fut,
+    Fut: std::future::Future<Output = Result<(Vec<RecordBatch>, bool), String>>,
+{
+    let ctx = cache.get_or_create_session(path).await?;
+    let version = FileVersion::read(path)?;
+    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
+        return Ok(batches);
+    }
+    let (batches, reusable) = compute(ctx.clone()).await?;
+    version.check(path)?;
+    store_result(cache, path, &ctx, version, query, batches, reusable, policy)
+}
+
 async fn execute_browse_query(
     cache: &ParquetCache,
     path: &str,
     query: &str,
     policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-    let version = FileVersion::read(path)?;
-    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
-        return Ok(batches);
-    }
-    let (batches, reusable) = run_browse_query(&ctx, query, false).await?;
-    version.check(path)?;
-    store_result(cache, path, &ctx, version, query, batches, reusable, policy)
+    cached_or_compute(cache, path, query, policy, |ctx| async move {
+        run_browse_query(&ctx, query, false).await
+    })
+    .await
 }
 
 /// A sorted page's rows, keyed in the result cache by its position query
@@ -1590,25 +1616,22 @@ async fn sorted_rows(
     policy: ResultCachePolicy,
     full_sort: bool,
 ) -> Result<Vec<RecordBatch>, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-    let version = FileVersion::read(path)?;
-    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
-        return Ok(batches);
-    }
-    let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
-        Err(e) if !full_sort && is_memory_exhausted(&e) => {
-            run_browse_query(&ctx, query, true).await?
-        }
-        other => other?,
-    };
-    let positions = positions_from_batches(&positions)?;
-    // Decoding is CPU-bound; keep it off the async workers like an unfiltered page.
-    let owned = path.to_string();
-    let batch = tokio::task::spawn_blocking(move || rows_at_positions(&owned, &positions))
-        .await
-        .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))??;
-    version.check(path)?;
-    store_result(cache, path, &ctx, version, query, vec![batch], reusable, policy)
+    cached_or_compute(cache, path, query, policy, |ctx| async move {
+        let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
+            Err(e) if !full_sort && is_memory_exhausted(&e) => {
+                run_browse_query(&ctx, query, true).await?
+            }
+            other => other?,
+        };
+        let positions = positions_from_batches(&positions)?;
+        // Decoding is CPU-bound; keep it off the async workers like an unfiltered page.
+        let owned = path.to_string();
+        let batch = tokio::task::spawn_blocking(move || rows_at_positions(&owned, &positions))
+            .await
+            .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))??;
+        Ok((vec![batch], reusable))
+    })
+    .await
 }
 
 fn cached_result(
