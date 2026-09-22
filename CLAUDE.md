@@ -680,14 +680,25 @@ command's answer carries the higher `revision`, since the two can cross.
     lands or fails, so two files handed over at once into the last slot
     do not both get opened in the backend and one of them refused a tab
     with its cache and grant left behind — and when the
-    session is restored — the first tabs up to the limit come back, the
-    rest are named in the restore notice and kept in memory with their
-    state until the limit lifts (a purchase, Restore Purchases, or the
-    launch-time read landing after `iap_status` gave up waiting), when
-    they are opened like the rest were; a quit before that drops them
-    from the session at the next save — with the `open` / `restore`
-    transitions in `workspace-tabs.ts` as the backstop), and the row
-    commands never refuse. A client-side limit is bypassable by patching
+    session is restored — the tabs that fit come back, the rest are named
+    in the restore notice and kept in memory with their state until the
+    limit lifts (a purchase, Restore Purchases, or the launch-time read
+    landing after `iap_status` gave up waiting), when they are opened
+    like the rest were; a quit before that drops them from the session at
+    the next save. What fits counts the tabs already open, not only the
+    tabs restored so far: the drop listener is live from the first
+    render, so a file dropped while the session is still being read gets
+    a tab of its own, keeps the window (the session's active tab only
+    takes it when the workspace was empty) and leaves the restore that
+    much less room. A restored file that ends up with no seat anyway —
+    the drop landed after its open began — is evicted and named as
+    capped by `WorkspaceContext`, which learns of it from
+    `restoreTabsTransition`, since the reducer cannot report anything
+    from inside a dispatch — with the `open` / `restore` transitions in
+    `workspace-tabs.ts` as the backstop), and the row commands never
+    refuse. ⇧⌘T is an ordinary open, so the limit can refuse it too; the
+    entry stays on the reopen history when it does, and comes back on the
+    next ⇧⌘T after a close or a purchase. A client-side limit is bypassable by patching
     the bundle; that is the trade a one-time-purchase utility makes — do
     not "fix" it by inventing a tab count in Rust. A store that cannot be
     read leaves the app on the free tier with the reason, never locked.
