@@ -804,9 +804,10 @@ command's answer carries the higher `revision`, since the two can cross.
     muda fills them from a hardcoded English table (`Paste`,
     `Quit {app}`) that macOS never localizes, and every constructor takes
     the text. What no setting reaches, because AppKit supplies it in the
-    *system's* language: the Services submenu, the Help menu's search
-    field, Emoji & Symbols, the About panel, and the dialog plugin's open
-    and save panels. `CFBundleLocalizations` in `Info.plist` is what tells
+    *system's* language: the Services submenu, the Writing Tools item
+    recent macOS adds to the Edit menu, the Help menu's search field,
+    Emoji & Symbols, the About panel, and the dialog plugin's open and
+    save panels. `CFBundleLocalizations` in `Info.plist` is what tells
     macOS the app has Japanese at all — without it those parts stay
     English on a Japanese Mac and `navigator.language` reads `en`.
 

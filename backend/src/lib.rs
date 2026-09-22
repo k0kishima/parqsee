@@ -105,6 +105,13 @@ fn build_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> 
     let find = b.item("find", Some("CmdOrCtrl+F"))?;
     let find_next = b.item("find-next", Some("CmdOrCtrl+G"))?;
     let find_previous = b.item("find-previous", Some("CmdOrCtrl+Shift+G"))?;
+    // The editing items carry ⌘Z / ⌘X / ⌘C / ⌘V / ⌘A into the webview:
+    // AppKit answers those key equivalents from the Edit menu, so every
+    // text field WKWebView draws — the SQL editor, a filter's value, the
+    // search box — loses them if the items are not in the menu. Nothing in
+    // the frontend handles them, which makes them look like clutter worth
+    // deleting; deleting them breaks editing instead. Recent macOS adds
+    // Writing Tools of its own beside them, which is AppKit's and not ours.
     let undo = b.predefined("undo", PredefinedMenuItem::undo)?;
     let redo = b.predefined("redo", PredefinedMenuItem::redo)?;
     let cut = b.predefined("cut", PredefinedMenuItem::cut)?;
