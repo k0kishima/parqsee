@@ -9,16 +9,7 @@ import { formatCellValue } from '../lib/format';
 import { cancelProfile, nextProfileRequestId } from '../lib/profile-request';
 import { toErrorMessage } from '../lib/tauri';
 import { assertNever } from '../lib/exhaustive';
-
-/**
- * A condition a bar stands for. The operators are the ones a profile can
- * produce; both filter bars accept a superset of them.
- */
-export interface ProfileCondition {
-  column: string;
-  operator: '=' | '>=' | '<=' | '<' | 'IS NULL';
-  value: string;
-}
+import type { ProfileCondition } from '../lib/filter-sql';
 
 export interface ColumnProfileViewProps {
   /** The column's name, as its own grid shows it. */

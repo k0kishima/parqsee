@@ -16,6 +16,7 @@ import {
     quoteIdentifier,
     sameConditionSlot,
     type FilterOperator,
+    type ProfileCondition,
 } from "../../../lib/filter-sql";
 
 interface FilterBarProps {
@@ -32,14 +33,6 @@ interface FilterBarProps {
      * as the only trace of them.
      */
     rejectedFilter?: string | null;
-}
-
-/** A condition another part of the viewer asks the bar to add. */
-export interface FilterCondition {
-    column: string;
-    operator: FilterOperator;
-    /** The value as the user would type it; ignored by a unary operator. */
-    value: string;
 }
 
 /**
@@ -62,7 +55,7 @@ export interface FilterBarHandle {
      * to say so — and the button that was clicked may be gone, the panel
      * closing on a value, so focus has to land somewhere anyway.
      */
-    addConditions: (conditions: FilterCondition[]) => void;
+    addConditions: (conditions: ProfileCondition[]) => void;
 }
 
 export {

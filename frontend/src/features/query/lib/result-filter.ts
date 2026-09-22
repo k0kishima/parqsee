@@ -1,5 +1,4 @@
-import type { ProfileCondition } from '../../../components/column-profile';
-import { sameConditionSlot } from '../../../lib/filter-sql';
+import { sameConditionSlot, type ProfileCondition } from '../../../lib/filter-sql';
 
 /**
  * How the backend addresses column `index` of a kept result. It matches

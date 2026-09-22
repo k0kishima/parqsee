@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { ColumnProfileView } from '../../../components/column-profile';
 import { profileColumnChart, profileColumnCounts, type ColumnCounts, type ColumnInfo } from '../api';
-import type { FilterCondition } from './filter-bar';
+import type { ProfileCondition } from '../../../lib/filter-sql';
 
 interface ColumnProfilePanelProps {
   filePath: string;
@@ -10,7 +10,7 @@ interface ColumnProfilePanelProps {
   filter: string;
   onClose: () => void;
   /** A click on a value or a bucket, as conditions for the filter bar. */
-  onAddConditions: (conditions: FilterCondition[]) => void;
+  onAddConditions: (conditions: ProfileCondition[]) => void;
 }
 
 /**

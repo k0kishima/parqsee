@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ColumnProfileView, type ProfileCondition } from '../../../components/column-profile';
+import { ColumnProfileView } from '../../../components/column-profile';
+import type { ProfileCondition } from '../../../lib/filter-sql';
 import type { ColumnKind } from '../../../bindings/ipc/ColumnKind';
 import { conditionSql } from '../../../lib/filter-sql';
 import { profileQueryColumnChart, profileQueryColumnCounts } from '../api/result-profile';

@@ -163,6 +163,29 @@ export function conditionSql({ column, operator, value, kind, explicitValue }: C
 }
 
 /**
+ * The operators a column profile's bars produce: a value, the two edges
+ * of a bucket, and the NULL row. Both filter surfaces accept a superset
+ * of them, so this is what the panel can ask for rather than what a bar
+ * can hold. `Extract` rather than a fresh union, so an operator that
+ * stopped being one fails here instead of at whichever surface met it.
+ */
+export type ProfileOperator = Extract<FilterOperator, '=' | '>=' | '<=' | '<' | 'IS NULL'>;
+
+/**
+ * A condition the column profile asks a filter surface to add. The
+ * column is written as that surface tells its columns apart — a file
+ * column's name in the browse bar, a result's positional alias in the
+ * SQL view — which is not always how SQL addresses it: the bar quotes
+ * the name itself when it builds the fragment.
+ */
+export interface ProfileCondition {
+    column: string;
+    operator: ProfileOperator;
+    /** The value as the user would type it; ignored by a unary operator. */
+    value: string;
+}
+
+/**
  * The bound two upper-bound operators name. A histogram bucket's upper
  * edge is written `<` or `<=` depending on whether the last representable
  * instant of its range falls inside it, so the two spell one bound rather
