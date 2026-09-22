@@ -64,7 +64,15 @@ export const QueryView: React.FC<QueryViewProps> = ({ filePath, isActiveRef }) =
         if (kept.current !== null && kept.current !== id) releaseQueryResult(kept.current);
         kept.current = id;
     }, []);
-    useEffect(() => () => { if (kept.current !== null) releaseQueryResult(kept.current); }, []);
+    // Nothing will render again: the kept result goes, and a run still in
+    // flight must not take its place — with `kept` cleared it would
+    // release the result twice and leave its own rows to the caps, so the
+    // generation moves on and its answer is released as superseded.
+    useEffect(() => () => {
+        generation.current += 1;
+        if (kept.current !== null) releaseQueryResult(kept.current);
+        kept.current = null;
+    }, []);
 
     const handleExecute = async (query: string) => {
         const run = ++generation.current;

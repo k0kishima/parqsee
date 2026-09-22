@@ -258,3 +258,23 @@ describe('a narrow still in flight when a new run lands', () => {
     expect(screen.queryByText('111')).not.toBeInTheDocument();
   });
 });
+
+describe('release accounting when the tab closes mid-run', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecuteSql.mockResolvedValue(byCategory);
+  });
+
+  it('releases the result it held and the answer that arrives after, each once', async () => {
+    const pending = deferred<QueryResult>();
+    const { unmount } = render(<QueryView filePath="/data/t.parquet" />);
+    await run('SELECT x, y FROM t');
+    mockExecuteSql.mockReturnValueOnce(pending.promise);
+    await userEvent.click(screen.getByRole('button', { name: /viewer\.query\.run/ }));
+
+    unmount();
+    await act(async () => { pending.resolve(replacement); await pending.promise; });
+
+    expect(mockRelease.mock.calls.map(call => call[0]).sort()).toEqual(['r1', 'r2']);
+  });
+});
