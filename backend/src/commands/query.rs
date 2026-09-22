@@ -636,13 +636,9 @@ mod tests {
         assert!(gone.contains("Run the query again"), "{gone}");
     }
 
-    /// Two columns of a self-join carry the same name under different
-    /// qualifiers. The rows reach the webview as JSON objects keyed by
-    /// name, so both columns have to be told apart before they are
-    /// rendered — the second key would otherwise replace the first and
-    /// the grid would show one column's values twice.
-    #[tokio::test]
-    async fn a_self_join_keeps_both_columns_apart() {
+    /// Three rows a self-join can pair up, under a file of its own. Two
+    /// columns, so a join's output has a name to collide on.
+    fn self_join_fixture(name: &str) -> (std::path::PathBuf, ParquetCache) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, true),
             Field::new("grp", DataType::Int64, true),
@@ -655,9 +651,19 @@ mod tests {
             ],
         )
         .unwrap();
-        let path = temp_path("query_duplicate_names", "self_join.parquet");
+        let path = temp_path("query_duplicate_names", name);
         write_parquet(&path, &batch, None);
-        let cache = ParquetCache::new();
+        (path, ParquetCache::new())
+    }
+
+    /// Two columns of a self-join carry the same name under different
+    /// qualifiers. The rows reach the webview as JSON objects keyed by
+    /// name, so both columns have to be told apart before they are
+    /// rendered — the second key would otherwise replace the first and
+    /// the grid would show one column's values twice.
+    #[tokio::test]
+    async fn a_self_join_keeps_both_columns_apart() {
+        let (path, cache) = self_join_fixture("self_join.parquet");
 
         let result = run_query(
             &cache,
@@ -726,21 +732,7 @@ mod tests {
     /// self-join's result hands back rows with both columns on them too.
     #[tokio::test]
     async fn a_narrowed_result_keeps_the_unique_names() {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, true),
-            Field::new("grp", DataType::Int64, true),
-        ]));
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(Int64Array::from(vec![0, 1, 2])) as ArrayRef,
-                Arc::new(Int64Array::from(vec![10, 11, 12])),
-            ],
-        )
-        .unwrap();
-        let path = temp_path("query_duplicate_names", "narrowed.parquet");
-        write_parquet(&path, &batch, None);
-        let cache = ParquetCache::new();
+        let (path, cache) = self_join_fixture("narrowed.parquet");
         let results = QueryResults::new();
 
         let result = run_query(

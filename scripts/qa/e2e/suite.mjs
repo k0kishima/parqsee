@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as pollDelay } from 'node:timers/promises';
 // Regression suite: every scenario drives the UI against the real backend.
 // Run with `pnpm suite` (see README.md); ONLY=S3 runs one scenario prefix.
-import { dropFile, finderOpen, release, openFolder, applyFilter, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, ACTIVE_PANEL, FIX, OUT, ROOT } from './lib.mjs';
+import { dropFile, finderOpen, release, openFolder, applyFilter, waitGrid, gridRows, headerCols, text, report, check, setStore, pushIapStatus, FREE_STORE, activePanel, ACTIVE_PANEL, profilePanel, FIX, OUT, ROOT } from './lib.mjs';
 import { scenario, expectConsoleError, finishSuite, screenshot } from './runner.mjs';
 
 const base = (p) => p.split('/').pop();
@@ -1223,22 +1223,7 @@ await scenario('S14-free-restore', async ({ page, bridge }) => {
 
 // ---------------------------------------------------------------- S19 column profile
 await scenario('S19-profile', async ({ page, bridge }) => {
-  const profileButton = (col) => act(page).locator(`thead th button[aria-label="Profile column ${col}"]`);
-  const panel = () => act(page).locator('aside[aria-label^="Profile of "]');
-  const bars = () => panel().locator('ul button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')));
-  // Polled in the page, scoped to the active tab: a hidden tab keeps its
-  // panel in the DOM.
-  const PANEL_BARS = `${ACTIVE_PANEL} aside[aria-label^="Profile of "] ul button`;
-  const waitBars = (expected, timeout = 30000) => page.waitForFunction(
-    ([sel, want]) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label')).join('|') === want,
-    [PANEL_BARS, expected], { timeout }
-  );
-  const waitBarsAtLeast = (n, timeout = 60000) => page.waitForFunction(
-    ([sel, want]) => document.querySelectorAll(sel).length >= want, [PANEL_BARS, n], { timeout }
-  );
-  const waitFirstBar = (label, timeout = 60000) => page.waitForFunction(
-    ([sel, want]) => document.querySelector(sel)?.getAttribute('aria-label') === want, [PANEL_BARS, label], { timeout }
-  );
+  const { profileButton, panel, bars, waitBars, waitBarsAtLeast, waitFirstBar } = profilePanel(page);
   const profiled = (col, filter) => bridge.log.some(l => l.cmd === 'profile_column_counts' && l.args.column === col && (filter === undefined ? l.args.filter == null : l.args.filter === filter));
   const filterInputs = () => act(page).locator('form input[type=text]');
 
@@ -1743,13 +1728,7 @@ await scenario('S22-result-profile', async ({ page, bridge }) => {
   await act(page).locator('button:has-text("Query")').click();
   const c = chartSql(page);
   // The browse grid is in the panel too, only hidden; the result sits under `.z-0`.
-  const profileButton = (col) => act(page).locator(`.z-0 thead th button[aria-label="Profile column ${col}"]`);
-  const panel = () => act(page).locator('.z-0 aside[aria-label^="Profile of "]');
-  const PANEL_BARS = `${ACTIVE_PANEL} .z-0 aside[aria-label^="Profile of "] ul button`;
-  const waitBars = (expected, timeout = 30000) => page.waitForFunction(
-    ([sel, want]) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label')).join('|') === want,
-    [PANEL_BARS, expected], { timeout }
-  );
+  const { profileButton, panel, PANEL_BARS, waitBars } = profilePanel(page, '.z-0');
   const rowCount = () => act(page).locator('.z-0 tbody tr[data-row]').count();
   const footer = () => act(page).locator('text=/rows?$|^\\d+ rows/').first().textContent().catch(() => 'none');
   const profiled = () => bridge.log.filter(l => l.cmd === 'profile_query_column_counts').map(l => l.args);

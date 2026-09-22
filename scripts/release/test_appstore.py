@@ -98,6 +98,21 @@ def make_app(path: Path, **overrides) -> Path:
     return path
 
 
+def altool_validate(pkg, key="KEY1", issuer="issuer-1"):
+    """
+    How altool has to be invoked to validate a package, spelled out once:
+    both the combined flow through appstore.sh and upload_pkg.sh on its
+    own assert this exact argument list, and a flag added to the scripts
+    is a flag added here rather than in four assertions.
+    """
+    return ["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", key, "--api-issuer", issuer]
+
+
+def altool_upload(pkg, key="KEY1", issuer="issuer-1"):
+    """How altool has to be invoked to upload the package it just validated."""
+    return ["xcrun", "altool", "--upload-app", "-f", str(pkg), "-t", "macos", "--api-key", key, "--api-issuer", issuer]
+
+
 class ScriptRun:
     def __init__(self, result, log_path: Path):
         self.returncode = result.returncode
@@ -419,7 +434,7 @@ class AppstoreScriptTests(unittest.TestCase):
         pkg = self.bundle_dir() / "Parqsee-0.1.0.pkg"
         self.assertEqual(
             run.called("xcrun"),
-            [["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"]],
+            [altool_validate(pkg)],
         )
         self.assertEqual(run.key_files, [])
 
@@ -435,10 +450,7 @@ class AppstoreScriptTests(unittest.TestCase):
         pkg = self.bundle_dir() / "Parqsee-0.1.0.pkg"
         self.assertEqual(
             run.called("xcrun"),
-            [
-                ["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
-                ["xcrun", "altool", "--upload-app", "-f", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
-            ],
+            [altool_validate(pkg), altool_upload(pkg)],
         )
         # altool finds the key only as AuthKey_<id>.p8 in $API_PRIVATE_KEYS_DIR.
         self.assertEqual(run.key_files, ["AuthKey_KEY1.p8", "AuthKey_KEY1.p8"])
@@ -523,7 +535,7 @@ class AppstoreScriptTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(
             run.called("xcrun"),
-            [["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"]],
+            [altool_validate(pkg)],
         )
         self.assertEqual(run.key_files, [])
         self.assertIn("validated", run.stdout)
@@ -538,10 +550,7 @@ class AppstoreScriptTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(
             run.called("xcrun"),
-            [
-                ["xcrun", "altool", "--validate-app", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
-                ["xcrun", "altool", "--upload-app", "-f", str(pkg), "-t", "macos", "--api-key", "KEY1", "--api-issuer", "issuer-1"],
-            ],
+            [altool_validate(pkg), altool_upload(pkg)],
         )
         # altool finds the key only as AuthKey_<id>.p8 in $API_PRIVATE_KEYS_DIR.
         self.assertEqual(run.key_files, ["AuthKey_KEY1.p8", "AuthKey_KEY1.p8"])

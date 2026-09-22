@@ -28,10 +28,7 @@ vi.mock('../../api/result-profile', () => ({
   filterQueryResult: (...args: unknown[]) => mockFilter(...args),
   releaseQueryResult: (...args: unknown[]) => mockRelease(...args),
 }));
-vi.mock('../../../../contexts/SettingsContext', async () => {
-  const { TEST_SETTINGS } = await import('../../../../test/settings');
-  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: vi.fn() }) };
-});
+vi.mock('../../../../contexts/SettingsContext', () => import('../../../../test/settings-context-mock'));
 // A second implemented kind, so a pick can become unavailable: with bar
 // alone nothing a result can do takes the picked kind away.
 vi.mock('../../components/query-chart', async importOriginal => {

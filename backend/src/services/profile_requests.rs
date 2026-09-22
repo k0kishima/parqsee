@@ -112,25 +112,36 @@ impl ProfileRequests {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tokio::task::JoinHandle;
+
+    /// A run registered under `id` that has begun and will not end on its
+    /// own: what every cancellation test needs before it can cancel
+    /// anything. The receiver resolves once the work is under way, so a
+    /// test cancels a run that exists rather than racing the spawn.
+    fn spawn_pending_run(
+        requests: &Arc<ProfileRequests>,
+        id: &str,
+    ) -> (JoinHandle<Result<u8, String>>, oneshot::Receiver<()>) {
+        let running = Arc::clone(requests);
+        let id = id.to_string();
+        let (started, was_started) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            running
+                .run(Some(id), async {
+                    started.send(()).unwrap();
+                    // The work the webview stopped waiting for: without
+                    // cancellation this would never end.
+                    std::future::pending::<Result<u8, String>>().await
+                })
+                .await
+        });
+        (task, was_started)
+    }
 
     #[tokio::test]
     async fn a_cancelled_profile_stops_and_says_so() {
         let requests = Arc::new(ProfileRequests::new());
-        let running = Arc::clone(&requests);
-        let (started, was_started) = oneshot::channel();
-        let task = tokio::spawn(async move {
-            running
-                .run(
-                    Some("panel-1".into()),
-                    async {
-                        started.send(()).unwrap();
-                        // The work the webview stopped waiting for: without
-                        // cancellation this would never end.
-                        std::future::pending::<Result<u8, String>>().await
-                    },
-                )
-                .await
-        });
+        let (task, was_started) = spawn_pending_run(&requests, "panel-1");
         was_started.await.unwrap();
         requests.cancel("panel-1");
         assert_eq!(task.await.unwrap(), Err(SUPERSEDED.to_string()));
@@ -149,16 +160,7 @@ mod tests {
     #[tokio::test]
     async fn one_panel_does_not_cancel_another() {
         let requests = Arc::new(ProfileRequests::new());
-        let running = Arc::clone(&requests);
-        let (started, was_started) = oneshot::channel();
-        let task = tokio::spawn(async move {
-            running
-                .run(Some("panel-1".into()), async {
-                    started.send(()).unwrap();
-                    std::future::pending::<Result<u8, String>>().await
-                })
-                .await
-        });
+        let (task, was_started) = spawn_pending_run(&requests, "panel-1");
         was_started.await.unwrap();
         requests.cancel("panel-2");
         assert!(!task.is_finished(), "another panel's cancel ended this one");
@@ -172,23 +174,9 @@ mod tests {
     #[tokio::test]
     async fn a_second_request_under_one_id_supersedes_only_the_first() {
         let requests = Arc::new(ProfileRequests::new());
-        let start = |requests: &Arc<ProfileRequests>| {
-            let running = Arc::clone(requests);
-            let (started, was_started) = oneshot::channel();
-            let task = tokio::spawn(async move {
-                running
-                    .run(Some("panel-1".into()), async {
-                        started.send(()).unwrap();
-                        std::future::pending::<Result<u8, String>>().await
-                    })
-                    .await
-            });
-            (task, was_started)
-        };
-
-        let (first, first_started) = start(&requests);
+        let (first, first_started) = spawn_pending_run(&requests, "panel-1");
         first_started.await.unwrap();
-        let (second, second_started) = start(&requests);
+        let (second, second_started) = spawn_pending_run(&requests, "panel-1");
         second_started.await.unwrap();
 
         assert_eq!(first.await.unwrap(), Err(SUPERSEDED.to_string()));

@@ -339,6 +339,37 @@ export const activePanel = (page) => page.locator(ACTIVE_PANEL);
  * applies nothing — the order is the point. Does not wait for the grid:
  * most callers follow with waitGrid, and S2 deliberately does not.
  */
+/**
+ * The column profile panel and the waits over its bars, for whichever
+ * grid opened it: `scope` is the selector the grid sits under — `.z-0`
+ * for a query result, nothing for the browse grid, which is the only one
+ * on screen. S19 drives the browse grid's panel and S22 the result's;
+ * they differ in that selector and in nothing else, so a change to the
+ * panel's markup is one change here rather than two.
+ *
+ * The waits poll in the page rather than through a locator, and they are
+ * scoped to the active tab as well: a hidden tab keeps its panel in the
+ * DOM, so an unscoped count would read the tab the user left.
+ */
+export function profilePanel(page, scope = '') {
+  const within = scope ? `${scope} ` : '';
+  const profileButton = (col) => activePanel(page).locator(`${within}thead th button[aria-label="Profile column ${col}"]`);
+  const panel = () => activePanel(page).locator(`${within}aside[aria-label^="Profile of "]`);
+  const bars = () => panel().locator('ul button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')));
+  const PANEL_BARS = `${ACTIVE_PANEL} ${within}aside[aria-label^="Profile of "] ul button`;
+  const waitBars = (expected, timeout = 30000) => page.waitForFunction(
+    ([sel, want]) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label')).join('|') === want,
+    [PANEL_BARS, expected], { timeout }
+  );
+  const waitBarsAtLeast = (n, timeout = 60000) => page.waitForFunction(
+    ([sel, want]) => document.querySelectorAll(sel).length >= want, [PANEL_BARS, n], { timeout }
+  );
+  const waitFirstBar = (label, timeout = 60000) => page.waitForFunction(
+    ([sel, want]) => document.querySelector(sel)?.getAttribute('aria-label') === want, [PANEL_BARS, label], { timeout }
+  );
+  return { profileButton, panel, bars, PANEL_BARS, waitBars, waitBarsAtLeast, waitFirstBar };
+}
+
 export async function applyFilter(page, column, value) {
   const form = activePanel(page).locator('form').first();
   await form.locator('select').nth(0).selectOption(column);

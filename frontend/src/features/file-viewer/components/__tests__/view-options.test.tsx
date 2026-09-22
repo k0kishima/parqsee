@@ -2,12 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ViewOptions } from '../view-options';
+import { updateSettings as mockUpdateSettings } from '../../../../test/settings-context-mock';
 
-const mockUpdateSettings = vi.fn();
-vi.mock('../../../../contexts/SettingsContext', async () => {
-  const { TEST_SETTINGS } = await import('../../../../test/settings');
-  return { useSettings: () => ({ settings: TEST_SETTINGS, updateSettings: mockUpdateSettings }) };
-});
+vi.mock('../../../../contexts/SettingsContext', () => import('../../../../test/settings-context-mock'));
 
 describe('ViewOptions', () => {
   beforeEach(() => mockUpdateSettings.mockClear());
