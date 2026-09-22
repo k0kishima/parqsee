@@ -53,8 +53,10 @@ export function SearchBar({
       onClose();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (!searchTerm || searchTerm !== localInputValue) {
-        // If no search has been performed yet or input changed, perform search
+      // The term in force was trimmed on its way in, so the box is compared
+      // trimmed as well: " foo " otherwise read as a new term at every
+      // Enter, searching again from the first match instead of walking on.
+      if (!searchTerm || searchTerm !== localInputValue.trim()) {
         onSearchSubmit(localInputValue);
       } else if (e.shiftKey) {
         // Navigate to previous match
