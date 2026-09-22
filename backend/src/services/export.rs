@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use crate::models::SortSpec;
 use crate::services::parquet::{
-    build_page_query, build_sorted_query, is_memory_exhausted, json_unsafe_to_strings,
-    nested_to_json_strings, sort_order, SortOrder,
+    build_page_query, build_sorted_query, date64_as_date32, is_memory_exhausted,
+    json_unsafe_to_strings, nested_to_json_strings, sort_order, SortOrder,
     plan_query_checked, range_reader, sorted_page_batches, where_clause, ParquetCache, ResultCachePolicy,
 };
 
@@ -48,6 +48,18 @@ impl RowWriter {
     /// Create the staging file and wrap it for `format`. Callers validate the
     /// source and the query *before* this, so a doomed export never gets as
     /// far as touching the filesystem.
+    ///
+    /// The CSV writer is left on arrow's default date, time and timestamp
+    /// notations, which are the ones the grid shows: both the grid and the
+    /// writer render a value through arrow's `ArrayFormatter`, so a naive
+    /// timestamp reads `2024-01-02T03:04:05.678901234` (`%Y-%m-%dT%H:%M:%S%.f`
+    /// — as many fraction digits as the unit has, none when they would all be
+    /// zero) and a tz-aware one RFC 3339 with its numeric offset. A
+    /// `%Y-%m-%d %H:%M:%S%.6f` given here instead truncated a nanosecond
+    /// column to microseconds, and reached only the naive columns — there is
+    /// no matching setter for tz-aware ones — so one file carried two
+    /// notations. The BOM below is the Excel concession; the notation is not
+    /// one, and Excel parses the default well enough.
     fn create(format: ExportFormat, path: &str) -> Result<Self, String> {
         let mut out = BufWriter::new(
             File::create(path).map_err(|e| format!("Cannot write {}: {}", path, e))?,
@@ -57,10 +69,7 @@ impl RowWriter {
                 // UTF-8 BOM for Excel compatibility.
                 out.write_all(&[0xEF, 0xBB, 0xBF]).map_err(|e| e.to_string())?;
                 Ok(RowWriter::Csv(Box::new(
-                    CsvWriterBuilder::new()
-                        .with_header(true)
-                        .with_timestamp_format("%Y-%m-%d %H:%M:%S%.6f".to_string())
-                        .build(out),
+                    CsvWriterBuilder::new().with_header(true).build(out),
                 )))
             }
             ExportFormat::Json => Ok(RowWriter::Json(JsonArrayWriter::new(out))),
@@ -70,8 +79,10 @@ impl RowWriter {
     fn write(&mut self, batch: &RecordBatch) -> Result<usize, String> {
         match self {
             // The CSV writer refuses nested columns; JSON text keeps them readable.
+            // Date64 is cast down for the same reason the JSON path casts it:
+            // the writer would print the time of day a date does not have.
             RowWriter::Csv(writer) => writer
-                .write(&nested_to_json_strings(batch)?)
+                .write(&nested_to_json_strings(&date64_as_date32(batch)?)?)
                 .map_err(|e| e.to_string())?,
             // The JSON writer refuses decimals and nulls out NaN; the CSV
             // writer handles both.
@@ -505,7 +516,7 @@ async fn export_query(
 mod tests {
     use super::{export_data, export_data_with, staging_path_for, FinalizeFs, RealFs};
     use crate::models::{SortDirection, SortSpec};
-    use crate::services::parquet::ParquetCache;
+    use crate::services::parquet::{batches_to_rows, range_reader, ParquetCache};
     use arrow::array::{
         Array, ArrayRef, Decimal128Array, DictionaryArray, Float64Array, Int32Array, Int64Array,
         ListBuilder, StringArray, StringBuilder,
@@ -1163,5 +1174,125 @@ mod tests {
         for p in leftovers {
             std::fs::remove_file(p).unwrap();
         }
+    }
+
+    /// The CSV writer's own spelling of a timestamp is not the grid's: it
+    /// used to be given `%Y-%m-%d %H:%M:%S%.6f`, which truncated a
+    /// nanosecond column to microseconds and left tz-aware columns on
+    /// arrow's RFC 3339 default, so one file mixed two notations; and the
+    /// Date64 → Date32 cast only ever ran on the JSON path, so a Date64
+    /// column exported as `1970-01-01T00:00:00` whatever date it held.
+    /// Every cell must read as the grid shows it — the strings
+    /// `contracts/temporal-wire-cases.json` pins.
+    #[tokio::test]
+    async fn csv_export_writes_temporal_values_as_the_grid_shows_them() {
+        let src = temporal_fixture("csv_temporal");
+        let out = temp_path("csv_temporal.csv");
+        let n = export(&ParquetCache::new(), &src, &out, "csv", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(n, 2);
+
+        let text = std::fs::read_to_string(&out).unwrap();
+        let text = text.trim_start_matches('\u{feff}');
+        let lines: Vec<&str> = text.lines().collect();
+        // No value below holds a comma, so the cells split cleanly.
+        let header: Vec<&str> = lines[0].split(',').collect();
+        let cells: Vec<Vec<&str>> = lines[1..].iter().map(|l| l.split(',').collect()).collect();
+
+        let grid = grid_rows(&src);
+        for (column, name) in header.iter().enumerate() {
+            for (row, cells) in cells.iter().enumerate() {
+                let shown = grid[row][*name].as_str().expect("a temporal cell is a string");
+                assert_eq!(
+                    cells[column], shown,
+                    "column {name}, row {row}: the CSV must read as the grid does"
+                );
+            }
+        }
+
+        let cell = |name: &str, row: usize| {
+            let column = header.iter().position(|h| h == &name).unwrap();
+            cells[row][column]
+        };
+        assert!(
+            cell("ts_ns", 0).contains("123456789"),
+            "the nanoseconds must survive: {}",
+            cell("ts_ns", 0)
+        );
+        assert_eq!(
+            cell("d64", 0),
+            "2024-02-29",
+            "a Date64 is the date it holds, not the epoch"
+        );
+        assert!(
+            cell("ts_tz", 0).contains("+09:00"),
+            "a tz-aware timestamp keeps its offset: {}",
+            cell("ts_tz", 0)
+        );
+    }
+
+    /// One row per parquet row, as `batches_to_rows` renders it — the exact
+    /// values the grid receives for this file.
+    fn grid_rows(path: &Path) -> Vec<serde_json::Value> {
+        let reader = range_reader(&path.to_string_lossy(), None, None, 1024).unwrap();
+        let batches: Vec<RecordBatch> = reader.map(|b| b.unwrap()).collect();
+        batches_to_rows(&batches).unwrap()
+    }
+
+    /// Two rows of every temporal type an export can meet, with the values
+    /// `contracts/temporal-wire-cases.json` lists: a nanosecond fraction, a
+    /// zoned column, and the instants either side of the epoch, where a
+    /// sub-second value is negative in arrow's storage.
+    fn temporal_fixture(name: &str) -> PathBuf {
+        use arrow::array::{
+            Date32Array, Date64Array, Time64NanosecondArray, TimestampMicrosecondArray,
+            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+        };
+        use arrow::datatypes::TimeUnit;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("ts_s", DataType::Timestamp(TimeUnit::Second, None), true),
+            Field::new("ts_ms", DataType::Timestamp(TimeUnit::Millisecond, None), true),
+            Field::new("ts_us", DataType::Timestamp(TimeUnit::Microsecond, None), true),
+            Field::new("ts_ns", DataType::Timestamp(TimeUnit::Nanosecond, None), true),
+            Field::new(
+                "ts_tz",
+                DataType::Timestamp(TimeUnit::Microsecond, Some("+09:00".into())),
+                true,
+            ),
+            Field::new("d32", DataType::Date32, true),
+            Field::new("d64", DataType::Date64, true),
+            Field::new("t64", DataType::Time64(TimeUnit::Nanosecond), true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(TimestampSecondArray::from(vec![1_704_164_645, -1])) as ArrayRef,
+                Arc::new(TimestampMillisecondArray::from(vec![1_704_164_645_678, -1])) as ArrayRef,
+                Arc::new(TimestampMicrosecondArray::from(vec![
+                    1_704_164_645_678_901,
+                    -1,
+                ])) as ArrayRef,
+                Arc::new(TimestampNanosecondArray::from(vec![
+                    1_704_164_645_123_456_789,
+                    -1,
+                ])) as ArrayRef,
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![1_704_164_645_678_901, 0])
+                        .with_timezone("+09:00"),
+                ) as ArrayRef,
+                Arc::new(Date32Array::from(vec![19_723, -1])) as ArrayRef,
+                Arc::new(Date64Array::from(vec![1_709_164_800_000, -86_400_000])) as ArrayRef,
+                Arc::new(Time64NanosecondArray::from(vec![
+                    80_000_123_456_789,
+                    0,
+                ])) as ArrayRef,
+            ],
+        )
+        .unwrap();
+        let path = temp_path(&format!("{name}.parquet"));
+        write_parquet(&path, &batch, None);
+        path
     }
 }

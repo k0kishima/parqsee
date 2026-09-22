@@ -1073,6 +1073,28 @@ fn nested_column_as_json(name: &str, column: &ArrayRef) -> Result<ArrayRef, Stri
     Ok(Arc::new(arrow::array::StringArray::from(values)) as ArrayRef)
 }
 
+/// `batch` with every top-level Date64 column cast to Date32.
+///
+/// A Date64 is a date stored as milliseconds, and every writer that reads
+/// the type rather than the value prints the time of day it never has:
+/// arrow's CSV writer spells `2024-02-29` as `2024-02-29T00:00:00`. Casting
+/// to Date32 first is the same conversion `json_unsafe_as_strings` applies
+/// on the JSON path, so both exports and the grid show one date.
+pub fn date64_as_date32(batch: &RecordBatch) -> Result<RecordBatch, String> {
+    rebuild_columns(
+        batch,
+        |t| matches!(t, DataType::Date64),
+        |field, column| {
+            if !matches!(column.data_type(), DataType::Date64) {
+                return Ok((field.clone(), column.clone()));
+            }
+            let dates = arrow::compute::cast(column, &DataType::Date32)
+                .map_err(|e| format!("Failed to render date column: {}", e))?;
+            Ok((retyped_field(field, dates.data_type()), dates))
+        },
+    )
+}
+
 /// Arrow's CSV writer refuses nested columns ("Nested type List(...) is not
 /// supported in CSV"). Serialize them as JSON text so a file with an array or
 /// a struct column still exports.
