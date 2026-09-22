@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StrictMode } from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { dispatchAppCommand } from '../../../../lib/app-commands';
 import userEvent from '@testing-library/user-event';
 import { DataViewer } from '../data-viewer';
@@ -56,6 +56,9 @@ const applyFilter = async (value: string) => {
  */
 beforeEach(() => {
   vi.clearAllMocks();
+  // The grid scrolls the current search match into view; jsdom has no
+  // scrolling, and the throw would take the table down with it.
+  Element.prototype.scrollTo = vi.fn();
   mockOpenParquetFile.mockResolvedValue(metadata);
   mockReadParquetData.mockResolvedValue([{ id: 1 }]);
   mockCountParquetData.mockResolvedValue(5);
@@ -325,11 +328,6 @@ describe('DataViewer search matches across a page change', () => {
   /** The cell of the match the counter is on. */
   const activeCells = () => document.querySelectorAll('td.bg-orange-200');
 
-  beforeEach(() => {
-    // The grid scrolls the current match into view; jsdom has no scrolling.
-    Element.prototype.scrollTo = vi.fn();
-  });
-
   it('walks the new page from its first match', async () => {
     // Three matches on the first page, one on the second.
     mockReadParquetData.mockImplementation((_path: string, offset: number) =>
@@ -355,6 +353,34 @@ describe('DataViewer search matches across a page change', () => {
     // walk starts over, and the first match is the one highlighted.
     expect(screen.getByText('1 / 1')).toBeInTheDocument();
     expect(activeCells()).toHaveLength(1);
+  });
+});
+
+describe('DataViewer search closed right after it was submitted', () => {
+  it('leaves no term behind', async () => {
+    const onStateChange = vi.fn();
+    render(
+      <DataViewer filePath="/data/test.parquet" onClose={vi.fn()} onStateChange={onStateChange} />
+    );
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+
+    act(() => dispatchAppCommand('find'));
+    const input = screen.getByPlaceholderText('viewer.searchPlaceholder');
+    // Fired rather than typed: the two keys have to land in the same tick,
+    // which is the case this is about — a term applied on a delay used to
+    // arrive after the bar that could have cleared it was gone.
+    fireEvent.change(input, { target: { value: '1' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+
+    expect(screen.queryByPlaceholderText('viewer.searchPlaceholder')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('td.bg-yellow-100, td.bg-orange-200')).toHaveLength(0);
+    // The tab is saved with the search closed and nothing to search for.
+    const calls = onStateChange.mock.calls;
+    const saved = calls[calls.length - 1][0];
+    expect(saved).toMatchObject({ isSearchOpen: false, searchTerm: '' });
   });
 });
 

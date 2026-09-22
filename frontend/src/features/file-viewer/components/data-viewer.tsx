@@ -147,7 +147,6 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const [isSearchOpen, setIsSearchOpen] = useState(initialState?.isSearchOpen || false);
   const [searchTerm, setSearchTerm] = useState(initialState?.searchTerm || "");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const [isSearching, setIsSearching] = useState(false);
   const [searchFocusTrigger, setSearchFocusTrigger] = useState(0); // Trigger to force focus
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
@@ -492,20 +491,15 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [pageInput, totalPages, currentPage]);
 
+  // Applied in the same event as the Enter that asked for it. The search is
+  // a pass over the rows already on screen, so the 50 ms delay this used to
+  // take bought nothing and outlived the bar: an Escape within it closed the
+  // search and cleared the term, and the term then came back with no bar
+  // left to clear it again — the highlights stayed, and the tab was saved
+  // with a closed search still holding a term.
   const handleSearchSubmit = useCallback((value: string) => {
-    const trimmedValue = value.trim();
-    if (trimmedValue) {
-      setIsSearching(true);
-      setTimeout(() => {
-        setSearchTerm(trimmedValue);
-        setCurrentMatchIndex(0);
-        setIsSearching(false);
-      }, 50);
-    } else {
-      setSearchTerm("");
-      setCurrentMatchIndex(0);
-      setIsSearching(false);
-    }
+    setSearchTerm(value.trim());
+    setCurrentMatchIndex(0);
   }, []);
 
   if (error) {
@@ -546,13 +540,11 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
           setIsSearchOpen(false);
           setSearchTerm("");
           setCurrentMatchIndex(0);
-          setIsSearching(false);
         }}
         currentMatch={searchMatches.length > 0 ? activeMatchIndex + 1 : 0}
         totalMatches={searchMatches.length}
         onNext={handleNextMatch}
         onPrevious={handlePreviousMatch}
-        isSearching={isSearching}
         focusTrigger={searchFocusTrigger}
       />
       <ViewOptions buttonClassName={`${actionButton} px-2`} />
