@@ -240,7 +240,8 @@ const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> =
     const scrollerRef = useRef<HTMLDivElement>(null);
     const tbodyRef = useRef<HTMLTableSectionElement>(null);
     const { columns, rows } = result;
-    const density = ROW_DENSITY_CLASSES[useSettings().settings.rowDensity];
+    const { rowDensity } = useSettings().settings;
+    const density = ROW_DENSITY_CLASSES[rowDensity];
 
     // One measurement per render rather than one per cell.
     const charWidth = useMemo(() => measureCharWidth('sans'), []);
@@ -257,11 +258,25 @@ const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> =
     // Rows are single-line, so they share one height; measure the pitch of the
     // rendered rows and size every row with it.
     const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
+    // A row is as tall as its cells' padding makes it, and the density
+    // decides that padding, so a change of density invalidates the
+    // measurement. Go back to the assumed pitch here rather than size the
+    // spacers with the old one until the rows have been measured again:
+    // the grid would otherwise end in blank space or claim a scroll height
+    // the rows cannot fill.
+    const [measuredFor, setMeasuredFor] = useState(rowDensity);
+    if (measuredFor !== rowDensity) {
+        setMeasuredFor(rowDensity);
+        setRowHeight(DEFAULT_ROW_HEIGHT);
+    }
     const heights = useMemo(() => new Array<number>(rows.length).fill(rowHeight), [rows.length, rowHeight]);
 
     const cols = useColumnVirtualizer(widths, scrollerRef);
     const rowsVirt = useRowVirtualizer(heights, scrollerRef);
 
+    // The pitch is read off the rows on screen, so it is measured again
+    // whenever they change: a new window to measure, a height that did not
+    // match the last measurement, or a density that repadded every row.
     useLayoutEffect(() => {
         const body = tbodyRef.current;
         if (!body) return;
@@ -271,7 +286,7 @@ const ResultGrid: React.FC<{ result: QueryResult; profile?: ProfileControls }> =
         const last = dataRows[dataRows.length - 1].getBoundingClientRect();
         const pitch = (last.bottom - first.top) / dataRows.length;
         if (pitch > 0 && Math.abs(pitch - rowHeight) > 0.01) setRowHeight(pitch);
-    }, [rowsVirt.start, rowsVirt.end, rowHeight]);
+    }, [rowsVirt.start, rowsVirt.end, rowHeight, rowDensity]);
 
     const padLeft = cols.padStart;
     const padRight = cols.padEnd + Math.max(0, cols.viewportSize - cols.totalSize);
