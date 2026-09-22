@@ -47,6 +47,21 @@ export function operatorCompares(operator: FilterOperator): boolean {
     return OPERATOR_FORM[operator] === 'compare';
 }
 
+const NULL_OPERATORS = FILTER_OPERATORS.filter(op => !operatorTakesValue(op));
+
+/**
+ * The operators worth offering for a column of this kind. A nested column —
+ * a list, a struct, a map — and one whose type this app has no handling for
+ * have no value form the planner will take: comparing one against a literal
+ * has no ordering to use, and `CAST(x AS TEXT)` for LIKE has no text form to
+ * cast to, so either way the filter comes back as a plan error rather than
+ * as rows. What is left is the null checks, which ask about the row and
+ * never about the value.
+ */
+export function operatorsForKind(kind: ColumnKind): readonly FilterOperator[] {
+    return kind === 'nested' || kind === 'other' ? NULL_OPERATORS : FILTER_OPERATORS;
+}
+
 
 /** How a value of a column's kind is written as a literal. */
 export type LiteralKind = 'text' | 'number' | 'boolean' | 'hex' | 'quoted';

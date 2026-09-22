@@ -11,6 +11,7 @@ import {
     isNumericLiteral,
     KIND_LITERAL,
     operatorCompares,
+    operatorsForKind,
     operatorTakesValue,
     quoteIdentifier,
     type FilterOperator,
@@ -321,6 +322,19 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
         setFilters(filters.map(f => (f.id === id ? { ...f, ...patch, explicitValue: patch.value === undefined ? f.explicitValue : false } : f)));
     };
 
+    /**
+     * Picking a column also settles the operator, because the offered ones
+     * depend on the column: a comparison carried over onto a nested column
+     * would stay on screen as a condition the column cannot be asked, and
+     * the select would show a value that is no longer among its options.
+     */
+    const handleColumnChange = (id: number, column: string) => {
+        const operators = column ? operatorsForKind(kindOf(columns, column)) : FILTER_OPERATORS;
+        setFilters(filters.map(f => (f.id === id
+            ? { ...f, column, operator: operators.includes(f.operator) ? f.operator : operators[0] }
+            : f)));
+    };
+
     const handleClear = () => {
         setFilters([newFilterRow()]);
         setInvalid(null);
@@ -357,6 +371,16 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
             <form onSubmit={handleSubmit} className="grid grid-cols-[auto_auto_6rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2">
                 {filters.map((filter, index) => {
                     const needsValue = operatorTakesValue(filter.operator);
+                    // A row with no column picked offers every operator: the
+                    // kind is not known yet. The row's own operator stays on
+                    // the list even when its column's kind no longer offers
+                    // it — a filter saved by an earlier version can carry
+                    // one, and a select whose value is not among its options
+                    // renders blank.
+                    const offered = filter.column ? operatorsForKind(kindOf(columns, filter.column)) : FILTER_OPERATORS;
+                    const operators = offered.includes(filter.operator)
+                        ? offered
+                        : FILTER_OPERATORS.filter(op => offered.includes(op) || op === filter.operator);
                     const isLast = index === filters.length - 1;
                     const lit = arrived.includes(filter.id) ? ' filter-arrived' : '';
 
@@ -394,7 +418,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 filtered on either way. */}
                             <select
                                 value={filter.column}
-                                onChange={(e) => handleChange(filter.id, { column: e.target.value })}
+                                onChange={(e) => handleColumnChange(filter.id, e.target.value)}
                                 className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${filter.column ? inputBg : unsetInputBg}${lit}`}
                             >
                                 {!filter.column && <option value="">{t('viewer.filterColumnPlaceholder')}</option>}
@@ -412,7 +436,7 @@ export const FilterBar = forwardRef<FilterBarHandle, FilterBarProps>(function Fi
                                 }}
                                 className={`h-8 px-2 text-sm rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}${lit}`}
                             >
-                                {FILTER_OPERATORS.map(op => (
+                                {operators.map(op => (
                                     <option key={op} value={op}>{op}</option>
                                 ))}
                             </select>
