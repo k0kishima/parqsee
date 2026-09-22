@@ -30,6 +30,19 @@ export interface ExportWindow {
  * row. Every range is spelled out so a new one cannot fall through to
  * "export everything".
  */
+/**
+ * A typed bound as a row number, or null when it is not one. The digits are
+ * matched rather than parsed, because every numeric parse JS offers reads a
+ * prefix and throws the rest away: `parseInt('2.5')` is 2 and `parseInt('1e1')`
+ * is 1, so a bound that is not a row number would silently export a different
+ * range from the one on screen. Surrounding whitespace is the one thing
+ * forgiven — it is invisible in the field.
+ */
+function parseRowNumber(input: string): number | null {
+  const trimmed = input.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+}
+
 export function resolveExportRange(range: ExportRange, ctx: ExportRangeContext): ExportWindow | null {
   switch (range) {
     case 'all':
@@ -39,9 +52,9 @@ export function resolveExportRange(range: ExportRange, ctx: ExportRangeContext):
       return { offset, limit };
     }
     case 'custom': {
-      const start = parseInt(ctx.startInput, 10);
-      const end = parseInt(ctx.endInput, 10);
-      const valid = Number.isInteger(start) && Number.isInteger(end)
+      const start = parseRowNumber(ctx.startInput);
+      const end = parseRowNumber(ctx.endInput);
+      const valid = start !== null && end !== null
         && start >= 1 && end >= start && end <= ctx.totalRows;
       return valid ? { offset: start - 1, limit: end - start + 1 } : null;
     }
