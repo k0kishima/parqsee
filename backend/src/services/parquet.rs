@@ -3379,17 +3379,17 @@ mod tests {
         assert_eq!((fake.starts(), fake.stops()), (2, 2));
     }
 
+    /// A fill in flight and the switch that ends it.
+    type GatedMetadataFill = (
+        tokio::task::JoinHandle<Result<ParquetMetadata, String>>,
+        mpsc::Sender<Result<(), String>>,
+    );
+
     /// A metadata fill that has started and is waiting to be let go. It
     /// returns once the fill is under way, so the caller acts on a fill
     /// that is genuinely in flight rather than racing the spawn, and the
     /// sender decides whether it then succeeds or fails.
-    fn spawn_gated_metadata_fill(
-        cache: &Arc<ParquetCache>,
-        path: &str,
-    ) -> (
-        tokio::task::JoinHandle<Result<ParquetMetadata, String>>,
-        mpsc::Sender<Result<(), String>>,
-    ) {
+    fn spawn_gated_metadata_fill(cache: &Arc<ParquetCache>, path: &str) -> GatedMetadataFill {
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel::<Result<(), String>>();
         let creation = {

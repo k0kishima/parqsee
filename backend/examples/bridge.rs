@@ -87,16 +87,29 @@ fn opt_sort(args: &Value) -> Result<Option<SortSpec>, String> {
     }
 }
 
-async fn dispatch(
-    cache: &ParquetCache,
-    access: &FileAccess,
-    license: &License,
-    pending: &PendingOpen,
-    results: &QueryResults,
-    requests: &ProfileRequests,
-    cmd: &str,
-    args: Value,
-) -> Result<Value, String> {
+/// What the Tauri app holds as managed state, in one place. The bridge
+/// keeps one of each for the process's life and hands the set to
+/// `dispatch`, which reads whichever the command needs.
+struct Services {
+    cache: ParquetCache,
+    access: Arc<FileAccess>,
+    /// `License::init` takes `Arc<Self>`, so the bridge shares the one it
+    /// initialised rather than owning it outright.
+    license: Arc<License>,
+    pending: PendingOpen,
+    results: QueryResults,
+    requests: ProfileRequests,
+}
+
+async fn dispatch(services: &Services, cmd: &str, args: Value) -> Result<Value, String> {
+    let Services {
+        cache,
+        access,
+        license,
+        pending,
+        results,
+        requests,
+    } = services;
     let v = match cmd {
         "iap_status" => json!(license.status().await),
         "iap_products" => json!(license.products().await?),
@@ -254,19 +267,27 @@ async fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join(format!("parqsee-bridge-{}", std::process::id())));
     let access = Arc::new(FileAccess::load(Box::new(NoopBookmarks), Some(&data_dir)));
-    let cache = Arc::new(ParquetCache::with_access(Arc::clone(&access)));
+    let cache = ParquetCache::with_access(Arc::clone(&access));
     let license = Arc::new(License::new(Box::new(AlwaysUnlocked)));
-    let results = Arc::new(QueryResults::new());
-    let requests = Arc::new(ProfileRequests::new());
+    let results = QueryResults::new();
+    let requests = ProfileRequests::new();
     license.init().await;
-    let pending = Arc::new(PendingOpen::seeded(
+    let pending = PendingOpen::seeded(
         std::env::var("PARQSEE_PENDING_FILES")
             .unwrap_or_default()
             .lines()
             .filter(|l| !l.is_empty())
             .map(str::to_string)
             .collect(),
-    ));
+    );
+    let services = Arc::new(Services {
+        cache,
+        access,
+        license,
+        pending,
+        results,
+        requests,
+    });
     let out = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut tasks = Vec::new();
@@ -281,12 +302,7 @@ async fn main() {
                 continue;
             }
         };
-        let cache = cache.clone();
-        let access = access.clone();
-        let license = license.clone();
-        let pending = pending.clone();
-        let results = results.clone();
-        let requests = requests.clone();
+        let services = Arc::clone(&services);
         let out = out.clone();
         tasks.push(tokio::spawn(async move {
             let id = req["id"].clone();
@@ -296,7 +312,7 @@ async fn main() {
             if delay > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
-            let resp = match dispatch(&cache, &access, &license, &pending, &results, &requests, &cmd, args).await {
+            let resp = match dispatch(&services, &cmd, args).await {
                 Ok(v) => json!({"id": id, "ok": v}),
                 Err(e) => json!({"id": id, "err": e}),
             };
