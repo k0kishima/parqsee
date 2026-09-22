@@ -549,7 +549,9 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   await page.click('text=inner.parquet'); await page.waitForTimeout(500); await waitGrid(page);
   check('S7.recentClick', (await visibleGrid(page)).length === 3);
   await page.locator('[title^="Close tab"]').first().click(); await page.waitForTimeout(200);
-  // A recent file that has since been deleted: greyed out on reload, an alert and gone on click.
+  // A recent file that has since been deleted: greyed out on reload, an
+  // alert on click, and still listed — the check cannot tell a deleted
+  // file from one on a drive that is not plugged in, so only ✕ forgets it.
   const goneDir = `${OUT}/gone`; fs.rmSync(goneDir, { recursive: true, force: true }); fs.mkdirSync(goneDir);
   fs.copyFileSync(`${FIX}/one_row.parquet`, `${goneDir}/missing.parquet`);
   await openFile(page, `${goneDir}/missing.parquet`);
@@ -557,10 +559,13 @@ await scenario('S7-tabs', async ({ page, bridge }) => {
   fs.rmSync(`${goneDir}/missing.parquet`);
   await page.reload(); await page.waitForSelector('text=missing.parquet');
   check('S7.unavailableRecent', await page.locator('text=No longer available').isVisible(), 'deleted file marked unavailable after reload');
-  await page.click('text=missing.parquet'); await page.waitForTimeout(500);
+  const missingRow = () => page.getByRole('button', { name: /missing\.parquet/ });
+  await missingRow().click(); await page.waitForTimeout(500);
   const al = await page.evaluate(() => window.__alerts.splice(0));
-  check('S7.missingRecent', al.length === 1 && al[0].includes('not found') && !(await page.locator('text=missing.parquet').isVisible()), `alerts=${al} stillListed=${await page.locator('text=missing.parquet').isVisible()}`);
-  check('S7.missingRecentForgotten', !(await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet'), 'removed from the store too');
+  check('S7.missingRecent', al.length === 1 && al[0].includes('Cannot open') && await missingRow().isVisible(), `alerts=${al} stillListed=${await missingRow().isVisible()}`);
+  check('S7.missingRecentKept', (await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet' && f.available === false), 'still in the store, marked unavailable');
+  await page.locator('button[title="Remove from recent files"]').first().click(); await page.waitForTimeout(300);
+  check('S7.missingRecentRemoved', !(await missingRow().isVisible()) && !(await bridge.call('list_recent_files')).some(f => f.name === 'missing.parquet'), 'gone from the list and the store on ✕');
   // drop non-parquet
   await page.evaluate(() => window.__emit('file-drop', ['/etc/hosts'])); await page.waitForTimeout(200);
   check('S7.dropOther', (await page.evaluate(() => window.__alerts.splice(0)))[0]?.includes('.parquet'), 'alert for non-parquet drop');
