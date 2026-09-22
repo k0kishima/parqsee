@@ -440,3 +440,54 @@ describe('DataViewer sort', () => {
     expect(header()).toHaveAttribute('aria-sort', 'descending');
   });
 });
+
+describe('DataViewer horizontal scroll', () => {
+  /**
+   * The element the grid scrolls in. The table is unmounted for the spinner
+   * while a page loads, so this has to be read again after every load: the
+   * one held before it is detached.
+   */
+  const scroller = () => screen.getByRole('table').parentElement as HTMLElement;
+
+  /** Scroll right, then wait out the load `act` starts. */
+  const scrollRightAndThen = async (act: () => Promise<void>) => {
+    scroller().scrollLeft = 500;
+    await act();
+    await waitFor(() => expect(screen.queryByText('viewer.loading')).not.toBeInTheDocument());
+  };
+
+  it('keeps the horizontal position across a page change', async () => {
+    await renderViewer();
+    const user = userEvent.setup();
+
+    await scrollRightAndThen(async () => {
+      await user.click(screen.getByText('viewer.pagination.next'));
+      await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 50, 50, '', null));
+    });
+
+    expect(scroller().scrollLeft).toBe(500);
+  });
+
+  it('keeps it when a column is sorted', async () => {
+    await renderViewer();
+    const user = userEvent.setup();
+
+    await scrollRightAndThen(async () => {
+      await user.click(screen.getByTitle('viewer.sort.toggle'));
+      await waitFor(() => expect(screen.getByTitle('id')).toHaveAttribute('aria-sort', 'ascending'));
+    });
+
+    expect(scroller().scrollLeft).toBe(500);
+  });
+
+  it('keeps it when a filter is applied', async () => {
+    await renderViewer();
+
+    await scrollRightAndThen(async () => {
+      await applyFilter('5');
+      await waitFor(() => expect(mockReadParquetData).toHaveBeenLastCalledWith('/data/test.parquet', 0, 50, '"id" = 5', null));
+    });
+
+    expect(scroller().scrollLeft).toBe(500);
+  });
+});

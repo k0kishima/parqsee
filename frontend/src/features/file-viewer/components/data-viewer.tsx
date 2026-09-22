@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, RefObject } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
@@ -177,6 +177,16 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
 
   const rowsPerPage = settings.rowsPerPage;
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  /**
+   * How far right the grid was scrolled when the load started. The table is
+   * replaced by the spinner while a page loads, so the scroller that comes
+   * back is a new element at the left edge; this is what it is put back to.
+   */
+  const savedScrollLeft = useRef(0);
+  /** Remember the column the grid is on before the spinner takes it away. */
+  const saveScrollLeft = useCallback(() => {
+    savedScrollLeft.current = tableContainerRef.current?.scrollLeft ?? savedScrollLeft.current;
+  }, []);
 
   /** The state the rows on screen were successfully loaded for. */
   const lastGood = useRef<LoadedState | null>(null);
@@ -216,6 +226,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
   const loadFile = useCallback(async () => {
     // Page loads still in flight belong to the previous metadata.
     const seq = ++loadSeq.current;
+    saveScrollLeft();
     try {
       setLoading(true);
       setError(null);
@@ -241,11 +252,12 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setError(toErrorMessage(err));
       setLoading(false);
     }
-  }, [filePath, track]);
+  }, [filePath, track, saveScrollLeft]);
 
   const loadData = useCallback(async () => {
     if (!metadata) return;
     const seq = ++loadSeq.current;
+    saveScrollLeft();
 
     try {
       setLoading(true);
@@ -310,7 +322,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       setTotalRows(outcome.restore.totalRows);
       setLoading(false);
     }
-  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort, track]);
+  }, [filePath, metadata, activeFilter, currentPage, rowsPerPage, sort, track, saveScrollLeft]);
 
   // filePath is fixed for a mounted viewer (TabContent is keyed by tab), so
   // loadFile only ever changes with it and loadData with the page state the
@@ -332,6 +344,23 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       }
     }
   }, [metadata, loadData]);
+
+  // Put the grid back on the column it was on. The vertical position is
+  // reset on purpose above — a new page starts at its top — but the
+  // horizontal one only went missing with the scroller: a sort clicked on
+  // the last of six hundred columns scrolled the grid away from the very
+  // column it sorted, its `aria-sort` mark included. `loading` is a
+  // dependency because that is when the element is swapped: the table is
+  // unmounted for the spinner and mounted again afterwards, so the ref
+  // holds the new scroller only once `loading` is false again. Before the
+  // browser paints, so the left edge is never on screen; assigning
+  // `scrollLeft` fires a scroll event, which is how the column
+  // virtualizer learns which columns to render, and a position past a
+  // narrower table's width is clamped by the browser.
+  useLayoutEffect(() => {
+    const scroller = tableContainerRef.current;
+    if (scroller && !loading) scroller.scrollLeft = savedScrollLeft.current;
+  }, [loading, data]);
 
   // A new page size from the settings starts over from the first page; the
   // footer select resets the page itself, in the same event. Skipped on mount
