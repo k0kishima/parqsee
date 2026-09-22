@@ -430,7 +430,17 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     }
   }, [searchMatches]);
 
-  // ⌘F / ⌘G / ⇧⌘G, from the native menu or the workspace's keydown
+  const handleRefresh = useCallback(async () => {
+    setCurrentPage(1);
+    setSearchTerm('');
+    setIsSearchOpen(false);
+    setMetadata(null);
+    await track(evictCacheQuietly(filePath));
+    if (unmounted.current) return;
+    await loadFile();
+  }, [filePath, track, loadFile]);
+
+  // ⌘F / ⌘G / ⇧⌘G / ⌘R, from the native menu or the workspace's keydown
   // fallback (see lib/app-commands.ts). Next / previous work wherever the
   // focus is while the search is open, as in Safari; they used to need the
   // search box focused.
@@ -448,18 +458,14 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       case 'find-previous':
         if (isSearchOpen) handlePreviousMatch();
         break;
+      // The key is refused while a load is in flight, as the button is:
+      // a second reload over the first would evict the session the first
+      // one is reading through.
+      case 'refresh':
+        if (!loading) handleRefresh();
+        break;
     }
-  }, [isActiveRef, isSearchOpen, handleNextMatch, handlePreviousMatch]));
-
-  const handleRefresh = async () => {
-    setCurrentPage(1);
-    setSearchTerm('');
-    setIsSearchOpen(false);
-    setMetadata(null);
-    await track(evictCacheQuietly(filePath));
-    if (unmounted.current) return;
-    await loadFile();
-  };
+  }, [isActiveRef, isSearchOpen, loading, handleNextMatch, handlePreviousMatch, handleRefresh]));
 
   // A selected row is a row of the page on screen; keeping its index across
   // a page or filter change highlighted an unrelated row. Cleared during
@@ -601,7 +607,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
       <button
         onClick={handleRefresh}
         disabled={loading}
-        title={t('viewer.refresh')}
+        title={withShortcut(t('viewer.refresh'), 'refresh')}
         className={`${actionButton} ${whileLoading}`}
       >
         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

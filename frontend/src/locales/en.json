@@ -329,6 +329,7 @@
         "go-to-tab": "Go to tab 1 to 9",
         "toggle-sidebar": "Show or hide the sidebar",
         "switch-view": "Switch between Content and Query",
+        "refresh": "Re-read the file from disk",
         "shortcuts": "Show this list",
         "find": "Search within the page",
         "find-next": "Next match",

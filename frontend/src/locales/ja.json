@@ -329,6 +329,7 @@
     "go-to-tab": "1〜9 番目のタブへ移動",
     "toggle-sidebar": "サイドバーの表示 / 非表示",
     "switch-view": "コンテンツとクエリを切り替え",
+    "refresh": "ファイルを読み直す",
     "shortcuts": "この一覧を表示",
     "find": "ページ内を検索",
     "find-next": "次の一致へ",

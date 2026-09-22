@@ -13,7 +13,7 @@ import type { ShortcutId } from './shortcuts';
  * a second spelling of them, and a name misspelt here would otherwise be
  * a command that simply never arrives.
  */
-export const APP_COMMANDS = ['find', 'find-next', 'find-previous', 'run-query', 'stop-query', 'switch-view'] as const satisfies readonly ShortcutId[];
+export const APP_COMMANDS = ['find', 'find-next', 'find-previous', 'refresh', 'run-query', 'stop-query', 'switch-view'] as const satisfies readonly ShortcutId[];
 
 export type AppCommand = typeof APP_COMMANDS[number];
 
