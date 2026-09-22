@@ -333,12 +333,13 @@ describe('a narrow still in flight when a new run lands', () => {
     expect(screen.getByText('viewer.query.result.narrowing')).toBeInTheDocument();
     expect(screen.queryByText('x = a')).not.toBeInTheDocument();
     expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
-    expect(screen.getByText('b')).toBeInTheDocument();
+    // The grid's own cell: the panel opened below charts a bar for `b` too.
+    expect(screen.getByRole('cell', { name: 'b' })).toBeInTheDocument();
     await userEvent.click((await screen.findAllByRole('button', { name: 'viewer.profile.open' }))[0]);
     await waitFor(() => expect(mockCounts).toHaveBeenLastCalledWith('r1', 0, undefined, expect.any(String)));
     await userEvent.click(screen.getByRole('button', { name: 'common.clear' }));
     await act(async () => { pending.resolve([{ x: 'a', y: 111 }]); await pending.promise; });
-    expect(screen.getByText('b')).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'b' })).toBeInTheDocument();
     expect(screen.queryByText('111')).not.toBeInTheDocument();
     expect(screen.queryByText('viewer.query.result.narrowed')).not.toBeInTheDocument();
     expect(mockFilter).toHaveBeenCalledTimes(1);
