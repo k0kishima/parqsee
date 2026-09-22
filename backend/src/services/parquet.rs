@@ -636,6 +636,15 @@ pub fn open_file_reader(path: &str) -> Result<SerializedFileReader<File>, String
     SerializedFileReader::new(file).map_err(|e| e.to_string())
 }
 
+/// The same file opened for the Arrow reader instead: a page read by
+/// range and a sorted page's read by position both build on it, and both
+/// report a file they cannot open the same way.
+fn open_reader_builder(path: &str) -> Result<ParquetRecordBatchReaderBuilder<File>, String> {
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
+    ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))
+}
+
 /// A batch reader over `[offset, offset + limit)` of the file's rows, in file
 /// order. The range is pushed into the parquet reader, which skips whole row
 /// groups by their row counts instead of decoding everything before `offset`
@@ -649,9 +658,7 @@ pub fn range_reader(
     limit: Option<usize>,
     batch_size: usize,
 ) -> Result<ParquetRecordBatchReader, String> {
-    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+    let builder = open_reader_builder(path)?;
 
     let num_rows = builder.metadata().file_metadata().num_rows();
     let total_rows = usize::try_from(num_rows).map_err(|_| {
@@ -1555,22 +1562,48 @@ fn reusable_plan(plan: &datafusion::logical_expr::LogicalPlan) -> Result<bool, S
     Ok(reusable)
 }
 
+/// The protocol every cached browse read follows: open the session, take
+/// the file's version, answer from the cache if it holds this query's
+/// rows, and otherwise compute them — then check the version again
+/// before storing. That second check is the load-bearing step: the file
+/// can be rewritten while the rows are being read, and rows from the old
+/// one stored under the new version would be served as the new file's
+/// until something else evicted them. `compute` returns the rows and
+/// whether the plan that made them may be reused (`reusable_plan`).
+///
 /// Bounded LRU of Arrow batches. Session identity prevents an in-flight read
 /// from repopulating the cache after Refresh/close evicts that session.
+async fn cached_or_compute<F, Fut>(
+    cache: &ParquetCache,
+    path: &str,
+    query: &str,
+    policy: ResultCachePolicy,
+    compute: F,
+) -> Result<Vec<RecordBatch>, String>
+where
+    F: FnOnce(datafusion::execution::context::SessionContext) -> Fut,
+    Fut: std::future::Future<Output = Result<(Vec<RecordBatch>, bool), String>>,
+{
+    let ctx = cache.get_or_create_session(path).await?;
+    let version = FileVersion::read(path)?;
+    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
+        return Ok(batches);
+    }
+    let (batches, reusable) = compute(ctx.clone()).await?;
+    version.check(path)?;
+    store_result(cache, path, &ctx, version, query, batches, reusable, policy)
+}
+
 async fn execute_browse_query(
     cache: &ParquetCache,
     path: &str,
     query: &str,
     policy: ResultCachePolicy,
 ) -> Result<Vec<RecordBatch>, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-    let version = FileVersion::read(path)?;
-    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
-        return Ok(batches);
-    }
-    let (batches, reusable) = run_browse_query(&ctx, query, false).await?;
-    version.check(path)?;
-    store_result(cache, path, &ctx, version, query, batches, reusable, policy)
+    cached_or_compute(cache, path, query, policy, |ctx| async move {
+        run_browse_query(&ctx, query, false).await
+    })
+    .await
 }
 
 /// A sorted page's rows, keyed in the result cache by its position query
@@ -1590,25 +1623,22 @@ async fn sorted_rows(
     policy: ResultCachePolicy,
     full_sort: bool,
 ) -> Result<Vec<RecordBatch>, String> {
-    let ctx = cache.get_or_create_session(path).await?;
-    let version = FileVersion::read(path)?;
-    if let Some(batches) = cached_result(cache, path, &ctx, &version, query)? {
-        return Ok(batches);
-    }
-    let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
-        Err(e) if !full_sort && is_memory_exhausted(&e) => {
-            run_browse_query(&ctx, query, true).await?
-        }
-        other => other?,
-    };
-    let positions = positions_from_batches(&positions)?;
-    // Decoding is CPU-bound; keep it off the async workers like an unfiltered page.
-    let owned = path.to_string();
-    let batch = tokio::task::spawn_blocking(move || rows_at_positions(&owned, &positions))
-        .await
-        .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))??;
-    version.check(path)?;
-    store_result(cache, path, &ctx, version, query, vec![batch], reusable, policy)
+    cached_or_compute(cache, path, query, policy, |ctx| async move {
+        let (positions, reusable) = match run_browse_query(&ctx, query, full_sort).await {
+            Err(e) if !full_sort && is_memory_exhausted(&e) => {
+                run_browse_query(&ctx, query, true).await?
+            }
+            other => other?,
+        };
+        let positions = positions_from_batches(&positions)?;
+        // Decoding is CPU-bound; keep it off the async workers like an unfiltered page.
+        let owned = path.to_string();
+        let batch = tokio::task::spawn_blocking(move || rows_at_positions(&owned, &positions))
+            .await
+            .map_err(|e| format!("Failed to read parquet file {}: {}", path, e))??;
+        Ok((vec![batch], reusable))
+    })
+    .await
 }
 
 fn cached_result(
@@ -1748,9 +1778,7 @@ fn rows_at_positions(path: &str, positions: &[usize]) -> Result<RecordBatch, Str
     use arrow::array::UInt64Array;
     use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
 
-    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path, e))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| format!("Failed to open parquet file {}: {}", path, e))?;
+    let builder = open_reader_builder(path)?;
     let total = usize::try_from(builder.metadata().file_metadata().num_rows()).unwrap_or(0);
     if positions.iter().any(|&p| p >= total) {
         return Err("The file changed while reading it. Refresh and try again.".into());

@@ -5,7 +5,8 @@ import { X } from "lucide-react";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { ROWS_PER_PAGE_OPTIONS } from "../../../lib/settings-storage";
 import { SearchBar } from "./search-bar";
-import { FilterBar, type FilterBarHandle, type FilterCondition } from "./filter-bar";
+import { FilterBar, type FilterBarHandle } from "./filter-bar";
+import type { ProfileCondition } from "../../../lib/filter-sql";
 import { ExportModal } from "./export-modal";
 import { DataTable } from "./data-table";
 import { ColumnProfilePanel } from "./column-profile";
@@ -488,7 +489,7 @@ function DataViewerComponent({ filePath, onClose, initialState, onStateChange, i
     setProfiledColumn(current => (current === name ? null : name));
   }, []);
   const closeProfile = useCallback(() => setProfiledColumn(null), []);
-  const handleAddConditions = useCallback((conditions: FilterCondition[]) => {
+  const handleAddConditions = useCallback((conditions: ProfileCondition[]) => {
     filterBarRef.current?.addConditions(conditions);
   }, []);
   // The panel follows the metadata: a Refresh that dropped the column

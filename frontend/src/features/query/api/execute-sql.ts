@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { invokeBestEffort } from '../../../lib/tauri';
 import { QueryResult } from '../types';
 
 let issued = 0;
@@ -18,10 +19,5 @@ export const executeSql = async (filePath: string, query: string, requestId?: st
  * answered is nothing to cancel, and the view that asked has moved on to
  * another run or to nothing — it has nowhere to report a refusal.
  */
-export async function cancelQuery(requestId: string): Promise<void> {
-    try {
-        await invoke('cancel_query', { requestId });
-    } catch {
-        // The run ends with the process at the latest.
-    }
-}
+export const cancelQuery = (requestId: string): Promise<void> =>
+    invokeBestEffort('cancel_query', { requestId });

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { invokeBestEffort } from '../../../lib/tauri';
 import type { ColumnCounts } from '../../../bindings/ipc/ColumnCounts';
 import type { ProfileChart } from '../../../bindings/ipc/ProfileChart';
 
@@ -37,11 +38,5 @@ export const filterQueryResult = (
  * arrived anyway, or the tab holding it closed. Failing is not worth
  * reporting — the store's caps collect what a missed call leaves.
  */
-export async function releaseQueryResult(resultId: string): Promise<void> {
-  try {
-    await invoke('release_query_result', { resultId });
-  } catch {
-    // Nothing to do and nobody to tell: the rows are the backend's, and
-    // its caps collect a result no call ever released.
-  }
-}
+export const releaseQueryResult = (resultId: string): Promise<void> =>
+  invokeBestEffort('release_query_result', { resultId });
