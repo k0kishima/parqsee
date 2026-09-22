@@ -22,8 +22,11 @@ do not re-check those by hand.
 
 ## How to run
 
-1. Build the release app: `cd frontend && pnpm tauri build`. Test
-   `backend/target/release/bundle/macos/Parqsee.app`. **Never use
+1. Build the release app: `cd frontend && pnpm tauri build`, and launch the
+   bundle it wrote — double-click it in Finder, or
+   `open backend/target/release/bundle/macos/Parqsee.app` (`open` hands a
+   running Parqsee the request instead of starting a second one, so quit
+   first where an item asks for a cold start). **Never use
    `pnpm tauri dev` for these checks** — the debug backend is ~20× slower on
    scans, and a multi-second page read there looks like a hang, and the dev
    build is not sandboxed, so the bookmark items below pass there for the
@@ -42,7 +45,14 @@ Files, the session tabs, the last export folder — `bookmarks.json` — and
 the `localStorage` settings) inside its sandbox container,
 `~/Library/Containers/llc.fuji.parqsee/`. To run the checks below from a
 clean slate, quit the app and delete that folder; macOS recreates it at
-the next launch. The bundle identifier was `com.parqsee.app` before the
+the next launch. `rm -rf` on it ends with *Operation not permitted* for
+`.com.apple.containermanagerd.metadata.plist` and for the directory
+itself, which `sudo` does not help with: those two belong to
+`containermanagerd`, not to the app, and everything the app remembers
+lives under the `Data/` it did delete. `find
+~/Library/Containers/llc.fuji.parqsee/Data` printing nothing is the
+clean slate; Finder can move the folder itself to the Trash if you want
+it gone. The bundle identifier was `com.parqsee.app` before the
 release hardening (#3): a Mac that ran those builds still has their data
 under `~/Library/Containers/com.parqsee.app/` (release) and, from
 `pnpm tauri dev`, under `~/Library/Application Support/com.parqsee.app/`,
