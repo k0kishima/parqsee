@@ -20,6 +20,18 @@ rating, no primary category, no content-rights answer and a locale without
 a privacy policy URL all look "unset" in the API and nowhere else. The
 checks are what the 1.0 submission turned out to need.
 
+The audit cannot see two things. The App Privacy answers are not in the
+public API; adding the version to a draft `reviewSubmissions` is the check
+that can, since App Store Connect refuses the item with every remaining
+blocker listed under `meta.associatedErrors` (a draft is not sent until it
+is PATCHed `submitted: true`, and an item can be deleted again). And the
+first in-app purchase of a type has to join the version's submission from
+App Store Connect's web UI (the purchase's page → Add for Review): the API's
+`inAppPurchaseSubmissions` refuses it with
+FIRST_NON_CONSUMABLE_MUST_BE_SUBMITTED_ON_VERSION, `reviewSubmissionItems`
+has no relationship for a purchase, and once added the item reads back with
+no relationships at all — confirm it in the web UI's App Review page.
+
 `get` / `patch` / `post` / `delete` are the bare calls, printing the status
 and the JSON answer. One-off writes (a price schedule, a review submission)
 stay one-off: the body is written for the occasion rather than kept here.
@@ -50,8 +62,11 @@ BUNDLE_ID = "llc.fuji.parqsee"
 
 # App Store Connect keeps a version editable in these states; the audit
 # looks at that one. Anything past them is in review or on sale.
+# READY_FOR_REVIEW is a version sitting in a draft review submission that
+# has not been sent yet — the state it is in right before the last check.
 EDITABLE_STATES = {
     "PREPARE_FOR_SUBMISSION",
+    "READY_FOR_REVIEW",
     "DEVELOPER_REJECTED",
     "REJECTED",
     "METADATA_REJECTED",
