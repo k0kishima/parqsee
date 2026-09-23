@@ -103,6 +103,7 @@ parqsee/
 │   │   ├── appstore.sh           # Build → sign → .pkg → App Store Connect (universal; --unsigned is the dry run)
 │   │   ├── sign_app.sh           # Embed a provisioning profile and sign with Entitlements.plist + the identifiers
 │   │   ├── upload_pkg.sh         # Validate a signed .pkg with App Store Connect and upload it (appstore.sh's last step, callable alone)
+│   │   ├── asc.py                # App Store Connect API (uv run): `audit` reads everything a submission needs, plus bare get/patch/post/delete
 │   │   └── test_appstore.py      # unittest over appstore.sh and upload_pkg.sh with stubbed tools (python3 scripts/release/test_appstore.py)
 │   └── qa/
 │       ├── gen_fixtures.py       # Fixture generators for docs/MANUAL_QA.md and e2e (uv run)
