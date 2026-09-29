@@ -38,8 +38,13 @@
       Parqsee は Apache Parquet のための macOS ネイティブなビューアです。行を送りながら中身を眺め、条件で絞り込み、SQL で問い合わせ、必要な分だけ書き出す。ノートブックもクラスタもアップロードも要りません。
     </p>
     <div class="cta">
-      <!-- 審査通過後（#16）に Apple 公式の「Mac App Store でダウンロード」バッジとアプリページへのリンクに差し替える。 -->
-      <span class="badge-slot pending">Mac App Store に近日公開</span>
+      <!-- Apple 公式のバッジ（tools.applemediaservices.com）を無加工で使う。明るい背景は黒、暗い背景は白。 -->
+      <a class="store-badge" href="https://apps.apple.com/app/id6809117628">
+        <picture>
+          <source srcset="../img/badge/mac-app-store-ja-jp-white.svg" media="(prefers-color-scheme: dark)">
+          <img src="../img/badge/mac-app-store-ja-jp-black.svg" width="140" height="40" alt="Mac App Store からダウンロード">
+        </picture>
+      </a>
       <a class="btn-ghost" href="https://github.com/k0kishima/parqsee">ソースからビルド</a>
     </div>
     <p class="req">macOS 12 以降 · Apple シリコン / Intel 対応</p>
