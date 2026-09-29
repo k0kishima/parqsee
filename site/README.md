@@ -16,6 +16,7 @@ site/
 ├── year.js             turns the footer's "© 2026" into "© 2026–<this year>" from 2027 on
 └── img/
     ├── icon.png            from backend/icons/icon.png
+    ├── badge/              Apple's Mac App Store badges (see below)
     └── screenshot-*.png    from `pnpm shots` (see below)
 ```
 
@@ -60,13 +61,13 @@ cd ../../.. && for f in en-light en-dark ja-light ja-dark; do
 done
 ```
 
-## After the app is approved (#16)
+## The App Store badge
 
-- Replace the `badge-slot pending` span in `index.html` and `ja/index.html`
-  with Apple's official *Download on the Mac App Store* badge, linking to the
-  app's page. The badge artwork has to come from Apple's marketing resources;
-  it may not be redrawn.
-- Add the same badge to the top of the repository `README.md`.
-- Swap the *Coming Soon…* label on the Parqsee card in the corporate site
-  (`k0kishima/k0kishima.github.io`, the Products section of `index.html`) for
-  the App Store link.
+`img/badge/mac-app-store-<locale>-<black|white>.svg` are Apple's *Download on
+the Mac App Store* badges, downloaded unmodified from Apple's marketing tools
+(`https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/<black|white>/<en-us|ja-jp>`)
+and served from here rather than hot-linked, since the site makes no external
+request. Apple does not allow the artwork to be redrawn or recoloured: the
+black badge sits on the light theme and the white one on the dark, swapped by a
+`<picture>`. Both link to `https://apps.apple.com/app/id6809117628`, which the
+App Store sends on to the visitor's own storefront.

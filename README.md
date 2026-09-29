@@ -9,6 +9,8 @@ cluster and no upload.
 [Privacy](https://parqsee.fuji.llc/privacy.html) ·
 [Support](https://parqsee.fuji.llc/support.html)
 
+<a href="https://apps.apple.com/app/id6809117628"><img src="site/img/badge/mac-app-store-en-us-black.svg" height="48" alt="Download on the Mac App Store"></a>
+
 ![Parqsee showing a Parquet file: a folder of files in the sidebar, the rows in a table with their column types, a filter bar and pagination](site/img/screenshot-en-light.png)
 
 - **Fast on large files** — a Rust backend on Arrow and Parquet reads a page by
@@ -34,9 +36,9 @@ cluster and no upload.
 
 ## Install
 
-Parqsee is coming to the Mac App Store; until then, build it from source (see
-[Development](#development)). It requires **macOS 12 or later** and runs on
-Apple silicon and Intel.
+Parqsee is on the [Mac App Store](https://apps.apple.com/app/id6809117628), or
+build it from source (see [Development](#development)). It requires **macOS 12
+or later** and runs on Apple silicon and Intel.
 
 On the App Store it is free to download, with at most **3 files open at a
 time**; everything else — paging, filters, search, the SQL view, export — has
